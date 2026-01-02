@@ -2,6 +2,8 @@
 subprojects/libzt-wrapper/libzt/
 subprojects/.wraplock
 
+manager/.vn_manager_identity/networks.d
+manager/.vn_manager_identity/peers.d
 
 # Build directories
 builddir-*/
