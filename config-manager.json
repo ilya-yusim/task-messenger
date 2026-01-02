@@ -1,0 +1,12 @@
+{
+  "transport_server": {
+    "listen_host": "0.0.0.0",
+    "listen_port": 8080,
+    "io_threads": 1
+  },
+  
+  "zerotier": {
+    "default_network": "159924d6303c474a",
+    "identity_path": "manager/.vn_manager_identity"
+  }
+}

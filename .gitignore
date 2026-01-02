@@ -1,0 +1,14 @@
+# Ignore bundled libzt distribution (libzt-wrapper can download/build it)
+subprojects/libzt-wrapper/libzt/
+subprojects/.wraplock
+
+
+# Build directories
+builddir-*/
+builddir/
+
+out/
+
+.vscode/.code-workspace
+.vscode/c_cpp_properties.json
+

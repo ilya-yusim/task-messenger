@@ -1,0 +1,40 @@
+# Doxygen configuration (Meson-configured)
+
+# Project
+PROJECT_NAME           = "Task Messenger"
+PROJECT_BRIEF          = "Manager/worker async task distribution platform"
+OUTPUT_DIRECTORY       = @OUT_DIR@
+CREATE_SUBDIRS         = YES
+FULL_PATH_NAMES        = NO
+STRIP_FROM_PATH        = @SRC_DIR@
+
+# Build
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+GENERATE_XML           = YES
+QUIET                  = NO
+WARN_IF_UNDOCUMENTED   = NO
+WARN_AS_ERROR          = NO
+JAVADOC_AUTOBRIEF      = YES
+
+# Input
+INPUT                  = @SRC_DIR@/docs/TaskMessenger.md \
+                         @SRC_DIR@/manager \
+                         @SRC_DIR@/worker \
+                         @SRC_DIR@/message \
+                         @SRC_DIR@/transport
+RECURSIVE              = YES
+FILE_PATTERNS          = *.hpp \
+                         *.cpp \
+                         *.md
+MARKDOWN_SUPPORT       = YES
+USE_MDFILE_AS_MAINPAGE = @SRC_DIR@/docs/TaskMessenger.md
+
+# Extraction
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = NO
+EXTRACT_STATIC         = NO
+EXTRACT_LOCAL_CLASSES  = YES
+
+# Diagrams (optional)
+HAVE_DOT               = NO

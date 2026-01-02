@@ -1,0 +1,7 @@
+[wrap-git]
+ directory = nlohmann_json
+ url = https://github.com/nlohmann/json.git
+ revision = v3.11.2
+
+[provide]
+nlohmann_json = nlohmann_json_dep

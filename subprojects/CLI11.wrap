@@ -1,0 +1,4 @@
+[wrap-git]
+ directory = CLI11
+ url = https://github.com/CLIUtils/CLI11.git
+ revision = main

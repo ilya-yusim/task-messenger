@@ -1,0 +1,1 @@
+option('libzt_quiet_lwip_debug', type: 'boolean', value: true, description: 'Suppress lwIP SOCKETS_DEBUG prints in libzt debug builds by patching libzt CMake flags')

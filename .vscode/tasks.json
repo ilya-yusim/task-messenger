@@ -1,0 +1,277 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Meson Setup with Native File",
+			"type": "shell",
+			"command": "meson setup builddir --buildtype=${input:mesonBuildType} --native-file %XDG_DATA_HOME%/meson/native/meson.ini",
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "Meson Setup manager",
+			"type": "shell",
+			"command": "meson setup builddir-manager --wipe --buildtype=${input:mesonBuildType}",
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "Meson Setup worker",
+			"type": "shell",
+			"command": "meson setup builddir-worker --wipe --buildtype=${input:mesonBuildType}",
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "Meson Setup manager with Native File",
+			"type": "shell",
+			"command": "meson setup builddir-manager --wipe --buildtype=${input:mesonBuildType} --native-file %XDG_DATA_HOME%/meson/native/meson.ini",
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "Meson Setup worker with Native File",
+			"type": "shell",
+			"command": "meson setup builddir-worker --wipe --buildtype=${input:mesonBuildType} --native-file %XDG_DATA_HOME%/meson/native/meson.ini",
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "Meson Reconfigure Manager",
+			"type": "shell",
+			"command": "meson setup --reconfigure builddir-manager --native-file %XDG_DATA_HOME%/meson/native/meson.ini",
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "Meson Build Manager",
+			"type": "shell",
+			"command": "meson compile -C builddir-manager manager/manager",
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "Meson Reconfigure Worker",
+			"type": "shell",
+			"command": "meson setup --reconfigure builddir-worker --native-file %XDG_DATA_HOME%/meson/native/meson.ini",
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "Meson Build WorkerUI",
+			"type": "shell",
+			"command": "meson compile -C builddir-worker workerUI",
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "Meson Install Manager",
+			"type": "shell",
+			"command": "meson install -C builddir-manager",
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "Meson Install Worker",
+			"type": "shell",
+			"command": "meson install -C builddir-worker",
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
+			"label": "Run Manager (linux)",
+			"type": "shell",
+			"command": "builddir-manager/manager/manager -c config-manager.json",
+			"group": {
+				"kind": "test",
+				"isDefault": false
+			},
+			"presentation": {
+				"panel": "new"
+			},
+			"isBackground": true
+		},
+		{
+			"label": "Perf: Record Manager",
+			"type": "shell",
+			"command": "${workspaceFolder}/scripts/perf_record_all_threads.sh --dwarf -d 20 -F max --out ${workspaceFolder}/perf_output manager",
+			"group": {
+				"kind": "test",
+				"isDefault": false
+			},
+			"presentation": {
+				"panel": "new",
+				"echo": true,
+				"reveal": "always"
+			}
+		},
+		{
+			"label": "Perf: Record worker",
+			"type": "shell",
+			"command": "${workspaceFolder}/scripts/perf_record_all_threads.sh --dwarf -d 20 -F max --out ${workspaceFolder}/perf_output worker",
+			"group": {
+				"kind": "test",
+				"isDefault": false
+			},
+			"presentation": {
+				"panel": "new",
+				"echo": true,
+				"reveal": "always"
+			}
+		},
+		{
+			"label": "Run Manager",
+			"type": "shell",
+			"command": "builddir-manager/manager/manager.exe -c config-manager.json",
+			"group": {
+				"kind": "test",
+				"isDefault": false
+			},
+			"presentation": {
+				"panel": "new"
+			},
+			"isBackground": true
+		},
+		{
+			"label": "Meson Build Worker",
+			"type": "shell",
+			"command": "meson compile -C builddir-worker worker/worker",
+			"group": "build"
+		},
+		{
+			"label": "Run Blocking Worker (Linux)",
+			"type": "shell",
+			"command": "builddir-worker/worker/worker -c config-worker.json --mode blocking --ui",
+			// "isBackground": true,
+			"group": "test",
+			"presentation": {
+				"panel": "new",
+				"reveal": "always",
+				"focus": false,
+				"showReuseMessage": false
+			}
+		},
+		{
+			"label": "Run Blocking Worker",
+			"type": "shell",
+			"command": "cmd.exe /c start \"\" cmd.exe /k \"builddir-worker\\worker\\worker.exe -c config-worker.json --mode blocking --ui\"",
+			// "isBackground": true,
+			"group": "test",
+			"presentation": {
+				"panel": "new",
+				"reveal": "always",
+				"focus": false,
+				"showReuseMessage": false
+			}
+		},
+		{
+			"label": "Run Async Worker (Linux)",
+			"type": "shell",
+			"command": "builddir-worker/worker/worker -c config-worker.json --mode async",
+			"isBackground": false,
+			"group": "test",
+			"presentation": {
+				"panel": "new"
+			}
+		},
+		{
+			"label": "Run Async Worker",
+			"type": "shell",
+			"command": "cmd.exe /c start \"\" cmd.exe /k \"builddir-worker\\worker\\worker.exe -c config-worker.json --mode async --ui\"",
+//			"command": "builddir-worker/worker/worker.exe -c config-worker.json --mode async",
+			"isBackground": false,
+			"group": "test",
+			"presentation": {
+				"panel": "new"
+			}
+		},
+		{
+			"label": "Run Manager and Async Worker",
+			"dependsOn": [
+				"Run Manager",
+				"Run Async Worker"
+			],
+			"dependsOrder": "parallel",
+			"group": {
+				"kind": "test",
+				"isDefault": false
+			}
+		}
+		,
+		{
+			"label": "Run Manager and Blocking Worker",
+			"dependsOn": [
+				"Run Manager",
+				"Run Blocking Worker"
+			],
+			"dependsOrder": "parallel",
+			"group": {
+				"kind": "test",
+				"isDefault": false
+			}
+		}
+		,
+		{
+			"label": "Start Hotspot VNC",
+			"type": "shell",
+			"command": "${workspaceFolder}/scripts/start_hotspot_vnc.sh start",
+			"isBackground": true,
+			"group": {
+				"kind": "test",
+				"isDefault": false
+			},
+			"presentation": {
+				"panel": "dedicated",
+				"echo": true,
+				"reveal": "always",
+				"focus": false
+			},
+			"problemMatcher": []
+		}
+		,
+		{
+			"label": "Run multiple worker instances",
+			"type": "shell",
+			"command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}\\scripts\\run_workers.ps1\" -Count ${input:workerInstanceCount}",
+			"presentation": {
+				"panel": "new",
+				"reveal": "always",
+				"focus": false,
+				"showReuseMessage": false
+			},
+			"isBackground": false,
+			"group": {
+				"kind": "test",
+				"isDefault": false
+			}
+		}
+	],
+	"inputs": [
+		{
+			"id": "mesonBuildType",
+			"type": "pickString",
+			"description": "Meson buildtype for setup tasks",
+			"options": [
+				{
+					"label": "debug",
+					"value": "debug"
+				},
+				{
+					"label": "debugoptimized (RelWithDebInfo)",
+					"value": "debugoptimized"
+				},
+				{
+					"label": "release",
+					"value": "release"
+				}
+			],
+			"default": "debugoptimized"
+		},
+		{
+			"id": "workerInstanceCount",
+			"type": "promptString",
+			"description": "Number of worker instances to start (integer)",
+			"default": "2"
+		}
+	]
+}

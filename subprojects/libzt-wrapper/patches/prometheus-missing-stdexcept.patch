@@ -1,0 +1,33 @@
+--- a/ext/ZeroTierOne/ext/prometheus-cpp-lite-1.0/core/include/prometheus/family.h
++++ b/ext/ZeroTierOne/ext/prometheus-cpp-lite-1.0/core/include/prometheus/family.h
+@@
+-#include <cassert>
++#include <cassert>
++#include <stdexcept>
+@@
+-          throw std::invalid_argument("Invalid metric name");
++          throw std::invalid_argument("Invalid metric name");
+@@
+-            throw std::invalid_argument("Invalid label name");
++            throw std::invalid_argument("Invalid label name");
+@@
+-            throw std::invalid_argument("Invalid label name");
++            throw std::invalid_argument("Invalid label name");
+@@
+-            throw std::invalid_argument("Label name already present in constant labels");
++            throw std::invalid_argument("Label name already present in constant labels");
+--- a/ext/ZeroTierOne/ext/prometheus-cpp-lite-1.0/core/include/prometheus/registry.h
++++ b/ext/ZeroTierOne/ext/prometheus-cpp-lite-1.0/core/include/prometheus/registry.h
+@@
+-#include <vector>
++#include <vector>
++#include <stdexcept>
+@@
+-              throw std::invalid_argument("Family name already exists with different type");
++              throw std::invalid_argument("Family name already exists with different type");
+@@
+-                  throw std::invalid_argument("Family name already exists");
++                  throw std::invalid_argument("Family name already exists");
+@@
+-          throw std::invalid_argument("Family name already exists with different labels");
++          throw std::invalid_argument("Family name already exists with different labels");

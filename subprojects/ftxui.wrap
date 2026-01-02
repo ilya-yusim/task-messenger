@@ -1,0 +1,4 @@
+[wrap-git]
+directory = ftxui
+url = https://github.com/ArthurSonzogni/ftxui.git
+revision = v6.1.9
