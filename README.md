@@ -23,9 +23,3 @@ graph LR
 ## Documentation
 - Generated API/user docs: `meson compile -C builddir-manager docs` then open `builddir-manager/doxygen/html/index.html`.
 - High-level modules: see `docs/TaskMessenger.md`, `manager/README.md`, `worker/README.md`, and the README files inside `message/` and `transport/`.
-
-## Renaming the Workspace
-- Rename the checkout directory from `async` to `task-messenger` (or clone into a folder with that name) so scripts, docs, and Meson metadata stay consistent with the project branding.
-- Re-open the renamed folder in VS Code to keep launch configurations, tasks, and settings scoped to the new path.
-- Remove or wipe `builddir-manager` and `builddir-worker`, then rerun your preferred Meson setup task to regenerate build files with the refreshed absolute paths.
-- If you have custom scripts or external CI jobs pointing at the old path, update them to reference `task-messenger` before running new builds.
