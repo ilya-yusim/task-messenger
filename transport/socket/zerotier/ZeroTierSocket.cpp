@@ -12,15 +12,15 @@
 #ifdef _WIN32
     #include <winsock2.h>
     #include <ws2tcpip.h>
-    // On Windows, lwIP ERR_WOULDBLOCK (-7) maps to WSAEWOULDBLOCK (10035) 
-    // but ZeroTier reports it as errno 140 through err_to_errno conversion
-    #define ZT_ERRNO_WOULDBLOCK 140
+//     // On Windows, lwIP ERR_WOULDBLOCK (-7) maps to WSAEWOULDBLOCK (10035) 
+//     // but ZeroTier reports it as errno 140 through err_to_errno conversion
+//     #define ZT_ERRNO_WOULDBLOCK 140
 #else
     #include <poll.h>
     #include <netinet/in.h>
     #include <arpa/inet.h>
-    // On Unix systems, this would typically be EAGAIN (11) or EWOULDBLOCK
-    #define ZT_ERRNO_WOULDBLOCK EWOULDBLOCK
+//     // On Unix systems, this would typically be EAGAIN (11) or EWOULDBLOCK
+//     #define ZT_ERRNO_WOULDBLOCK EWOULDBLOCK
 #endif
 
 // Thread-local errno accessor provided by libzt-wrapper (copied into vendor tree)
@@ -580,9 +580,9 @@ void ZeroTierSocket::read(void* buffer, size_t size, size_t& bytes_read, std::er
             // Normalize error code to handle platform differences
             int norm = ZeroTierErrnoCompat::normalize_errno(zts_err);
             
-            // If timeout or shutdown, check if socket still valid and retry
+            // If timeout/wouldblock or shutdown, check if socket still valid and retry
             // ESHUTDOWN can occur if close() was called while recv was blocked
-            if (norm == ETIMEDOUT || norm == ESHUTDOWN) {
+            if (norm == ETIMEDOUT || norm == ESHUTDOWN || norm == EWOULDBLOCK) {
                 // Re-check socket validity under lock before retrying
                 std::lock_guard<std::mutex> lock(socket_mtx_);
                 if (socket_fd_ >= 0) {

@@ -145,7 +145,7 @@
 			// "isBackground": true,
 			"group": "test",
 			"presentation": {
-				"panel": "new",
+				"panel": "dedicated",
 				"reveal": "always",
 				"focus": false,
 				"showReuseMessage": false

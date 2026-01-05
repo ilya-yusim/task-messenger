@@ -1,7 +1,7 @@
 {
     "name": "My Codespace",
     "image": "mcr.microsoft.com/devcontainers/universal:latest",
-    "postCreateCommand": "./.devcontainer/setupContainer.sh",
+    "postCreateCommand": "bash ./.devcontainer/setupContainer.sh",
     "customizations": {
         "vscode": {
             "extensions": [

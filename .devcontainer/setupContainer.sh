@@ -13,8 +13,8 @@ sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-13 200
 sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-10 100
 sudo update-alternatives --install /usr/bin/g++ g++ /usr/bin/g++-13 200
 
-echo "Installing Meson..."
-pip3 install --upgrade meson
+echo "Installing Meson 1.9.2..."
+pip3 install "meson==1.9.2"
 
 echo "GCC version now:"
 gcc --version | head -n1
