@@ -138,7 +138,13 @@ shlwapi = cc.find_library('shlwapi', required: host_machine.system() == 'windows
 
 # Step 4: Find the built libzt shared library
 libzt_lib_path = join_paths(libzt_dir, 'dist', 'native', 'lib')
-zt_lib = cc.find_library('libzt-shared', dirs: [libzt_lib_path], required: true, static: false)
+# On Windows, look for libzt-shared.lib (import library for libzt.dll)
+# On Linux, look for libzt.so (just 'zt' after removing 'lib' prefix)
+if host_machine.system() == 'windows'
+  zt_lib = cc.find_library('libzt-shared', dirs: [libzt_lib_path], required: true, static: false)
+else
+  zt_lib = cc.find_library('zt', dirs: [libzt_lib_path], required: true, static: false)
+endif
 
 # Step 5: Declare the dependency for use by other subprojects
 # For shared library, no special link flags needed
