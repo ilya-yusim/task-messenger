@@ -136,20 +136,23 @@ ws2_32 = cc.find_library('ws2_32', required: host_machine.system() == 'windows')
 iphlpapi = cc.find_library('iphlpapi', required: host_machine.system() == 'windows')
 shlwapi = cc.find_library('shlwapi', required: host_machine.system() == 'windows')
 
-# Step 4: Find the built libzt static library
+# Step 4: Find the built libzt shared library
 libzt_lib_path = join_paths(libzt_dir, 'dist', 'native', 'lib')
-zt_lib = cc.find_library('zt', dirs: [libzt_lib_path], required: true, static: true)
+zt_lib = cc.find_library('libzt-shared', dirs: [libzt_lib_path], required: true, static: false)
 
 # Step 5: Declare the dependency for use by other subprojects
-# Add linker flags to suppress warnings on Windows
+# For shared library, no special link flags needed
 link_args = []
-if host_machine.system() == 'windows'
-  link_args += ['/IGNORE:4217']
-endif
 
 extra_deps = []
 if host_machine.system() == 'windows'
   extra_deps = [ws2_32, iphlpapi, shlwapi]
+endif
+
+# Configure RPATH for runtime library discovery on Linux
+if host_machine.system() == 'linux'
+  # Use $ORIGIN to allow executables to find the library relative to their location
+  link_args += ['-Wl,-rpath,$ORIGIN/../lib']
 endif
 
 libzt_dep = declare_dependency(

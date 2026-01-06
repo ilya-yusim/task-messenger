@@ -24,8 +24,22 @@ $nativePath = "dist\\native"
 # Choose target path based on build type used for libzt to match the dist layout
 if ($BuildType -ieq 'Debug') {
     $targetPath = "dist\\win-x64-host-debug"
+    $cachePath = "cache\\win-x64-host-debug"
 } else {
     $targetPath = "dist\\win-x64-host-release"
+    $cachePath = "cache\\win-x64-host-release"
+}
+
+# Copy the DLL import library from build cache to dist
+# The CMake build creates zt-shared.lib in the cache directory but libzt's build.ps1 doesn't copy it
+$importLibSrc = Join-Path $cachePath "lib\\$BuildType\\zt-shared.lib"
+$importLibDst = Join-Path $targetPath "lib\\libzt-shared.lib"
+if (Test-Path $importLibSrc) {
+    Copy-Item $importLibSrc $importLibDst -Force
+    Write-Host "Copied DLL import library: $importLibSrc -> $importLibDst"
+} else {
+    Write-Warning "DLL import library not found at: $importLibSrc"
+    Write-Warning "Shared library linking may fail!"
 }
 
 # Remove existing junction if it exists to recreate it for the correct build type

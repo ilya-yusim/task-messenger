@@ -3,12 +3,14 @@ libzt-wrapper Build Overview
 
 Purpose
 -------
-`libzt-wrapper` provides a reproducible, patchable staging area for building ZeroTier's `libzt` as a Meson subproject on Windows and Linux/macOS. It mirrors the upstream repository, applies local patches and overrides, maps Meson build types to libzt/CMake build types, and exposes a Meson dependency (`libzt-wrapper`) for downstream targets.
+`libzt-wrapper` provides a reproducible, patchable staging area for building ZeroTier's `libzt` as a **shared library** Meson subproject on Windows and Linux/macOS. It mirrors the upstream repository, applies local patches and overrides, maps Meson build types to libzt/CMake build types, and exposes a Meson dependency (`libzt-wrapper`) for downstream targets.
+
+**Current Configuration**: Builds and links against shared library (libzt.dll / libzt.so) instead of static library.
 
 Directory Layout
 ---------------
 - `libzt/` : Vendored upstream ZeroTier libzt Git repository (cloned recursively).
-- `meson.build` : Wrapper logic (clone if missing, apply patches, build, expose dependency).
+- `meson.build` : Wrapper logic (clone if missing, apply patches, build, expose shared lib dependency).
 - `meson_options.txt` : Provides wrapper-specific options (e.g. `libzt_quiet_lwip_debug`).
 - `patches/` : Git patch files usable via `git apply` (fallback to script if already applied).
 - `apply_libzt_patches.py` : Idempotent scripted patch for thread-local `zts_errno` etc.
@@ -17,6 +19,7 @@ Directory Layout
 - `sync_overrides.py` : Synchronizes local override source files (e.g. replacements placed beside wrapper) into the vendored tree.
 - `UPSTREAM_VERSION` : Optional file pinning a specific upstream commit (`commit=<sha>`). Used to warn if checked out HEAD differs.
 - Auxiliary sources (`NodeService.*`, `zts_errno.*`) : Local additions/overrides merged into the build.
+- `build-libzt.ps1` : Windows build wrapper that copies DLL import library for linking.
 
 Build Flow (meson.build)
 ------------------------
@@ -80,6 +83,23 @@ Troubleshooting
 - Patch fails repeatedly: Delete partially applied changes (`git -C libzt reset --hard`) then rerun Meson.
 - Library not found: Confirm `dist/native/lib/` path exists; inspect PowerShell script output.
 - Commit mismatch warning: Update or revert working tree to match `UPSTREAM_VERSION` for reproducibility.
+
+Shared Library Deployment
+-------------------------
+### Windows
+- **Link-time**: Meson finds `libzt-shared.lib` (DLL import library) in `dist/native/lib/`
+- **Runtime**: `libzt.dll` must be accessible:
+  - Same directory as executable (recommended for distribution)
+  - System PATH directory
+- **Debug symbols**: `libzt.pdb` available for debugging
+
+### Linux/macOS
+- **Link-time**: Meson finds `libzt.so` / `libzt.dylib`
+- **Runtime**: RPATH configured with `$ORIGIN/../lib` allows standard FHS layout:
+  ```
+  /usr/bin/manager  → finds → /usr/lib/libzt.so
+  ```
+- **Verification**: Check with `ldd ./manager` or `readelf -d ./manager | grep RPATH`
 
 Rationale for Wrapper (Why Not Direct Wrap Only)
 -----------------------------------------------
