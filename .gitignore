@@ -14,3 +14,4 @@ out/
 .vscode/.code-workspace
 .vscode/c_cpp_properties.json
 
+.github/prompts/plan-taskMessengerCodeReview.prompt.md
