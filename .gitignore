@@ -16,3 +16,5 @@ out/
 .vscode/c_cpp_properties.json
 
 .github/prompts/plan-taskMessengerCodeReview.prompt.md
+dist/
+dist-*/

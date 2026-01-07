@@ -1,4 +1,4 @@
-project('task-messenger', 'cpp', default_options : ['cpp_std=c++20'])
+project('task-messenger', 'cpp', version: '1.0.0', default_options : ['cpp_std=c++20'])
 
 # =============================================================================
 # Compiler Arguments Configuration
@@ -32,6 +32,9 @@ endif
 # Apply all C++ arguments project-wide
 add_project_arguments(cpp_args, language: 'cpp')
 
+# Add version definition for C++ code
+add_project_arguments('-DPROJECT_VERSION="' + meson.project_version() + '"', language: 'cpp')
+
 # =============================================================================
 # Include Directories
 # =============================================================================
@@ -63,7 +66,9 @@ endif
 libzt_dep = dependency('libzt-wrapper', fallback: ['libzt-wrapper', 'libzt_dep'])
 
 # Local shared utilities (logger, protocol definitions, etc.)
-shared_dep = dependency('shared', fallback: ['shared', 'shared_dep'])
+# Pass the project version to the shared subproject via default_project_options
+shared_sp = subproject('shared', default_options: ['project_version=' + meson.project_version()])
+shared_dep = shared_sp.get_variable('shared_dep')
 
 # =============================================================================
 # Build Targets
@@ -71,6 +76,22 @@ shared_dep = dependency('shared', fallback: ['shared', 'shared_dep'])
 
 subdir('manager')
 subdir('worker')
+
+# =============================================================================
+# Installation
+# =============================================================================
+
+# Install documentation
+doc_dir = get_option('datadir') / 'doc' / 'task-messenger'
+install_data('LICENSE', 'README.md', install_dir: doc_dir)
+install_data('manager/README.md', install_dir: doc_dir, rename: 'manager-README.md')
+install_data('worker/README.md', install_dir: doc_dir, rename: 'worker-README.md')
+install_data('message/README.md', install_dir: doc_dir, rename: 'message-README.md')
+install_data('transport/README.md', install_dir: doc_dir, rename: 'transport-README.md')
+
+# Install configuration templates
+config_dir = get_option('sysconfdir') / 'task-messenger'
+install_data('config-manager.json', 'config-worker.json', install_dir: config_dir)
 
 # =============================================================================
 # Documentation Generation (Optional)

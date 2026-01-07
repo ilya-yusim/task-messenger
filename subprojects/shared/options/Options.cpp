@@ -32,7 +32,12 @@ void Options::add_provider(Provider p) {
 
 Options::ParseResult Options::load_and_parse(int argc, char** argv, std::string& err) {
     CLI::App app{"task-messenger"};
-    app.set_version_flag("-V,--version", std::string{"task-messenger 0.1"});
+    
+    // Use version from compile-time definition
+    #ifndef PROJECT_VERSION
+    #define PROJECT_VERSION "unknown"
+    #endif
+    app.set_version_flag("-V,--version", std::string{"task-messenger "} + PROJECT_VERSION);
 
     std::string config_file;
     app.add_option("-c,--config", config_file, "JSON config file to load")->group("General");

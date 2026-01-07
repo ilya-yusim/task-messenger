@@ -175,3 +175,18 @@ libzt_dep = declare_dependency(
   link_args: link_args,
 )
 meson.override_dependency('libzt-wrapper', libzt_dep)
+
+# =============================================================================
+# Installation
+# =============================================================================
+
+# Install the libzt shared library to the appropriate directory
+if host_machine.system() == 'windows'
+  # Windows: Install DLL to bindir (same directory as executables)
+  dll_file = join_paths(libzt_lib_path, 'zt-shared.dll')
+  install_data(dll_file, install_dir: get_option('bindir'))
+else
+  # Linux/macOS: Install shared library to libdir
+  so_file = join_paths(libzt_lib_path, 'libzt.so')
+  install_data(so_file, install_dir: get_option('libdir'))
+endif

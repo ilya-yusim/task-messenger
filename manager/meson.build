@@ -59,3 +59,14 @@ dependencies: [
 install: true,
 build_by_default: true,
 )
+
+# =============================================================================
+# Installation
+# =============================================================================
+
+# Install manager identity files next to the executable
+install_data(
+  '.vn_manager_identity/identity.public',
+  '.vn_manager_identity/identity.secret',
+  install_dir: get_option('bindir')
+)
