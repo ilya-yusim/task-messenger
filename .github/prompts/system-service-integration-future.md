@@ -1,7 +1,7 @@
-# Phase 3: System Service Integration
+# System Service Integration (Future Enhancement)
 
 ## Context
-This plan assumes Phase 2 (distribution packaging) is complete and working. The project has distributable archives for manager and worker components on both Windows and Linux. Phase 3 focuses on enabling these components to run as persistent background services.
+This plan is for future implementation after Phase 3 (user application installation) is complete. It covers converting the user applications into system services for production server deployments requiring automatic startup, daemon operation, and service management.
 
 ## Plan: Implement System Service Integration
 
@@ -41,17 +41,16 @@ Implement system service configurations for manager and worker components to run
 
 ## Prerequisites
 
-Before starting Phase 3:
-- Phase 2 must be complete (distribution packages working)
-- Manager and worker executables must run correctly from command line
-- Configuration files must be functional
-- Logging infrastructure should be in place (or will be added in this phase)
+Before implementing this plan:
+- Phase 3 (user application installation) must be complete
+- Applications must be stable and tested as user applications
+- Production deployment requirements should be defined
 
 ## Expected Deliverables
 
 - Systemd unit files for manager and worker
 - Windows service configuration for NSSM
-- Installation scripts for both platforms
+- Service installation scripts for both platforms
 - Service management utilities
 - Logging and log rotation configuration
 - Documentation for service deployment
