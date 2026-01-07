@@ -147,8 +147,14 @@ if host_machine.system() == 'windows'
   zt_lib = cc.find_library('zt-shared', dirs: [libzt_lib_path], required: true, static: false)
 else
   # Linux/macOS: dist/{linux|macos}-{arch}-host-{debug|release}
-  # For now, assume standard naming - may need adjustment based on actual libzt output
-  libzt_dist_dir = host_machine.system() + '-' + host_machine.cpu_family() + '-host-' + libzt_buildtype
+  # libzt uses 'x64' for x86_64, 'arm64' for aarch64
+  arch_name = host_machine.cpu_family()
+  if arch_name == 'x86_64'
+    arch_name = 'x64'
+  elif arch_name == 'aarch64'
+    arch_name = 'arm64'
+  endif
+  libzt_dist_dir = host_machine.system() + '-' + arch_name + '-host-' + libzt_buildtype
   libzt_lib_path = join_paths(libzt_dir, 'dist', libzt_dist_dir, 'lib')
   # On Linux, use shared library (libzt.so - Meson searches as 'zt')
   zt_lib = cc.find_library('zt', dirs: [libzt_lib_path], required: true, static: false)
@@ -186,7 +192,7 @@ if host_machine.system() == 'windows'
   dll_file = join_paths(libzt_lib_path, 'zt-shared.dll')
   install_data(dll_file, install_dir: get_option('bindir'))
 else
-  # Linux/macOS: Install shared library to libdir
+  # Linux/macOS: Install shared library to lib directory (relative to prefix)
   so_file = join_paths(libzt_lib_path, 'libzt.so')
-  install_data(so_file, install_dir: get_option('libdir'))
+  install_data(so_file, install_dir: join_paths(get_option('prefix'), 'lib'))
 endif
