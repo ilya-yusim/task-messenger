@@ -100,36 +100,69 @@ function Create-Archive {
     if (Test-Path $TempArchiveDir) {
         Remove-Item -Recurse -Force $TempArchiveDir
     }
-    New-Item -ItemType Directory -Force -Path $TempArchiveDir | Out-Null
     
-    # Copy files to temporary archive directory based on component
+    # Create TaskMessenger directory structure
+    $TaskMessengerDir = Join-Path $TempArchiveDir "TaskMessenger"
+    New-Item -ItemType Directory -Force -Path $TaskMessengerDir | Out-Null
+    
+    # Create bin directory
+    $BinDir = Join-Path $TaskMessengerDir "bin"
+    New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
+    
+    # Copy files based on component
     if ($Comp -eq "manager") {
-        # Manager: executable, identity files, DLL, configs, docs
-        Copy-Item (Join-Path $CompStagingPrefix "bin\manager.exe") $TempArchiveDir
-        Copy-Item (Join-Path $CompStagingPrefix "bin\identity.public") $TempArchiveDir
-        Copy-Item (Join-Path $CompStagingPrefix "bin\identity.secret") $TempArchiveDir
-        Copy-Item (Join-Path $CompStagingPrefix "bin\zt-shared.dll") $TempArchiveDir
-        
-        $ConfigDir = Join-Path $TempArchiveDir "config"
-        New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
-        Copy-Item (Join-Path $CompStagingPrefix "etc\task-messenger\config-manager.json") $ConfigDir
-        
-        $DocDir = Join-Path $TempArchiveDir "docs"
-        New-Item -ItemType Directory -Force -Path $DocDir | Out-Null
-        Copy-Item (Join-Path $CompStagingPrefix "share\doc\task-messenger\*") $DocDir -Recurse
+        # Manager: executable, identity files, DLL
+        Copy-Item (Join-Path $CompStagingPrefix "bin\manager.exe") $BinDir
+        Copy-Item (Join-Path $CompStagingPrefix "bin\identity.public") $BinDir
+        Copy-Item (Join-Path $CompStagingPrefix "bin\identity.secret") $BinDir
+        Copy-Item (Join-Path $CompStagingPrefix "bin\zt-shared.dll") $BinDir
     } else {
-        # Worker: executable, DLL, configs, docs
-        Copy-Item (Join-Path $CompStagingPrefix "bin\worker.exe") $TempArchiveDir
-        Copy-Item (Join-Path $CompStagingPrefix "bin\zt-shared.dll") $TempArchiveDir
-        
-        $ConfigDir = Join-Path $TempArchiveDir "config"
-        New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
-        Copy-Item (Join-Path $CompStagingPrefix "etc\task-messenger\config-worker.json") $ConfigDir
-        
-        $DocDir = Join-Path $TempArchiveDir "docs"
-        New-Item -ItemType Directory -Force -Path $DocDir | Out-Null
-        Copy-Item (Join-Path $CompStagingPrefix "share\doc\task-messenger\*") $DocDir -Recurse
+        # Worker: executable, DLL
+        Copy-Item (Join-Path $CompStagingPrefix "bin\worker.exe") $BinDir
+        Copy-Item (Join-Path $CompStagingPrefix "bin\zt-shared.dll") $BinDir
     }
+    
+    # Copy config files
+    $EtcDir = Join-Path $TaskMessengerDir "etc"
+    New-Item -ItemType Directory -Force -Path $EtcDir | Out-Null
+    Copy-Item (Join-Path $CompStagingPrefix "etc\task-messenger\config-$Comp.json") $EtcDir
+    
+    # Copy documentation
+    $DocDir = Join-Path $TaskMessengerDir "share\doc"
+    New-Item -ItemType Directory -Force -Path $DocDir | Out-Null
+    Copy-Item (Join-Path $CompStagingPrefix "share\doc\task-messenger") $DocDir -Recurse
+    
+    # Copy installation scripts
+    $ScriptsDir = Join-Path $TaskMessengerDir "scripts"
+    New-Item -ItemType Directory -Force -Path $ScriptsDir | Out-Null
+    Copy-Item (Join-Path $ProjectRoot "extras\scripts\install_windows.ps1") $ScriptsDir
+    Copy-Item (Join-Path $ProjectRoot "extras\scripts\uninstall_windows.ps1") $ScriptsDir
+    
+    # Copy launchers
+    $LaunchersDir = Join-Path $TaskMessengerDir "launchers"
+    New-Item -ItemType Directory -Force -Path $LaunchersDir | Out-Null
+    if ($Comp -eq "manager") {
+        Copy-Item (Join-Path $ProjectRoot "extras\launchers\start-manager.bat") $LaunchersDir
+    } else {
+        Copy-Item (Join-Path $ProjectRoot "extras\launchers\start-worker.bat") $LaunchersDir
+    }
+    
+    # Create installation instructions
+    $InstallText = @"
+TaskMessenger Installation Instructions
+
+To install $Comp, run PowerShell as a regular user (NOT as Administrator):
+    cd TaskMessenger
+    .\scripts\install_windows.ps1 $Comp
+
+For custom installation directory:
+    .\scripts\install_windows.ps1 $Comp -InstallDir "C:\Custom\Path"
+
+For help:
+    .\scripts\install_windows.ps1 -Help
+
+"@
+    Set-Content -Path (Join-Path $TaskMessengerDir "INSTALL.txt") -Value $InstallText
     
     # Create ZIP archive
     Compress-Archive -Path "$TempArchiveDir\*" -DestinationPath $ArchivePath -Force

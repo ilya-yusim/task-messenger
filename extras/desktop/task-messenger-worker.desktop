@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=TaskMessenger Worker
+Comment=TaskMessenger task processing worker
+Exec=/path/to/worker
+Icon=applications-system
+Terminal=true
+Categories=Network;System;
+Keywords=task;worker;distributed;zerotier;

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=TaskMessenger Manager
+Comment=TaskMessenger task distribution manager
+Exec=/path/to/manager
+Icon=applications-system
+Terminal=false
+Categories=Network;System;
+Keywords=task;manager;distributed;zerotier;

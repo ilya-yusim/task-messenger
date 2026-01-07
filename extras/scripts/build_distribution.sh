@@ -78,29 +78,91 @@ create_archive() {
     # Create output directory
     mkdir -p "$OUTPUT_DIR"
     
-    # Navigate to staging
-    cd "$STAGING_DIR/$comp$PREFIX"
+    # Create temporary archive directory
+    local temp_archive_dir="$STAGING_DIR/archive-$comp"
+    rm -rf "$temp_archive_dir"
+    mkdir -p "$temp_archive_dir/opt/task-messenger"
     
-    # Create tar.gz with only the files for this component
+    # Navigate to staging
+    local staging_prefix="$STAGING_DIR/$comp$PREFIX"
+    
+    # Copy files for this component
     if [[ "$comp" == "manager" ]]; then
         # Manager: executable, identity files, libzt, configs, docs
-        tar -czf "$archive_path" \
-            bin/manager \
-            bin/identity.public \
-            bin/identity.secret \
-            lib/libzt.so \
-            etc/task-messenger/config-manager.json \
-            share/doc/task-messenger/
+        mkdir -p "$temp_archive_dir/opt/task-messenger/bin"
+        cp "$staging_prefix/bin/manager" "$temp_archive_dir/opt/task-messenger/bin/"
+        cp "$staging_prefix/bin/identity.public" "$temp_archive_dir/opt/task-messenger/bin/"
+        cp "$staging_prefix/bin/identity.secret" "$temp_archive_dir/opt/task-messenger/bin/"
+        
+        mkdir -p "$temp_archive_dir/opt/task-messenger/lib"
+        cp "$staging_prefix/lib/libzt.so" "$temp_archive_dir/opt/task-messenger/lib/"
+        
+        mkdir -p "$temp_archive_dir/opt/task-messenger/etc"
+        cp "$staging_prefix/etc/task-messenger/config-manager.json" "$temp_archive_dir/opt/task-messenger/etc/"
+        
+        mkdir -p "$temp_archive_dir/opt/task-messenger/share/doc"
+        cp -r "$staging_prefix/share/doc/task-messenger" "$temp_archive_dir/opt/task-messenger/share/doc/"
     else
         # Worker: executable, libzt, configs, docs
-        tar -czf "$archive_path" \
-            bin/worker \
-            lib/libzt.so \
-            etc/task-messenger/config-worker.json \
-            share/doc/task-messenger/
+        mkdir -p "$temp_archive_dir/opt/task-messenger/bin"
+        cp "$staging_prefix/bin/worker" "$temp_archive_dir/opt/task-messenger/bin/"
+        
+        mkdir -p "$temp_archive_dir/opt/task-messenger/lib"
+        cp "$staging_prefix/lib/libzt.so" "$temp_archive_dir/opt/task-messenger/lib/"
+        
+        mkdir -p "$temp_archive_dir/opt/task-messenger/etc"
+        cp "$staging_prefix/etc/task-messenger/config-worker.json" "$temp_archive_dir/opt/task-messenger/etc/"
+        
+        mkdir -p "$temp_archive_dir/opt/task-messenger/share/doc"
+        cp -r "$staging_prefix/share/doc/task-messenger" "$temp_archive_dir/opt/task-messenger/share/doc/"
     fi
     
+    # Copy installation scripts and related files
+    mkdir -p "$temp_archive_dir/opt/task-messenger/scripts"
+    cp "$PROJECT_ROOT/extras/scripts/install_linux.sh" "$temp_archive_dir/opt/task-messenger/scripts/"
+    cp "$PROJECT_ROOT/extras/scripts/uninstall_linux.sh" "$temp_archive_dir/opt/task-messenger/scripts/"
+    chmod +x "$temp_archive_dir/opt/task-messenger/scripts/"*.sh
+    
+    # Copy launchers
+    mkdir -p "$temp_archive_dir/opt/task-messenger/launchers"
+    if [[ "$comp" == "manager" ]]; then
+        cp "$PROJECT_ROOT/extras/launchers/start-manager.sh" "$temp_archive_dir/opt/task-messenger/launchers/"
+    else
+        cp "$PROJECT_ROOT/extras/launchers/start-worker.sh" "$temp_archive_dir/opt/task-messenger/launchers/"
+    fi
+    chmod +x "$temp_archive_dir/opt/task-messenger/launchers/"*.sh
+    
+    # Copy desktop files
+    mkdir -p "$temp_archive_dir/opt/task-messenger/desktop"
+    if [[ "$comp" == "manager" ]]; then
+        cp "$PROJECT_ROOT/extras/desktop/task-messenger-manager.desktop" "$temp_archive_dir/opt/task-messenger/desktop/"
+    else
+        cp "$PROJECT_ROOT/extras/desktop/task-messenger-worker.desktop" "$temp_archive_dir/opt/task-messenger/desktop/"
+    fi
+    
+    # Create installation instructions
+    cat > "$temp_archive_dir/opt/task-messenger/INSTALL.txt" << EOF
+TaskMessenger Installation Instructions
+
+To install $comp, run:
+    cd opt/task-messenger
+    ./scripts/install_linux.sh $comp
+
+For custom installation directory:
+    ./scripts/install_linux.sh $comp --install-dir /custom/path
+
+For help:
+    ./scripts/install_linux.sh --help
+
+EOF
+    
+    # Create tar.gz from temporary directory
+    cd "$temp_archive_dir"
+    tar -czf "$archive_path" opt/
     cd "$PROJECT_ROOT"
+    
+    # Clean up temporary directory
+    rm -rf "$temp_archive_dir"
     
     # Generate SHA256 checksum
     echo "Generating checksum..."
