@@ -136,13 +136,21 @@ ws2_32 = cc.find_library('ws2_32', required: host_machine.system() == 'windows')
 iphlpapi = cc.find_library('iphlpapi', required: host_machine.system() == 'windows')
 shlwapi = cc.find_library('shlwapi', required: host_machine.system() == 'windows')
 
-# Step 4: Find the built libzt shared library
-libzt_lib_path = join_paths(libzt_dir, 'dist', 'native', 'lib')
-# On Windows, look for libzt-shared.lib (import library for libzt.dll)
-# On Linux, look for libzt.so (just 'zt' after removing 'lib' prefix)
+# Step 4: Find the built libzt library
+# Compute the actual distribution path based on platform and build type
+# instead of relying on a junction/symlink
 if host_machine.system() == 'windows'
-  zt_lib = cc.find_library('libzt-shared', dirs: [libzt_lib_path], required: true, static: false)
+  # Windows: dist/win-x64-host-{debug|release}
+  libzt_dist_dir = 'win-x64-host-' + libzt_buildtype
+  libzt_lib_path = join_paths(libzt_dir, 'dist', libzt_dist_dir, 'lib')
+  # On Windows, use shared library (import library: zt-shared.lib for zt-shared.dll)
+  zt_lib = cc.find_library('zt-shared', dirs: [libzt_lib_path], required: true, static: false)
 else
+  # Linux/macOS: dist/{linux|macos}-{arch}-host-{debug|release}
+  # For now, assume standard naming - may need adjustment based on actual libzt output
+  libzt_dist_dir = host_machine.system() + '-' + host_machine.cpu_family() + '-host-' + libzt_buildtype
+  libzt_lib_path = join_paths(libzt_dir, 'dist', libzt_dist_dir, 'lib')
+  # On Linux, use shared library (libzt.so - Meson searches as 'zt')
   zt_lib = cc.find_library('zt', dirs: [libzt_lib_path], required: true, static: false)
 endif
 
