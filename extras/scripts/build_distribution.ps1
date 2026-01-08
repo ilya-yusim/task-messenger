@@ -111,10 +111,8 @@ function Create-Archive {
     
     # Copy files based on component
     if ($Comp -eq "manager") {
-        # Manager: executable, identity files, DLL
+        # Manager: executable, DLL
         Copy-Item (Join-Path $CompStagingPrefix "bin\manager.exe") $BinDir
-        Copy-Item (Join-Path $CompStagingPrefix "bin\identity.public") $BinDir
-        Copy-Item (Join-Path $CompStagingPrefix "bin\identity.secret") $BinDir
         Copy-Item (Join-Path $CompStagingPrefix "bin\zt-shared.dll") $BinDir
     } else {
         # Worker: executable, DLL
@@ -126,6 +124,11 @@ function Create-Archive {
     $EtcDir = Join-Path $TaskMessengerDir "etc"
     New-Item -ItemType Directory -Force -Path $EtcDir | Out-Null
     Copy-Item (Join-Path $CompStagingPrefix "etc\task-messenger\config-$Comp.json") $EtcDir
+    
+    # Copy manager identity directory (only for manager component)
+    if ($Comp -eq "manager") {
+        Copy-Item (Join-Path $CompStagingPrefix "etc\task-messenger\.vn_manager_identity") $EtcDir -Recurse
+    }
     
     # Copy documentation
     $DocDir = Join-Path $TaskMessengerDir "share\doc"

@@ -199,26 +199,33 @@ function Install-Component {
         Copy-Item $dllPath $componentDir -Force
     }
     
-    # Copy identity files for manager
+    # Copy config file from etc/
+    $etcDir = Join-Path $extractedDir "etc"
+    $configFile = Join-Path $etcDir "config-$Component.json"
+    if (Test-Path $configFile) {
+        Copy-Item $configFile $componentDir -Force
+    }
+    
+    # Copy identity directory for manager
     if ($Component -eq "manager") {
-        $identityPublic = Join-Path $libDir "identity.public"
-        $identitySecret = Join-Path $libDir "identity.secret"
+        $identityDir = Join-Path $etcDir ".vn_manager_identity"
         
-        if ((Test-Path $identityPublic) -and (Test-Path $identitySecret)) {
-            Copy-Item $identityPublic $componentDir -Force
-            Copy-Item $identitySecret $componentDir -Force
+        if (Test-Path $identityDir) {
+            Copy-Item $identityDir $componentDir -Recurse -Force
             
             # Set restrictive permissions on secret file
-            $secretPath = Join-Path $componentDir "identity.secret"
-            $acl = Get-Acl $secretPath
-            $acl.SetAccessRuleProtection($true, $false)
-            $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-                [System.Security.Principal.WindowsIdentity]::GetCurrent().Name,
-                "FullControl",
-                "Allow"
-            )
-            $acl.SetAccessRule($rule)
-            Set-Acl $secretPath $acl
+            $secretPath = Join-Path $componentDir ".vn_manager_identity\identity.secret"
+            if (Test-Path $secretPath) {
+                $acl = Get-Acl $secretPath
+                $acl.SetAccessRuleProtection($true, $false)
+                $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                    [System.Security.Principal.WindowsIdentity]::GetCurrent().Name,
+                    "FullControl",
+                    "Allow"
+                )
+                $acl.SetAccessRule($rule)
+                Set-Acl $secretPath $acl
+            }
         }
     }
     
@@ -313,9 +320,13 @@ function New-StartMenuShortcut {
     $exePath = Join-Path $componentDir "$Component.exe"
     $shortcutPath = Join-Path $startMenuDir "TaskMessenger $Component.lnk"
     
+    # Get config file path from installation directory
+    $configFile = Join-Path $componentDir "config-$Component.json"
+    
     $WScriptShell = New-Object -ComObject WScript.Shell
     $shortcut = $WScriptShell.CreateShortcut($shortcutPath)
     $shortcut.TargetPath = $exePath
+    $shortcut.Arguments = "-c `"$configFile`""
     $shortcut.WorkingDirectory = $componentDir
     
     # Set description
@@ -355,7 +366,7 @@ function Main {
         $Component = $extractedInfo.Component
         
         # Try to get version from INSTALL.txt or default to 1.0.0
-        $installTxt = Join-Path $extractedRoot "INSTALL.txt"
+        $installTxt = Join-Path $extractedInfo.Root "INSTALL.txt"
         if (Test-Path $installTxt) {
             $content = Get-Content $installTxt -Raw
             if ($content -match 'v(\d+\.\d+\.\d+)') {
@@ -365,7 +376,7 @@ function Main {
         
         # If version still unknown, check parent directory name
         if ($version -eq "unknown") {
-            $parentName = Split-Path $extractedRoot -Leaf
+            $parentName = Split-Path $extractedInfo.Root -Leaf
             if ($parentName -match 'v(\d+\.\d+\.\d+)') {
                 $version = $matches[1]
             } elseif ($parentName -match '(\d+\.\d+\.\d+)') {

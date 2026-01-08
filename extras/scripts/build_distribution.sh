@@ -88,17 +88,16 @@ create_archive() {
     
     # Copy files for this component
     if [[ "$comp" == "manager" ]]; then
-        # Manager: executable, identity files, libzt, configs, docs
+        # Manager: executable, libzt, configs, identity directory, docs
         mkdir -p "$temp_archive_dir/opt/task-messenger/bin"
         cp "$staging_prefix/bin/manager" "$temp_archive_dir/opt/task-messenger/bin/"
-        cp "$staging_prefix/bin/identity.public" "$temp_archive_dir/opt/task-messenger/bin/"
-        cp "$staging_prefix/bin/identity.secret" "$temp_archive_dir/opt/task-messenger/bin/"
         
         mkdir -p "$temp_archive_dir/opt/task-messenger/lib"
         cp "$staging_prefix/lib/libzt.so" "$temp_archive_dir/opt/task-messenger/lib/"
         
         mkdir -p "$temp_archive_dir/opt/task-messenger/etc"
         cp "$staging_prefix/etc/task-messenger/config-manager.json" "$temp_archive_dir/opt/task-messenger/etc/"
+        cp -r "$staging_prefix/etc/task-messenger/.vn_manager_identity" "$temp_archive_dir/opt/task-messenger/etc/"
         
         mkdir -p "$temp_archive_dir/opt/task-messenger/share/doc"
         cp -r "$staging_prefix/share/doc/task-messenger" "$temp_archive_dir/opt/task-messenger/share/doc/"

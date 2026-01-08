@@ -290,8 +290,250 @@ Each distribution archive now includes a **self-aware** installation script:
 ### Build Process
 No changes needed to `build_distribution.ps1` - it already includes the installation script in each archive. Just ensure the updated script is included in future builds.
 
+## Additional Improvements (After Initial Implementation)
+
+### 6. Config File Management Overhaul
+
+**Problem:** Script generated empty config templates in AppData, but archives contain pre-configured files.
+
+**Solution:**
+- Copy config file from archive's `etc/` directory to installation directory
+- Use installed config file instead of AppData template
+- Start Menu shortcut points to installed config with `-c` argument
+
+**Implementation:**
+```powershell
+# Copy config file from archive
+$etcDir = Join-Path $extractedDir "etc"
+$configFile = Join-Path $etcDir "config-$Component.json"
+if (Test-Path $configFile) {
+    Copy-Item $configFile $componentDir -Force
+}
+
+# Shortcut uses installed config
+$configFile = Join-Path $componentDir "config-$Component.json"
+$shortcut.Arguments = "-c `"$configFile`""
+```
+
+**Benefits:**
+- ✅ Users get actual config from distribution, not empty template
+- ✅ Config versioned with application (not separate in AppData)
+- ✅ Executable launched with correct config path automatically
+
+**Linux Equivalent:**
+```bash
+# Copy config from archive
+local etc_dir="$extracted_dir/etc"
+local config_file="$etc_dir/config-$component.json"
+if [ -f "$config_file" ]; then
+    cp "$config_file" "$component_dir/"
+fi
+
+# Desktop file uses installed config
+Exec=$component_dir/$component -c "$component_dir/config-$component.json"
+```
+
+### 7. Identity Directory Relocation
+
+**Problem:** Identity files were in `bin/` directory but should be in `etc/` with config.
+
+**Change:** Build and installation scripts updated to:
+- Archive places `.vn_manager_identity/` in `etc/` directory
+- Installation copies from `etc/.vn_manager_identity/` to component directory
+- Only `identity.public` and `identity.secret` included (not peers, roots, etc.)
+
+**Implementation:**
+```powershell
+# Copy identity directory for manager
+if ($Component -eq "manager") {
+    $identityDir = Join-Path $etcDir ".vn_manager_identity"
+    
+    if (Test-Path $identityDir) {
+        Copy-Item $identityDir $componentDir -Recurse -Force
+        
+        # Set restrictive permissions on secret file
+        $secretPath = Join-Path $componentDir ".vn_manager_identity\identity.secret"
+        if (Test-Path $secretPath) {
+            $acl = Get-Acl $secretPath
+            $acl.SetAccessRuleProtection($true, $false)
+            $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                [System.Security.Principal.WindowsIdentity]::GetCurrent().Name,
+                "FullControl",
+                "Allow"
+            )
+            $acl.SetAccessRule($rule)
+            Set-Acl $secretPath $acl
+        }
+    }
+}
+```
+
+**Archive Structure:**
+```
+TaskMessenger/
+├── bin/
+│   ├── manager.exe
+│   └── zt-shared.dll
+├── etc/
+│   ├── config-manager.json
+│   └── .vn_manager_identity/
+│       ├── identity.public
+│       └── identity.secret
+└── share/doc/...
+```
+
+**Installed Structure:**
+```
+%LOCALAPPDATA%\TaskMessenger\manager\
+├── manager.exe
+├── zt-shared.dll
+├── config-manager.json
+├── .vn_manager_identity/
+│   ├── identity.public
+│   └── identity.secret (restricted permissions)
+├── doc/
+└── VERSION
+```
+
+**Linux Differences:**
+- Permissions: `chmod 600` on identity.secret
+- Location: `~/.local/TaskMessenger/manager/.vn_manager_identity/`
+- Library: `libzt-shared.so` instead of DLL
+
+### 8. Start Menu Shortcut with Arguments
+
+**Enhancement:** Shortcuts now include config file argument.
+
+**Implementation:**
+```powershell
+$shortcut.Arguments = "-c `"$configFile`""
+```
+
+**Result:** Double-clicking shortcut launches as:
+```
+manager.exe -c "C:\Users\username\AppData\Local\TaskMessenger\manager\config-manager.json"
+```
+
+**Linux Desktop File Equivalent:**
+```desktop
+[Desktop Entry]
+Name=TaskMessenger Manager
+Exec=/home/username/.local/TaskMessenger/manager/manager -c "/home/username/.local/TaskMessenger/manager/config-manager.json"
+Terminal=false
+Type=Application
+```
+
+### 9. Streamlined File Copying Logic
+
+**Change:** Removed obsolete identity file copying from `bin/` directory.
+
+**Before:**
+```powershell
+$identityPublic = Join-Path $libDir "identity.public"
+$identitySecret = Join-Path $libDir "identity.secret"
+# Copy from bin/
+```
+
+**After:**
+```powershell
+$identityDir = Join-Path $etcDir ".vn_manager_identity"
+# Copy entire directory from etc/
+```
+
+**Impact:** Cleaner code, matches actual archive structure.
+
+## Linux Script Implementation Checklist
+
+### Must Implement (Parity with Windows)
+
+- [ ] Remove `-c|--component` parameter from argument parsing
+- [ ] Add `detect_extracted_files()` function checking for `libzt-shared.so`
+- [ ] Update main flow to try detection first, fall back to archive
+- [ ] Update help text to remove component parameter
+- [ ] Enhance error messages with clear guidance
+- [ ] Copy config file from `etc/config-{component}.json` to installation directory
+- [ ] Copy `.vn_manager_identity/` from `etc/` (manager only)
+- [ ] Desktop file includes `-c` argument pointing to installed config
+- [ ] Set `chmod 600` on `.vn_manager_identity/identity.secret`
+- [ ] Update archive structure: move identity directory to `etc/`
+
+### Platform-Specific Implementations
+
+**File Paths:**
+```bash
+# Linux paths
+DEFAULT_INSTALL_DIR="$HOME/.local/TaskMessenger"
+CONFIG_DIR="$HOME/.config/task-messenger"
+DESKTOP_FILE_DIR="$HOME/.local/share/applications"
+
+# Check for extracted files
+MARKER_FILE="bin/libzt-shared.so"
+```
+
+**Detection Function:**
+```bash
+detect_extracted_files() {
+    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    local extracted_root="$(dirname "$script_dir")"
+    
+    if [ -f "$extracted_root/bin/libzt-shared.so" ]; then
+        if [ -f "$extracted_root/bin/manager" ]; then
+            echo "manager:$extracted_root"
+            return 0
+        elif [ -f "$extracted_root/bin/worker" ]; then
+            echo "worker:$extracted_root"
+            return 0
+        fi
+    fi
+    
+    return 1
+}
+```
+
+**Config and Identity Installation:**
+```bash
+# Copy config from etc/
+cp "$extracted_dir/etc/config-$component.json" "$component_dir/"
+
+# Copy identity directory (manager only)
+if [ "$component" = "manager" ]; then
+    if [ -d "$extracted_dir/etc/.vn_manager_identity" ]; then
+        cp -r "$extracted_dir/etc/.vn_manager_identity" "$component_dir/"
+        
+        # Restrict permissions on secret
+        chmod 600 "$component_dir/.vn_manager_identity/identity.secret"
+    fi
+fi
+```
+
+**Desktop File with Config Argument:**
+```bash
+cat > "$desktop_file" << EOF
+[Desktop Entry]
+Name=TaskMessenger $component
+Exec=$component_dir/$component -c "$component_dir/config-$component.json"
+Icon=$component_dir/icon.png
+Terminal=false
+Type=Application
+Categories=Network;
+EOF
+```
+
+### Build Script Updates (Already Done)
+
+- [x] `build_distribution.ps1`: Copy `.vn_manager_identity/` from `etc/` to archive `etc/`
+- [x] `build_distribution.sh`: Copy `.vn_manager_identity/` from `etc/` to archive `etc/`
+- [x] Both scripts place identity directory in `etc/` not `bin/`
+
+### Meson Build Updates (Already Done)
+
+- [x] Install `.vn_manager_identity/` to `etc/task-messenger/` (only identity.public and identity.secret)
+- [x] Install config files to `etc/task-messenger/`
+
 ## Summary
 
 The installation script evolved from requiring explicit component specification to **automatic detection**, making the user experience simpler and more intuitive. Users now extract the archive and run the script with zero configuration, while the script intelligently determines what component it's installing and where to find the files.
 
-This same pattern should be applied to the Linux installation script to maintain consistency across platforms.
+Additional improvements include proper config file management (using distributed configs instead of empty templates), identity directory relocation to `etc/` for consistency, and Start Menu shortcuts that automatically pass the correct config file path.
+
+**Critical for Linux:** All these improvements must be applied to `install_linux.sh` to maintain cross-platform consistency. The Linux script currently still requires manual component specification and doesn't implement the smart detection or proper config/identity file handling.
