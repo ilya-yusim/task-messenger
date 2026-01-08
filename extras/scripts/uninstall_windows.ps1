@@ -2,7 +2,7 @@
 # This script removes TaskMessenger (manager or worker) for the current user
 
 param(
-    [Parameter(Mandatory=$true, Position=0)]
+    [Parameter(Mandatory=$false, Position=0)]
     [ValidateSet("manager", "worker", "all")]
     [string]$Component,
     
@@ -39,17 +39,20 @@ function Show-Usage {
     @"
 TaskMessenger Windows Uninstallation Script
 
-Usage: .\uninstall_windows.ps1 <component> [OPTIONS]
+Usage: .\uninstall_windows.ps1 [component] [OPTIONS]
 
 Arguments:
-  component              Either 'manager', 'worker', or 'all'
+  component              Either 'manager', 'worker', or 'all' (auto-detected if not specified)
 
 Options:
   -InstallDir PATH       Custom installation directory (default: %LOCALAPPDATA%\TaskMessenger)
   -RemoveConfig          Also remove configuration files
   -Help                  Show this help message
 
+Note: If component is not specified, the script will detect installed components and prompt you to choose.
+
 Examples:
+  .\uninstall_windows.ps1
   .\uninstall_windows.ps1 manager
   .\uninstall_windows.ps1 worker -RemoveConfig
   .\uninstall_windows.ps1 all -InstallDir "C:\Custom\Path"
@@ -103,6 +106,75 @@ function Get-InstalledVersion {
     }
     
     return "unknown"
+}
+
+function Get-InstalledComponents {
+    param([string]$InstallDir)
+    
+    $components = @()
+    
+    $managerDir = Join-Path $InstallDir "manager"
+    $workerDir = Join-Path $InstallDir "worker"
+    
+    if (Test-Path $managerDir) {
+        $components += "manager"
+    }
+    
+    if (Test-Path $workerDir) {
+        $components += "worker"
+    }
+    
+    return $components
+}
+
+function Select-Component {
+    param([string[]]$InstalledComponents)
+    
+    if ($InstalledComponents.Count -eq 0) {
+        return $null
+    }
+    
+    if ($InstalledComponents.Count -eq 1) {
+        return $InstalledComponents[0]
+    }
+    
+    Write-Info "Multiple components are installed:"
+    Write-Host "  1. manager"
+    Write-Host "  2. worker"
+    Write-Host "  3. all (both)"
+    Write-Host ""
+    
+    do {
+        $choice = Read-Host "Select component to uninstall [1-3]"
+        
+        switch ($choice) {
+            "1" { return "manager" }
+            "2" { return "worker" }
+            "3" { return "all" }
+            default { Write-Warning "Invalid choice. Please enter 1, 2, or 3." }
+        }
+    } while ($true)
+}
+
+function Get-ComponentFromScriptLocation {
+    param([string]$InstallDir)
+    
+    # Get script location
+    $scriptPath = $PSCommandPath
+    $scriptDir = Split-Path -Parent $scriptPath
+    
+    # Check if script is in a component directory
+    $managerDir = Join-Path $InstallDir "manager"
+    $workerDir = Join-Path $InstallDir "worker"
+    
+    if ($scriptDir -eq $managerDir) {
+        return "manager"
+    } elseif ($scriptDir -eq $workerDir) {
+        return "worker"
+    }
+    
+    # Not in a component directory - return null to trigger prompt
+    return $null
 }
 
 function Remove-Component {
@@ -225,6 +297,30 @@ function Main {
     # Set default install directory if not provided
     if (-not $InstallDir) {
         $InstallDir = Get-DefaultInstallDir
+    }
+    
+    # Auto-detect installed components if component not specified
+    if (-not $Component) {
+        $Component = Get-ComponentFromScriptLocation -InstallDir $InstallDir
+        
+        if (-not $Component) {
+            # Script is not in a component directory - prompt user
+            $installedComponents = Get-InstalledComponents -InstallDir $InstallDir
+            
+            if ($installedComponents.Count -eq 0) {
+                Write-ErrorMsg "No TaskMessenger installation found at: $InstallDir"
+                exit 1
+            }
+            
+            $Component = Select-Component -InstalledComponents $installedComponents
+            
+            if (-not $Component) {
+                Write-ErrorMsg "Failed to select component"
+                exit 1
+            }
+        }
+        
+        Write-Info "Component to uninstall: $Component"
     }
     
     # Check installation

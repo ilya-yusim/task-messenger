@@ -37,17 +37,20 @@ print_error() {
 
 show_usage() {
     cat << EOF
-Usage: $0 <component> [OPTIONS]
+Usage: $0 [component] [OPTIONS]
 
 Arguments:
-  component              Either 'manager', 'worker', or 'all'
+  component              Either 'manager', 'worker', or 'all' (auto-detected if not specified)
 
 Options:
   --install-dir PATH     Custom installation directory (default: ~/.local/share/task-messenger)
   --remove-config        Also remove configuration files
   --help                 Show this help message
 
+Note: If component is not specified, the script will detect installed components. If more than one is found in the same installation, it will prompt you to choose.
+
 Examples:
+  $0
   $0 manager
   $0 worker --remove-config
   $0 all --install-dir /custom/path
@@ -82,6 +85,74 @@ get_installed_version() {
     else
         echo "unknown"
     fi
+}
+
+get_installed_components() {
+    local install_dir=$1
+    local components=()
+    
+    if [ -d "$install_dir/manager" ]; then
+        components+=("manager")
+    fi
+    
+    if [ -d "$install_dir/worker" ]; then
+        components+=("worker")
+    fi
+    
+    echo "${components[@]}"
+}
+
+select_component() {
+    local installed_components=("$@")
+    local count=${#installed_components[@]}
+    
+    if [ $count -eq 0 ]; then
+        return 1
+    fi
+    
+    if [ $count -eq 1 ]; then
+        echo "${installed_components[0]}"
+        return 0
+    fi
+    
+    print_info "Multiple components are installed:"
+    echo "  1. manager"
+    echo "  2. worker"
+    echo "  3. all (both)"
+    echo ""
+    
+    while true; do
+        read -p "Select component to uninstall [1-3]: " choice
+        
+        case $choice in
+            1) echo "manager"; return 0 ;;
+            2) echo "worker"; return 0 ;;
+            3) echo "all"; return 0 ;;
+            *) print_warning "Invalid choice. Please enter 1, 2, or 3." ;;
+        esac
+    done
+}
+
+get_component_from_script_location() {
+    local install_dir=$1
+    
+    # Get script location
+    local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    
+    # Check if script is in a component directory
+    local manager_dir="$install_dir/manager"
+    local worker_dir="$install_dir/worker"
+    
+    if [ "$script_dir" = "$manager_dir" ]; then
+        echo "manager"
+        return 0
+    elif [ "$script_dir" = "$worker_dir" ]; then
+        echo "worker"
+        return 0
+    fi
+    
+    # Not in a component directory - return nothing to trigger prompt
+    return 1
 }
 
 remove_component() {
@@ -175,23 +246,30 @@ remove_from_path_instruction() {
 # Main script
 main() {
     # Parse arguments
-    if [ $# -lt 1 ]; then
-        show_usage
-        exit 1
-    fi
-    
-    COMPONENT=$1
-    shift
-    
-    # Validate component
-    if [ "$COMPONENT" != "manager" ] && [ "$COMPONENT" != "worker" ] && [ "$COMPONENT" != "all" ]; then
-        print_error "Invalid component: $COMPONENT. Must be 'manager', 'worker', or 'all'"
-        show_usage
-        exit 1
-    fi
-    
+    COMPONENT=""
     INSTALL_DIR="$DEFAULT_INSTALL_DIR"
     REMOVE_CONFIG=false
+    
+    # Check if first argument is a component or option
+    if [ $# -gt 0 ]; then
+        case $1 in
+            --install-dir|--remove-config|--help)
+                # First arg is an option, no component specified
+                ;;
+            *)
+                # First arg is component
+                COMPONENT=$1
+                shift
+                
+                # Validate component if specified
+                if [ "$COMPONENT" != "manager" ] && [ "$COMPONENT" != "worker" ] && [ "$COMPONENT" != "all" ]; then
+                    print_error "Invalid component: $COMPONENT. Must be 'manager', 'worker', or 'all'"
+                    show_usage
+                    exit 1
+                fi
+                ;;
+        esac
+    fi
     
     # Parse options
     while [ $# -gt 0 ]; do
@@ -215,6 +293,30 @@ main() {
                 ;;
         esac
     done
+    
+    # Auto-detect installed components if component not specified
+    if [ -z "$COMPONENT" ]; then
+        COMPONENT=$(get_component_from_script_location "$INSTALL_DIR")
+        
+        if [ -z "$COMPONENT" ]; then
+            # Script is not in a component directory - prompt user
+            local installed_components=($(get_installed_components "$INSTALL_DIR"))
+            
+            if [ ${#installed_components[@]} -eq 0 ]; then
+                print_error "No TaskMessenger installation found at: $INSTALL_DIR"
+                exit 1
+            fi
+            
+            COMPONENT=$(select_component "${installed_components[@]}")
+            
+            if [ -z "$COMPONENT" ]; then
+                print_error "Failed to select component"
+                exit 1
+            fi
+        fi
+        
+        print_info "Component to uninstall: $COMPONENT"
+    fi
     
     # Check installation
     check_installation "$INSTALL_DIR" "$COMPONENT"
