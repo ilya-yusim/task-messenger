@@ -11,77 +11,77 @@
 		{
 			"label": "Meson Setup manager",
 			"type": "shell",
-			"command": "meson setup builddir-manager --wipe --buildtype=${input:mesonBuildType}",
+			"command": "meson setup builddir --wipe --buildtype=${input:mesonBuildType}",
 			"group": "build",
 			"problemMatcher": []
 		},
 		{
 			"label": "Meson Setup worker",
 			"type": "shell",
-			"command": "meson setup builddir-worker --wipe --buildtype=${input:mesonBuildType}",
+			"command": "meson setup builddir --wipe --buildtype=${input:mesonBuildType}",
 			"group": "build",
 			"problemMatcher": []
 		},
 		{
 			"label": "Meson Setup manager with Native File",
 			"type": "shell",
-			"command": "meson setup builddir-manager --wipe --buildtype=${input:mesonBuildType} --native-file %XDG_DATA_HOME%/meson/native/meson.ini",
+			"command": "meson setup builddir --wipe --buildtype=${input:mesonBuildType} --native-file %XDG_DATA_HOME%/meson/native/meson.ini",
 			"group": "build",
 			"problemMatcher": []
 		},
 		{
 			"label": "Meson Setup worker with Native File",
 			"type": "shell",
-			"command": "meson setup builddir-worker --wipe --buildtype=${input:mesonBuildType} --native-file %XDG_DATA_HOME%/meson/native/meson.ini",
+			"command": "meson setup builddir --wipe --buildtype=${input:mesonBuildType} --native-file %XDG_DATA_HOME%/meson/native/meson.ini",
 			"group": "build",
 			"problemMatcher": []
 		},
 		{
 			"label": "Meson Reconfigure Manager",
 			"type": "shell",
-			"command": "meson setup --reconfigure builddir-manager --native-file %XDG_DATA_HOME%/meson/native/meson.ini",
+			"command": "meson setup --reconfigure builddir --native-file %XDG_DATA_HOME%/meson/native/meson.ini",
 			"group": "build",
 			"problemMatcher": []
 		},
 		{
 			"label": "Meson Build Manager",
 			"type": "shell",
-			"command": "meson compile -C builddir-manager manager/manager",
+			"command": "meson compile -C builddir",
 			"group": "build",
 			"problemMatcher": []
 		},
 		{
 			"label": "Meson Reconfigure Worker",
 			"type": "shell",
-			"command": "meson setup --reconfigure builddir-worker --native-file %XDG_DATA_HOME%/meson/native/meson.ini",
+			"command": "meson setup --reconfigure builddir --native-file %XDG_DATA_HOME%/meson/native/meson.ini",
 			"group": "build",
 			"problemMatcher": []
 		},
 		{
 			"label": "Meson Build WorkerUI",
 			"type": "shell",
-			"command": "meson compile -C builddir-worker workerUI",
+			"command": "meson compile -C builddir workerUI",
 			"group": "build",
 			"problemMatcher": []
 		},
 		{
 			"label": "Meson Install Manager",
 			"type": "shell",
-			"command": "meson install -C builddir-manager",
+			"command": "meson install -C builddir",
 			"group": "build",
 			"problemMatcher": []
 		},
 		{
 			"label": "Meson Install Worker",
 			"type": "shell",
-			"command": "meson install -C builddir-worker",
+			"command": "meson install -C builddir",
 			"group": "build",
 			"problemMatcher": []
 		},
 		{
 			"label": "Run Manager (linux)",
 			"type": "shell",
-			"command": "builddir-manager/manager/manager -c config-manager.json",
+			"command": "builddir/manager/manager -c config-manager.json",
 			"group": {
 				"kind": "test",
 				"isDefault": false
@@ -122,7 +122,7 @@
 		{
 			"label": "Run Manager",
 			"type": "shell",
-			"command": "builddir-manager/manager/manager.exe -c config-manager.json",
+			"command": "builddir/manager/manager.exe -c config-manager.json",
 			"group": {
 				"kind": "test",
 				"isDefault": false
@@ -135,13 +135,13 @@
 		{
 			"label": "Meson Build Worker",
 			"type": "shell",
-			"command": "meson compile -C builddir-worker worker/worker",
+			"command": "meson compile -C builddir",
 			"group": "build"
 		},
 		{
 			"label": "Run Blocking Worker (Linux)",
 			"type": "shell",
-			"command": "builddir-worker/worker/worker -c config-worker.json --mode blocking --ui",
+			"command": "builddir/worker/worker -c config-worker.json --mode blocking --ui",
 			// "isBackground": true,
 			"group": "test",
 			"presentation": {
@@ -154,7 +154,7 @@
 		{
 			"label": "Run Blocking Worker",
 			"type": "shell",
-			"command": "cmd.exe /c start \"\" cmd.exe /k \"builddir-worker\\worker\\worker.exe -c config-worker.json --mode blocking --ui\"",
+			"command": "cmd.exe /c start \"\" cmd.exe /k \"builddir\\worker\\worker.exe -c config-worker.json --mode blocking --ui\"",
 			// "isBackground": true,
 			"group": "test",
 			"presentation": {
@@ -167,7 +167,7 @@
 		{
 			"label": "Run Async Worker (Linux)",
 			"type": "shell",
-			"command": "builddir-worker/worker/worker -c config-worker.json --mode async",
+			"command": "builddir/worker/worker -c config-worker.json --mode async",
 			"isBackground": false,
 			"group": "test",
 			"presentation": {
@@ -177,7 +177,7 @@
 		{
 			"label": "Run Async Worker",
 			"type": "shell",
-			"command": "cmd.exe /c start \"\" cmd.exe /k \"builddir-worker\\worker\\worker.exe -c config-worker.json --mode async --ui\"",
+			"command": "cmd.exe /c start \"\" cmd.exe /k \"builddir\\worker\\worker.exe -c config-worker.json --mode async --ui\"",
 //			"command": "builddir-worker/worker/worker.exe -c config-worker.json --mode async",
 			"isBackground": false,
 			"group": "test",

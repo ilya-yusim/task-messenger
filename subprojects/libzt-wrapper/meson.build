@@ -191,8 +191,16 @@ if host_machine.system() == 'windows'
   # Windows: Install DLL to bindir (same directory as executables)
   dll_file = join_paths(libzt_lib_path, 'zt-shared.dll')
   install_data(dll_file, install_dir: get_option('bindir'))
+  
+  # Export buildtype and lib_path for parent project to construct DLL path
+  # (Exporting the full dll_file path causes sandbox violations)
+  set_variable('libzt_buildtype', libzt_buildtype)
+  set_variable('libzt_lib_path', libzt_lib_path)
 else
   # Linux/macOS: Install shared library to lib directory (relative to prefix)
   so_file = join_paths(libzt_lib_path, 'libzt.so')
   install_data(so_file, install_dir: join_paths(get_option('prefix'), 'lib'))
+  
+  # Export lib_path for parent project to construct SO path (for development builds)
+  set_variable('libzt_lib_path', libzt_lib_path)
 endif

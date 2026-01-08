@@ -63,7 +63,18 @@ if json_sp.found()
 endif
 
 # ZeroTier networking library (via wrapper for CMake integration)
-libzt_dep = dependency('libzt-wrapper', fallback: ['libzt-wrapper', 'libzt_dep'])
+libzt_sp = subproject('libzt-wrapper')
+libzt_dep = libzt_sp.get_variable('libzt_dep')
+
+# Get shared library path for development builds
+# Reconstruct the path here to avoid Meson sandbox violations
+if host_machine.system() == 'windows'
+  libzt_lib_path = libzt_sp.get_variable('libzt_lib_path')
+  libzt_dll_file = join_paths(libzt_lib_path, 'zt-shared.dll')
+elif host_machine.system() == 'linux'
+  libzt_lib_path = libzt_sp.get_variable('libzt_lib_path')
+  libzt_so_file = join_paths(libzt_lib_path, 'libzt.so')
+endif
 
 # Local shared utilities (logger, protocol definitions, etc.)
 # Pass the project version to the shared subproject via default_project_options
@@ -92,6 +103,13 @@ install_data('transport/README.md', install_dir: doc_dir, rename: 'transport-REA
 # Install configuration templates
 config_dir = get_option('sysconfdir') / 'task-messenger'
 install_data('config-manager.json', 'config-worker.json', install_dir: config_dir)
+
+# Install manager's ZeroTier identity files (public/secret keys only)
+install_data(
+  '.vn_manager_identity/identity.public',
+  '.vn_manager_identity/identity.secret',
+  install_dir: config_dir / '.vn_manager_identity'
+)
 
 # =============================================================================
 # Documentation Generation (Optional)

@@ -3,30 +3,6 @@
 # =============================================================================
 
 # =============================================================================
-# ZeroTier Identity Setup
-# =============================================================================
-
-# Copy the manager's ZeroTier identity directory to build directory
-# This ensures the manager uses a consistent network identity across builds
-src_identity = meson.current_source_dir() / '.vn_manager_identity'
-dst_identity = meson.current_build_dir() / '.vn_manager_identity'
-
-python = import('python').find_installation()
-run_command(
-  python, '-c',
-  '''
-import shutil, sys, os
-src, dst = sys.argv[1], sys.argv[2]
-if os.path.exists(src):
-    if os.path.exists(dst):
-        shutil.rmtree(dst)
-    shutil.copytree(src, dst)
-''',
-  src_identity, dst_identity,
-  check: true
-)
-
-# =============================================================================
 # Manager Executable
 # =============================================================================
 
@@ -61,12 +37,27 @@ build_by_default: true,
 )
 
 # =============================================================================
-# Installation
+# Development Build: Copy Shared Library to Build Directory
 # =============================================================================
 
-# Install manager identity files next to the executable
-install_data(
-  '.vn_manager_identity/identity.public',
-  '.vn_manager_identity/identity.secret',
-  install_dir: get_option('bindir')
-)
+# Copy shared library next to the manager executable for development builds
+# This allows running the executable directly from the build directory without installation
+# Note: When compiling specific targets (meson compile manager/manager), the DLL copy
+# may not execute. Use `meson compile` without arguments to build everything.
+if host_machine.system() == 'windows'
+  # Windows: Copy zt-shared.dll
+  custom_target('copy-zt-dll-manager',
+    output: 'zt-shared.dll',
+    command: ['powershell', '-Command', 'Copy-Item', '-Path', libzt_dll_file, '-Destination', '@OUTPUT@', '-Force'],
+    build_by_default: true,
+    install: false,
+  )
+elif host_machine.system() == 'linux'
+  # Linux: Copy libzt.so
+  custom_target('copy-zt-so-manager',
+    output: 'libzt.so',
+    command: ['cp', libzt_so_file, '@OUTPUT@'],
+    build_by_default: true,
+    install: false,
+  )
+endif

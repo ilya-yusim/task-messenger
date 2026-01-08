@@ -56,7 +56,7 @@ void ZeroTierNodeService::register_options() {
             if (!defnet_default.empty()) g_default_network_hex = defnet_default;
         }
         // Bind options directly to the underlying global option storage.
-    app.add_option("-Z,--zerotier-identity", g_identity_path, "ZeroTier node identity storage path")->group("ZeroTier");
+    app.add_option("-Z,--zerotier-identity", g_identity_path, "ZeroTier node identity storage path (absolute or relative to config file)")->group("ZeroTier");
     app.add_option("--zerotier-default-network", g_default_network_hex, "Default ZeroTier network id (hex)")->group("ZeroTier");
     });
 }
@@ -196,6 +196,8 @@ void ZeroTierNodeService::ensure_node_started_locked() {
 bool ZeroTierNodeService::resolve_identity_path() {
     try {
         if (!identity_path_) return false;
+        // Identity path can be absolute or relative to the config file location.
+        // Relative paths are resolved against the config directory if available.
         std::filesystem::path p = *identity_path_;
         if (p.is_relative()) {
             if (auto cfgDir = shared_opts::Options::get_config_dir(); cfgDir) {

@@ -18,3 +18,4 @@ out/
 .github/prompts/plan-taskMessengerCodeReview.prompt.md
 dist/
 dist-*/
+.vn_manager_identity/peers.d/

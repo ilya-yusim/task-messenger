@@ -20,7 +20,7 @@ endif
 
 # Unified worker application supporting both blocking and async runtime modes
 # Handles task processing, manager connection, and optional interactive UI
-executable(
+worker_exe = executable(
   'worker',
   sources: [
     'workerMain.cpp',
@@ -52,6 +52,31 @@ executable(
   install: true,
   build_by_default: true,
 )
+# =============================================================================
+# Development Build: Copy Shared Library to Build Directory
+# =============================================================================
+
+# Copy shared library next to the worker executable for development builds
+# This allows running the executable directly from the build directory without installation
+# Note: When compiling specific targets (meson compile worker/worker), the DLL copy
+# may not execute. Use `meson compile` without arguments to build everything.
+if host_machine.system() == 'windows'
+  # Windows: Copy zt-shared.dll
+  custom_target('copy-zt-dll-worker',
+    output: 'zt-shared.dll',
+    command: ['powershell', '-Command', 'Copy-Item', '-Path', libzt_dll_file, '-Destination', '@OUTPUT@', '-Force'],
+    build_by_default: true,
+    install: false,
+  )
+elif host_machine.system() == 'linux'
+  # Linux: Copy libzt.so
+  custom_target('copy-zt-so-worker',
+    output: 'libzt.so',
+    command: ['cp', libzt_so_file, '@OUTPUT@'],
+    build_by_default: true,
+    install: false,
+  )
+endif
 
 if ftxui_dep.found()
   executable(
