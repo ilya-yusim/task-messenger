@@ -94,11 +94,7 @@ subdir('worker')
 
 # Install documentation
 doc_dir = get_option('datadir') / 'doc' / 'task-messenger'
-install_data('LICENSE', 'README.md', install_dir: doc_dir)
-install_data('manager/README.md', install_dir: doc_dir, rename: 'manager-README.md')
-install_data('worker/README.md', install_dir: doc_dir, rename: 'worker-README.md')
-install_data('message/README.md', install_dir: doc_dir, rename: 'message-README.md')
-install_data('transport/README.md', install_dir: doc_dir, rename: 'transport-README.md')
+install_data('LICENSE', install_dir: doc_dir)
 
 # Install configuration templates
 config_dir = get_option('sysconfdir') / 'task-messenger'

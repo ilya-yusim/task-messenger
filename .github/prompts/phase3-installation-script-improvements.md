@@ -519,21 +519,69 @@ Categories=Network;
 EOF
 ```
 
-### Build Script Updates (Already Done)
+### Build Script Updates
 
+**Windows (Already Done):**
 - [x] `build_distribution.ps1`: Copy `.vn_manager_identity/` from `etc/` to archive `etc/`
-- [x] `build_distribution.sh`: Copy `.vn_manager_identity/` from `etc/` to archive `etc/`
-- [x] Both scripts place identity directory in `etc/` not `bin/`
+- [x] `build_distribution.ps1`: Create component-specific archives (TaskMessageManager/TaskMessageWorker)
+- [x] `build_distribution.ps1`: Copy uninstall_windows.ps1 to archive scripts/ directory
+
+**Linux (Outstanding):**
+- [ ] `build_distribution.sh`: Create component-specific archives (TaskMessageManager/TaskMessageWorker)
+- [ ] `build_distribution.sh`: Update archive directory structure from `opt/task-messenger` to `opt/TaskMessageManager` or `opt/TaskMessageWorker`
+- [ ] `build_distribution.sh`: Copy uninstall_linux.sh to archive scripts/ directory
 
 ### Meson Build Updates (Already Done)
 
 - [x] Install `.vn_manager_identity/` to `etc/task-messenger/` (only identity.public and identity.secret)
 - [x] Install config files to `etc/task-messenger/`
 
+### Installation Script Updates
+
+**Windows (Already Done):**
+- [x] Auto-detect component from extracted files or archive structure
+- [x] Copy config from `etc/config-{component}.json` to installation directory
+- [x] Copy `.vn_manager_identity/` from `etc/` to installation directory (manager only)
+- [x] Start Menu shortcuts include `-c` argument with config path
+- [x] Separate installation directories: `%LOCALAPPDATA%\TaskMessageManager` and `%LOCALAPPDATA%\TaskMessageWorker`
+- [x] Copy uninstall_windows.ps1 to installation directory
+- [x] Worker shortcut includes `--ui` argument
+
+**Linux (Outstanding):**
+- [ ] `install_linux.sh`: Auto-detect component from extracted files or archive structure
+- [ ] `install_linux.sh`: Update to use separate installation directories (`~/.local/share/TaskMessageManager` and `~/.local/share/TaskMessageWorker`)
+- [ ] `install_linux.sh`: Copy config from `etc/config-{component}.json` to installation directory
+- [ ] `install_linux.sh`: Copy `.vn_manager_identity/` from `etc/` to installation directory (manager only)
+- [ ] `install_linux.sh`: Desktop files include `-c` argument with config path
+- [ ] `install_linux.sh`: Copy uninstall_linux.sh to installation directory
+- [ ] `install_linux.sh`: Worker desktop file includes `--ui` argument
+- [ ] `install_linux.sh`: Update archive detection to look for `TaskMessageManager/` or `TaskMessageWorker/` directories
+
+### Uninstall Script Updates
+
+**Windows (Already Done):**
+- [x] `uninstall_windows.ps1`: Auto-detect component from script location
+- [x] `uninstall_windows.ps1`: Separate installation directories support
+- [x] `uninstall_windows.ps1`: Update default directories to `TaskMessageManager` and `TaskMessageWorker`
+- [x] `uninstall_windows.ps1`: Remove component-specific Start Menu folders
+
+**Linux (Outstanding):**
+- [ ] `uninstall_linux.sh`: Update default directories to match new structure (`~/.local/share/TaskMessageManager` and `~/.local/share/TaskMessageWorker`)
+- [ ] `uninstall_linux.sh`: Update component detection for new directory names
+- [ ] `uninstall_linux.sh`: Update desktop file removal for component-specific names
+
 ## Summary
 
 The installation script evolved from requiring explicit component specification to **automatic detection**, making the user experience simpler and more intuitive. Users now extract the archive and run the script with zero configuration, while the script intelligently determines what component it's installing and where to find the files.
 
-Additional improvements include proper config file management (using distributed configs instead of empty templates), identity directory relocation to `etc/` for consistency, and Start Menu shortcuts that automatically pass the correct config file path.
+Additional improvements include proper config file management (using distributed configs instead of empty templates), identity directory relocation to `etc/` for consistency, shortcuts/desktop files that automatically pass the correct config file path, and splitting distributions into separate **TaskMessageManager** and **TaskMessageWorker** applications with distinct installation directories.
 
-**Critical for Linux:** All these improvements must be applied to `install_linux.sh` to maintain cross-platform consistency. The Linux script currently still requires manual component specification and doesn't implement the smart detection or proper config/identity file handling.
+The Windows platform implementation is now complete. The Linux scripts require parallel updates to:
+1. Create component-specific distribution archives (build script)
+2. Support separate installation directories per component (install script)  
+3. Auto-detect component from extracted files or archive structure (install script)
+4. Copy uninstall script to installation directory (build and install scripts)
+5. Add `--ui` argument to worker desktop file (install script)
+6. Update uninstall script for new directory structure
+
+**Critical for Linux:** All these improvements must be applied to the Linux scripts (`build_distribution.sh`, `install_linux.sh`, `uninstall_linux.sh`) to maintain cross-platform consistency.

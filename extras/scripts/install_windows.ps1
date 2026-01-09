@@ -54,7 +54,13 @@ Examples:
 }
 
 function Get-DefaultInstallDir {
-    return Join-Path $env:LOCALAPPDATA "TaskMessenger"
+    param([string]$Component)
+    
+    if ($Component -eq "manager") {
+        return Join-Path $env:LOCALAPPDATA "TaskMessageManager"
+    } else {
+        return Join-Path $env:LOCALAPPDATA "TaskMessageWorker"
+    }
 }
 
 function Get-ConfigDir {
@@ -97,6 +103,16 @@ function Test-ExtractedFiles {
     }
     
     return $null
+}
+
+function Get-ComponentName {
+    param([string]$Component)
+    
+    if ($Component -eq "manager") {
+        return "TaskMessageManager"
+    } else {
+        return "TaskMessageWorker"
+    }
 }
 
 function Get-VersionFromArchive {
@@ -172,9 +188,8 @@ function Install-Component {
     
     Write-Info "Installing $Component from extracted files..."
     
-    # Create installation directory
-    $componentDir = Join-Path $InstallDir $Component
-    New-Item -ItemType Directory -Path $componentDir -Force | Out-Null
+    # Create installation directory (no subdirectory for component)
+    New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
     
     # Use provided source directory
     $extractedDir = $SourceDir
@@ -185,7 +200,7 @@ function Install-Component {
     # Copy binary
     $binaryPath = Join-Path $extractedDir "bin\$Component.exe"
     if (Test-Path $binaryPath) {
-        Copy-Item $binaryPath $componentDir -Force
+        Copy-Item $binaryPath $InstallDir -Force
     } else {
         Write-ErrorMsg "Binary not found: $binaryPath"
         Remove-Item -Path $tempDir -Recurse -Force
@@ -196,14 +211,14 @@ function Install-Component {
     $libDir = Join-Path $extractedDir "bin"
     $dllPath = Join-Path $libDir "zt-shared.dll"
     if (Test-Path $dllPath) {
-        Copy-Item $dllPath $componentDir -Force
+        Copy-Item $dllPath $InstallDir -Force
     }
     
     # Copy config file from etc/
     $etcDir = Join-Path $extractedDir "etc"
     $configFile = Join-Path $etcDir "config-$Component.json"
     if (Test-Path $configFile) {
-        Copy-Item $configFile $componentDir -Force
+        Copy-Item $configFile $InstallDir -Force
     }
     
     # Copy identity directory for manager
@@ -211,10 +226,10 @@ function Install-Component {
         $identityDir = Join-Path $etcDir ".vn_manager_identity"
         
         if (Test-Path $identityDir) {
-            Copy-Item $identityDir $componentDir -Recurse -Force
+            Copy-Item $identityDir $InstallDir -Recurse -Force
             
             # Set restrictive permissions on secret file
-            $secretPath = Join-Path $componentDir ".vn_manager_identity\identity.secret"
+            $secretPath = Join-Path $InstallDir ".vn_manager_identity\identity.secret"
             if (Test-Path $secretPath) {
                 $acl = Get-Acl $secretPath
                 $acl.SetAccessRuleProtection($true, $false)
@@ -232,13 +247,19 @@ function Install-Component {
     # Copy documentation
     $docSourceDir = Join-Path $extractedDir "share\doc"
     if (Test-Path $docSourceDir) {
-        $docDestDir = Join-Path $componentDir "doc"
+        $docDestDir = Join-Path $InstallDir "doc"
         New-Item -ItemType Directory -Path $docDestDir -Force | Out-Null
         Copy-Item -Path "$docSourceDir\*" -Destination $docDestDir -Recurse -Force
     }
     
+    # Copy uninstall script
+    $uninstallScript = Join-Path $extractedDir "scripts\uninstall_windows.ps1"
+    if (Test-Path $uninstallScript) {
+        Copy-Item -Path $uninstallScript -Destination $InstallDir -Force
+    }
+    
     # Store version information
-    $versionFile = Join-Path $componentDir "VERSION"
+    $versionFile = Join-Path $InstallDir "VERSION"
     Set-Content -Path $versionFile -Value $Version
     
     # Clean up temporary directory if it was created from archive extraction
@@ -249,31 +270,26 @@ function Install-Component {
         }
     }
     
-    Write-Success "$Component installed to: $componentDir"
+    Write-Success "$Component installed to: $InstallDir"
 }
 
 function Add-ToPath {
-    param(
-        [string]$InstallDir,
-        [string]$Component
-    )
-    
-    $componentDir = Join-Path $InstallDir $Component
+    param([string]$InstallDir)
     
     # Get current user PATH
     $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
     
-    if ($currentPath -notlike "*$componentDir*") {
-        $newPath = "$componentDir;$currentPath"
+    if ($currentPath -notlike "*$InstallDir*") {
+        $newPath = "$InstallDir;$currentPath"
         [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
         
         # Also update current session
-        $env:Path = "$componentDir;$env:Path"
+        $env:Path = "$InstallDir;$env:Path"
         
-        Write-Success "Added to PATH: $componentDir"
+        Write-Success "Added to PATH: $InstallDir"
         Write-Info "You may need to restart your terminal for PATH changes to take effect"
     } else {
-        Write-Success "Already in PATH: $componentDir"
+        Write-Success "Already in PATH: $InstallDir"
     }
 }
 
@@ -313,21 +329,28 @@ function New-StartMenuShortcut {
         [string]$InstallDir
     )
     
-    $startMenuDir = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\TaskMessenger"
+    $componentName = Get-ComponentName -Component $Component
+    $startMenuDir = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\$componentName"
     New-Item -ItemType Directory -Path $startMenuDir -Force | Out-Null
     
-    $componentDir = Join-Path $InstallDir $Component
-    $exePath = Join-Path $componentDir "$Component.exe"
-    $shortcutPath = Join-Path $startMenuDir "TaskMessenger $Component.lnk"
+    $exePath = Join-Path $InstallDir "$Component.exe"
+    $shortcutPath = Join-Path $startMenuDir "$componentName.lnk"
     
     # Get config file path from installation directory
-    $configFile = Join-Path $componentDir "config-$Component.json"
+    $configFile = Join-Path $InstallDir "config-$Component.json"
     
     $WScriptShell = New-Object -ComObject WScript.Shell
     $shortcut = $WScriptShell.CreateShortcut($shortcutPath)
     $shortcut.TargetPath = $exePath
-    $shortcut.Arguments = "-c `"$configFile`""
-    $shortcut.WorkingDirectory = $componentDir
+    
+    # Add --ui argument for worker component
+    if ($Component -eq "worker") {
+        $shortcut.Arguments = "-c `"$configFile`" --ui"
+    } else {
+        $shortcut.Arguments = "-c `"$configFile`""
+    }
+    
+    $shortcut.WorkingDirectory = $InstallDir
     
     # Set description
     if ($Component -eq "manager") {
@@ -350,7 +373,7 @@ function Main {
     
     # Set default install directory if not provided
     if (-not $InstallDir) {
-        $InstallDir = Get-DefaultInstallDir
+        $InstallDir = Get-DefaultInstallDir -Component $Component
     }
     
     # First, check if we're running from an extracted archive and detect component
@@ -358,12 +381,16 @@ function Main {
     $sourceDir = $null
     $version = "unknown"
     $cleanupTemp = $false
-    $Component = $null
     
     if ($extractedInfo) {
         Write-Info "Using files from extracted archive at: $($extractedInfo.Root)"
         $sourceDir = $extractedInfo.Root
         $Component = $extractedInfo.Component
+        
+        # Update install directory based on detected component if not specified
+        if (-not $PSBoundParameters.ContainsKey('InstallDir')) {
+            $InstallDir = Get-DefaultInstallDir -Component $Component
+        }
         
         # Try to get version from INSTALL.txt or default to 1.0.0
         $installTxt = Join-Path $extractedInfo.Root "INSTALL.txt"
@@ -410,11 +437,25 @@ function Main {
         $tempDir = Join-Path $env:TEMP "taskmessenger-install-$(Get-Random)"
         Expand-Archive -Path $Archive -DestinationPath $tempDir -Force
         
-        $sourceDir = Join-Path $tempDir "TaskMessenger"
-        if (-not (Test-Path $sourceDir)) {
-            Write-ErrorMsg "Unexpected archive structure. Expected TaskMessenger directory."
+        # Detect component from extracted files first
+        $managerCheck = Join-Path $tempDir "TaskMessageManager"
+        $workerCheck = Join-Path $tempDir "TaskMessageWorker"
+        
+        if (Test-Path $managerCheck) {
+            $sourceDir = $managerCheck
+            $Component = "manager"
+        } elseif (Test-Path $workerCheck) {
+            $sourceDir = $workerCheck
+            $Component = "worker"
+        } else {
+            Write-ErrorMsg "Unexpected archive structure. Expected TaskMessageManager or TaskMessageWorker directory."
             Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
             exit 1
+        }
+        
+        # Update install directory based on detected component if not specified
+        if (-not $PSBoundParameters.ContainsKey('InstallDir')) {
+            $InstallDir = Get-DefaultInstallDir -Component $Component
         }
         
         # Detect component from extracted files
@@ -454,7 +495,7 @@ function Main {
     Write-Info "Component:        $Component"
     Write-Info "Version:          $version"
     Write-Info "Source:           $sourceDir"
-    Write-Info "Install location: $InstallDir\$Component"
+    Write-Info "Install location: $InstallDir"
     Write-Info "Config location:  $configDir"
     Write-Info "=========================================="
     Write-Host ""
@@ -468,7 +509,7 @@ function Main {
     Install-Component -Component $Component -SourceDir $sourceDir -InstallDir $InstallDir -Version $version -CleanupTemp $cleanupTemp
     
     # Add to PATH
-    Add-ToPath -InstallDir $InstallDir -Component $Component
+    Add-ToPath -InstallDir $InstallDir
     
     # Setup configuration
     New-ConfigTemplate -Component $Component

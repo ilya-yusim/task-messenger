@@ -101,8 +101,9 @@ function Create-Archive {
         Remove-Item -Recurse -Force $TempArchiveDir
     }
     
-    # Create TaskMessenger directory structure
-    $TaskMessengerDir = Join-Path $TempArchiveDir "TaskMessenger"
+    # Create component-specific directory structure
+    $ComponentName = if ($Comp -eq "manager") { "TaskMessageManager" } else { "TaskMessageWorker" }
+    $TaskMessengerDir = Join-Path $TempArchiveDir $ComponentName
     New-Item -ItemType Directory -Force -Path $TaskMessengerDir | Out-Null
     
     # Create bin directory

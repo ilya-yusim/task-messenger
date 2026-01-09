@@ -45,23 +45,36 @@ Arguments:
   component              Either 'manager', 'worker', or 'all' (auto-detected if not specified)
 
 Options:
-  -InstallDir PATH       Custom installation directory (default: %LOCALAPPDATA%\TaskMessenger)
+  -InstallDir PATH       Custom installation directory (optional, auto-detected by default)
   -RemoveConfig          Also remove configuration files
   -Help                  Show this help message
 
-Note: If component is not specified, the script will detect installed components and prompt you to choose.
+Note: If component is not specified, the script will detect the installation from its location or prompt you to choose.
+
+Installation directories:
+  Manager: %LOCALAPPDATA%\TaskMessageManager
+  Worker:  %LOCALAPPDATA%\TaskMessageWorker
 
 Examples:
   .\uninstall_windows.ps1
   .\uninstall_windows.ps1 manager
   .\uninstall_windows.ps1 worker -RemoveConfig
-  .\uninstall_windows.ps1 all -InstallDir "C:\Custom\Path"
+  .\uninstall_windows.ps1 all
 
 "@
 }
 
 function Get-DefaultInstallDir {
-    return Join-Path $env:LOCALAPPDATA "TaskMessenger"
+    param([string]$Component)
+    
+    if ($Component -eq "manager") {
+        return Join-Path $env:LOCALAPPDATA "TaskMessageManager"
+    } elseif ($Component -eq "worker") {
+        return Join-Path $env:LOCALAPPDATA "TaskMessageWorker"
+    } else {
+        # For 'all', return parent directory
+        return $env:LOCALAPPDATA
+    }
 }
 
 function Get-ConfigDir {
@@ -69,36 +82,31 @@ function Get-ConfigDir {
 }
 
 function Test-Installation {
-    param(
-        [string]$InstallDir,
-        [string]$Component
-    )
+    param([string]$Component)
     
     if ($Component -eq "all") {
-        $managerDir = Join-Path $InstallDir "manager"
-        $workerDir = Join-Path $InstallDir "worker"
+        $managerDir = Join-Path $env:LOCALAPPDATA "TaskMessengerManager"
+        $workerDir = Join-Path $env:LOCALAPPDATA "TaskMessengerWorker"
         
         if (-not (Test-Path $managerDir) -and -not (Test-Path $workerDir)) {
-            Write-ErrorMsg "No TaskMessenger installation found at: $InstallDir"
+            Write-ErrorMsg "No TaskMessenger installation found"
             exit 1
         }
     } else {
-        $componentDir = Join-Path $InstallDir $Component
+        $installDir = Get-DefaultInstallDir -Component $Component
         
-        if (-not (Test-Path $componentDir)) {
-            Write-ErrorMsg "$Component is not installed at: $componentDir"
+        if (-not (Test-Path $installDir)) {
+            Write-ErrorMsg "$Component is not installed at: $installDir"
             exit 1
         }
     }
 }
 
 function Get-InstalledVersion {
-    param(
-        [string]$InstallDir,
-        [string]$Component
-    )
+    param([string]$Component)
     
-    $versionFile = Join-Path $InstallDir "$Component\VERSION"
+    $installDir = Get-DefaultInstallDir -Component $Component
+    $versionFile = Join-Path $installDir "VERSION"
     
     if (Test-Path $versionFile) {
         $version = Get-Content $versionFile -Raw
@@ -109,12 +117,10 @@ function Get-InstalledVersion {
 }
 
 function Get-InstalledComponents {
-    param([string]$InstallDir)
-    
     $components = @()
     
-    $managerDir = Join-Path $InstallDir "manager"
-    $workerDir = Join-Path $InstallDir "worker"
+    $managerDir = Join-Path $env:LOCALAPPDATA "TaskMessageManager"
+    $workerDir = Join-Path $env:LOCALAPPDATA "TaskMessageWorker"
     
     if (Test-Path $managerDir) {
         $components += "manager"
@@ -157,15 +163,13 @@ function Select-Component {
 }
 
 function Get-ComponentFromScriptLocation {
-    param([string]$InstallDir)
-    
     # Get script location
     $scriptPath = $PSCommandPath
     $scriptDir = Split-Path -Parent $scriptPath
     
     # Check if script is in a component directory
-    $managerDir = Join-Path $InstallDir "manager"
-    $workerDir = Join-Path $InstallDir "worker"
+    $managerDir = Join-Path $env:LOCALAPPDATA "TaskMessageManager"
+    $workerDir = Join-Path $env:LOCALAPPDATA "TaskMessageWorker"
     
     if ($scriptDir -eq $managerDir) {
         return "manager"
@@ -178,48 +182,45 @@ function Get-ComponentFromScriptLocation {
 }
 
 function Remove-Component {
-    param(
-        [string]$InstallDir,
-        [string]$Component
-    )
+    param([string]$Component)
     
-    $componentDir = Join-Path $InstallDir $Component
+    $installDir = Get-DefaultInstallDir -Component $Component
     
-    if (-not (Test-Path $componentDir)) {
+    if (-not (Test-Path $installDir)) {
         Write-Warning "$Component is not installed"
         return
     }
     
-    $version = Get-InstalledVersion -InstallDir $InstallDir -Component $Component
+    $version = Get-InstalledVersion -Component $Component
     Write-Info "Removing $Component (version $version)..."
     
     # Remove installation directory
-    Remove-Item -Path $componentDir -Recurse -Force
-    Write-Success "Removed installation directory: $componentDir"
+    Remove-Item -Path $installDir -Recurse -Force
+    Write-Success "Removed installation directory: $installDir"
     
     # Remove from PATH
-    Remove-FromPath -ComponentDir $componentDir
+    Remove-FromPath -InstallDir $installDir
     
     # Remove Start Menu shortcuts
     Remove-StartMenuShortcut -Component $Component
 }
 
 function Remove-FromPath {
-    param([string]$ComponentDir)
+    param([string]$InstallDir)
     
     $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
     
-    if ($currentPath -like "*$ComponentDir*") {
-        # Remove the component directory from PATH
-        $pathArray = $currentPath -split ';' | Where-Object { $_ -ne $ComponentDir -and $_ -ne "" }
+    if ($currentPath -like "*$InstallDir*") {
+        # Remove the installation directory from PATH
+        $pathArray = $currentPath -split ';' | Where-Object { $_ -ne $InstallDir -and $_ -ne "" }
         $newPath = $pathArray -join ';'
         
         [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
         
         # Also update current session
-        $env:Path = ($env:Path -split ';' | Where-Object { $_ -ne $ComponentDir -and $_ -ne "" }) -join ';'
+        $env:Path = ($env:Path -split ';' | Where-Object { $_ -ne $InstallDir -and $_ -ne "" }) -join ';'
         
-        Write-Success "Removed from PATH: $ComponentDir"
+        Write-Success "Removed from PATH: $InstallDir"
         Write-Info "You may need to restart your terminal for PATH changes to take effect"
     }
 }
@@ -227,18 +228,12 @@ function Remove-FromPath {
 function Remove-StartMenuShortcut {
     param([string]$Component)
     
-    $startMenuDir = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\TaskMessenger"
-    $shortcutPath = Join-Path $startMenuDir "TaskMessenger $Component.lnk"
+    $componentName = if ($Component -eq "manager") { "TaskMessageManager" } else { "TaskMessageWorker" }
+    $startMenuDir = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\$componentName"
     
-    if (Test-Path $shortcutPath) {
-        Remove-Item $shortcutPath -Force
-        Write-Success "Removed Start Menu shortcut: $shortcutPath"
-    }
-    
-    # Remove Start Menu directory if empty
-    if ((Test-Path $startMenuDir) -and ((Get-ChildItem $startMenuDir).Count -eq 0)) {
-        Remove-Item $startMenuDir -Force
-        Write-Info "Removed empty Start Menu directory: $startMenuDir"
+    if (Test-Path $startMenuDir) {
+        Remove-Item $startMenuDir -Recurse -Force
+        Write-Success "Removed Start Menu folder: $startMenuDir"
     }
 }
 
@@ -296,19 +291,19 @@ function Main {
     
     # Set default install directory if not provided
     if (-not $InstallDir) {
-        $InstallDir = Get-DefaultInstallDir
+        $InstallDir = Get-DefaultInstallDir -Component ($Component -or "manager")
     }
     
     # Auto-detect installed components if component not specified
     if (-not $Component) {
-        $Component = Get-ComponentFromScriptLocation -InstallDir $InstallDir
+        $Component = Get-ComponentFromScriptLocation
         
         if (-not $Component) {
             # Script is not in a component directory - prompt user
-            $installedComponents = Get-InstalledComponents -InstallDir $InstallDir
+            $installedComponents = Get-InstalledComponents
             
             if ($installedComponents.Count -eq 0) {
-                Write-ErrorMsg "No TaskMessenger installation found at: $InstallDir"
+                Write-ErrorMsg "No TaskMessenger installation found"
                 exit 1
             }
             
@@ -324,7 +319,7 @@ function Main {
     }
     
     # Check installation
-    Test-Installation -InstallDir $InstallDir -Component $Component
+    Test-Installation -Component $Component
     
     # Get config directory
     $configDir = Get-ConfigDir
@@ -333,7 +328,10 @@ function Main {
     Write-Info "TaskMessenger Uninstallation"
     Write-Info "=========================================="
     Write-Info "Component:        $Component"
-    Write-Info "Install location: $InstallDir"
+    if ($Component -ne "all") {
+        $InstallDir = Get-DefaultInstallDir -Component $Component
+        Write-Info "Install location: $InstallDir"
+    }
     Write-Info "Config location:  $configDir"
     Write-Info "Remove config:    $RemoveConfig"
     Write-Info "=========================================="
@@ -347,23 +345,26 @@ function Main {
     
     # Remove components
     if ($Component -eq "all") {
-        Remove-Component -InstallDir $InstallDir -Component "manager"
-        Remove-Component -InstallDir $InstallDir -Component "worker"
+        Remove-Component -Component "manager"
+        Remove-Component -Component "worker"
         
         if ($RemoveConfig) {
             Remove-ConfigFile -Component "manager"
             Remove-ConfigFile -Component "worker"
         }
     } else {
-        Remove-Component -InstallDir $InstallDir -Component $Component
+        Remove-Component -Component $Component
         
         if ($RemoveConfig) {
             Remove-ConfigFile -Component $Component
         }
     }
     
-    # Cleanup empty directories
-    Remove-EmptyDirectories -InstallDir $InstallDir
+    # Cleanup empty directories (config dir only)
+    if ((Test-Path $configDir) -and ((Get-ChildItem $configDir -ErrorAction SilentlyContinue).Count -eq 0)) {
+        Remove-Item $configDir -Force
+        Write-Info "Removed empty configuration directory: $configDir"
+    }
     
     Write-Host ""
     Write-Success "=========================================="
