@@ -7,6 +7,6 @@
   
   "zerotier": {
     "default_network": "159924d6303c474a",
-    "identity_path": ".vn_manager_identity"
+    "identity_path": "vn-manager-identity"
   }
 }

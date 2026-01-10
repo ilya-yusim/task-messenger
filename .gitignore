@@ -2,9 +2,9 @@
 subprojects/libzt-wrapper/libzt/
 subprojects/.wraplock
 
-manager/.vn_manager_identity/networks.d
-manager/.vn_manager_identity/peers.d
-manager/.vn_manager_identity/roots
+config/vn-manager-identity/networks.d
+config/vn-manager-identity/peers.d
+config/vn-manager-identity/roots
 
 # Build directories
 builddir-*/
@@ -18,4 +18,4 @@ out/
 .github/prompts/plan-taskMessengerCodeReview.prompt.md
 dist/
 dist-*/
-.vn_manager_identity/peers.d/
+vn-manager-identity/peers.d/

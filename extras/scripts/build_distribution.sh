@@ -99,7 +99,7 @@ create_archive() {
         
         mkdir -p "$archive_root/etc"
         cp "$staging_prefix/etc/task-messenger/config-manager.json" "$archive_root/etc/"
-        cp -r "$staging_prefix/etc/task-messenger/.vn_manager_identity" "$archive_root/etc/"
+        cp -r "$staging_prefix/etc/task-messenger/vn-manager-identity" "$archive_root/etc/"
         
         mkdir -p "$archive_root/share/doc"
         cp -r "$staging_prefix/share/doc/task-messenger" "$archive_root/share/doc/"

@@ -98,13 +98,13 @@ install_data('LICENSE', install_dir: doc_dir)
 
 # Install configuration templates
 config_dir = get_option('sysconfdir') / 'task-messenger'
-install_data('config-manager.json', 'config-worker.json', install_dir: config_dir)
+install_data('config/config-manager.json', 'config/config-worker.json', install_dir: config_dir)
 
 # Install manager's ZeroTier identity files (public/secret keys only)
 install_data(
-  '.vn_manager_identity/identity.public',
-  '.vn_manager_identity/identity.secret',
-  install_dir: config_dir / '.vn_manager_identity'
+  'config/vn-manager-identity/identity.public',
+  'config/vn-manager-identity/identity.secret',
+  install_dir: config_dir / 'vn-manager-identity'
 )
 
 # =============================================================================

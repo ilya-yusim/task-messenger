@@ -128,7 +128,7 @@ function Create-Archive {
     
     # Copy manager identity directory (only for manager component)
     if ($Comp -eq "manager") {
-        Copy-Item (Join-Path $CompStagingPrefix "etc\task-messenger\.vn_manager_identity") $EtcDir -Recurse
+        Copy-Item (Join-Path $CompStagingPrefix "etc\task-messenger\vn-manager-identity") $EtcDir -Recurse
     }
     
     # Copy documentation

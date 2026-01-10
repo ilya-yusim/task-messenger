@@ -20,6 +20,31 @@ graph LR
     Workers[Workers] --> Results[Result Channels]
 ```
 
+## Project Structure
+
+```
+task-messenger/
+├── config/                     # Configuration files
+│   ├── config-manager.json     # Manager configuration
+│   ├── config-worker.json      # Worker configuration
+│   └── vn-manager-identity/    # Manager ZeroTier identity files
+│       ├── identity.public     # Public identity key
+│       └── identity.secret     # Private identity key (secret)
+├── manager/                    # Manager component
+├── worker/                     # Worker component
+├── message/                    # Messaging primitives
+├── transport/                  # Transport layer
+├── subprojects/                # Dependencies
+└── extras/                     # Build and installation scripts
+```
+
+## Configuration
+
+Configuration files are located in the `config/` directory:
+- `config-manager.json`: Manager settings including ZeroTier network ID and identity path
+- `config-worker.json`: Worker settings
+- `vn-manager-identity/`: Manager's ZeroTier identity directory (only identity.public and identity.secret are version-controlled)
+
 ## Documentation
 - Generated API/user docs: `meson compile -C builddir-manager docs` then open `builddir-manager/doxygen/html/index.html`.
 - High-level modules: see `docs/TaskMessenger.md`, `manager/README.md`, `worker/README.md`, and the README files inside `message/` and `transport/`.

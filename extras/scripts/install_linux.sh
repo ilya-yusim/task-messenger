@@ -422,7 +422,7 @@ main() {
     print_info "Or use the full path: $INSTALL_DIR/bin/$COMPONENT"
     print_info "Config file: $CONFIG_DIR/config-$COMPONENT.json"
     if [ "$COMPONENT" = "manager" ]; then
-        print_info "Identity files: $CONFIG_DIR/.vn_manager_identity/"
+        print_info "Identity files: $CONFIG_DIR/vn-manager-identity/"
     fi
     echo ""
 }

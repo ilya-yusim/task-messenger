@@ -223,13 +223,13 @@ function Install-Component {
     
     # Copy identity directory for manager
     if ($Component -eq "manager") {
-        $identityDir = Join-Path $etcDir ".vn_manager_identity"
+        $identityDir = Join-Path $etcDir "vn-manager-identity"
         
         if (Test-Path $identityDir) {
             Copy-Item $identityDir $InstallDir -Recurse -Force
             
             # Set restrictive permissions on secret file
-            $secretPath = Join-Path $InstallDir ".vn_manager_identity\identity.secret"
+            $secretPath = Join-Path $InstallDir "vn-manager-identity\identity.secret"
             if (Test-Path $secretPath) {
                 $acl = Get-Acl $secretPath
                 $acl.SetAccessRuleProtection($true, $false)
