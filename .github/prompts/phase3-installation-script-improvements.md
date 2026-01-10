@@ -446,16 +446,16 @@ $identityDir = Join-Path $etcDir ".vn_manager_identity"
 
 ### Must Implement (Parity with Windows)
 
-- [ ] Remove `-c|--component` parameter from argument parsing
-- [ ] Add `detect_extracted_files()` function checking for `libzt-shared.so`
-- [ ] Update main flow to try detection first, fall back to archive
-- [ ] Update help text to remove component parameter
-- [ ] Enhance error messages with clear guidance
-- [ ] Copy config file from `etc/config-{component}.json` to installation directory
-- [ ] Copy `.vn_manager_identity/` from `etc/` (manager only)
-- [ ] Desktop file includes `-c` argument pointing to installed config
-- [ ] Set `chmod 600` on `.vn_manager_identity/identity.secret`
-- [ ] Update archive structure: move identity directory to `etc/`
+- [x] Remove `-c|--component` parameter from argument parsing
+- [x] Add `detect_extracted_files()` function checking for `libzt.so`
+- [x] Update main flow to try detection first, fall back to archive
+- [x] Update help text to remove component parameter
+- [x] Enhance error messages with clear guidance
+- [x] Copy config file from `etc/config-{component}.json` to config directory
+- [x] Copy `.vn_manager_identity/` from `etc/` (manager only)
+- [x] Desktop file includes `-c` argument pointing to installed config
+- [x] Set `chmod 600` on `.vn_manager_identity/identity.secret`
+- [x] Update archive structure: move identity directory to `etc/`
 
 ### Platform-Specific Implementations
 
@@ -526,10 +526,11 @@ EOF
 - [x] `build_distribution.ps1`: Create component-specific archives (TaskMessageManager/TaskMessageWorker)
 - [x] `build_distribution.ps1`: Copy uninstall_windows.ps1 to archive scripts/ directory
 
-**Linux (Outstanding):**
-- [ ] `build_distribution.sh`: Create component-specific archives (TaskMessageManager/TaskMessageWorker)
-- [ ] `build_distribution.sh`: Update archive directory structure from `opt/task-messenger` to `opt/TaskMessageManager` or `opt/TaskMessageWorker`
-- [ ] `build_distribution.sh`: Copy uninstall_linux.sh to archive scripts/ directory
+**Linux (Completed):**
+- [x] `build_distribution.sh`: Create component-specific archives (task-message-manager/task-message-worker)
+- [x] `build_distribution.sh`: Update archive directory structure to `task-message-{manager|worker}/` (Linux uses lowercase-with-dashes)
+- [x] `build_distribution.sh`: Copy uninstall_linux.sh to archive scripts/ directory
+- [x] `build_distribution.sh`: Copy LICENSE to archive root for visibility
 
 ### Meson Build Updates (Already Done)
 
@@ -547,15 +548,16 @@ EOF
 - [x] Copy uninstall_windows.ps1 to installation directory
 - [x] Worker shortcut includes `--ui` argument
 
-**Linux (Outstanding):**
-- [ ] `install_linux.sh`: Auto-detect component from extracted files or archive structure
-- [ ] `install_linux.sh`: Update to use separate installation directories (`~/.local/share/TaskMessageManager` and `~/.local/share/TaskMessageWorker`)
-- [ ] `install_linux.sh`: Copy config from `etc/config-{component}.json` to installation directory
-- [ ] `install_linux.sh`: Copy `.vn_manager_identity/` from `etc/` to installation directory (manager only)
-- [ ] `install_linux.sh`: Desktop files include `-c` argument with config path
-- [ ] `install_linux.sh`: Copy uninstall_linux.sh to installation directory
-- [ ] `install_linux.sh`: Worker desktop file includes `--ui` argument
-- [ ] `install_linux.sh`: Update archive detection to look for `TaskMessageManager/` or `TaskMessageWorker/` directories
+**Linux (Completed):**
+- [x] `install_linux.sh`: Auto-detect component from extracted files (detects libzt.so marker and executables)
+- [x] `install_linux.sh`: Use component-specific installation directories (`~/.local/share/task-message-{manager|worker}/`)
+- [x] `install_linux.sh`: Copy config from `etc/config-{component}.json` to `~/.config/task-message-{component}/`
+- [x] `install_linux.sh`: Copy `.vn_manager_identity/` from `etc/` to config directory (manager only)
+- [x] `install_linux.sh`: Desktop files include `-c` argument with config path
+- [x] `install_linux.sh`: Copy uninstall_linux.sh to installation directory
+- [x] `install_linux.sh`: Worker desktop file includes `--ui` argument
+- [x] `install_linux.sh`: Create wrapper scripts in ~/.local/bin/ that set LD_LIBRARY_PATH for library discovery
+- [x] `install_linux.sh`: Set chmod 600 on identity.secret for security
 
 ### Uninstall Script Updates
 
@@ -565,10 +567,99 @@ EOF
 - [x] `uninstall_windows.ps1`: Update default directories to `TaskMessageManager` and `TaskMessageWorker`
 - [x] `uninstall_windows.ps1`: Remove component-specific Start Menu folders
 
-**Linux (Outstanding):**
-- [ ] `uninstall_linux.sh`: Update default directories to match new structure (`~/.local/share/TaskMessageManager` and `~/.local/share/TaskMessageWorker`)
-- [ ] `uninstall_linux.sh`: Update component detection for new directory names
-- [ ] `uninstall_linux.sh`: Update desktop file removal for component-specific names
+**Linux (Completed):**
+- [x] `uninstall_linux.sh`: Update default directories to match new structure (`~/.local/share/task-message-{manager|worker}/`)
+- [x] `uninstall_linux.sh`: Auto-detect component from script location (checks parent directory name)
+- [x] `uninstall_linux.sh`: Remove wrapper scripts from ~/.local/bin/ (not symlinks)
+- [x] `uninstall_linux.sh`: Remove component-specific desktop files
+- [x] `uninstall_linux.sh`: Support --remove-config flag for config directory removal
+
+## Linux Implementation Summary
+
+### Completed Changes (January 2026)
+
+All Phase 3 improvements have been successfully applied to the Linux platform with the following implementations:
+
+**build_distribution.sh:**
+- Creates component-specific archives: `task-message-manager-{version}-linux-x64.tar.gz` and `task-message-worker-{version}-linux-x64.tar.gz`
+- Archive structure: `task-message-{manager|worker}/` root directory (lowercase-with-dashes naming convention)
+- Copies LICENSE to archive root for visibility
+- Includes uninstall script in `scripts/` directory
+- Library remains as `libzt.so` (not renamed per component)
+
+**install_linux.sh:**
+- Auto-detects component from libzt.so marker and manager/worker executables
+- Component-specific installation: `~/.local/share/task-message-{manager|worker}/`
+- Component-specific configs: `~/.config/task-message-{manager|worker}/`
+- Creates wrapper scripts in `~/.local/bin/` that set `LD_LIBRARY_PATH` before executing binaries
+- Desktop files include `-c` config path argument and `--ui` for worker
+- Identity files copied from `etc/` with `chmod 600` on secret file
+- No component parameter required - fully automatic detection
+
+**uninstall_linux.sh:**
+- Auto-detects component from script location (parent directory name)
+- Removes wrapper scripts (not symlinks)
+- Component-specific directory and desktop file removal
+- `--remove-config` flag for optional config directory removal (preserves user data by default)
+
+### Platform-Specific Differences from Windows
+
+**Naming Conventions:**
+- Linux: `task-message-manager`, `task-message-worker` (lowercase-with-dashes)
+- Windows: `TaskMessageManager`, `TaskMessageWorker` (PascalCase)
+
+**Installation Locations:**
+- Linux: `~/.local/share/task-message-{manager|worker}/` (XDG Base Directory)
+- Windows: `%LOCALAPPDATA%\TaskMessage{Manager|Worker}\`
+
+**Config Locations:**
+- Linux: `~/.config/task-message-{manager|worker}/` (XDG Base Directory)
+- Windows: Configs stored in installation directory
+
+**Library Discovery:**
+- Linux: Wrapper scripts set `LD_LIBRARY_PATH="$install_dir/lib"` before exec
+- Windows: DLL loaded from application directory automatically
+
+**Desktop Integration:**
+- Linux: `.desktop` files in `~/.local/share/applications/`
+- Windows: Start Menu shortcuts in `%APPDATA%\Microsoft\Windows\Start Menu`
+
+**Library Naming:**
+- Linux: `libzt.so` (not renamed per component)
+- Windows: `zt-shared.dll` (not renamed per component)
+
+**Config Preservation:**
+- Linux: `--remove-config` flag required to delete configs on uninstall
+- Windows: Similar behavior with optional config removal
+
+### Wrapper Script Innovation (Linux-Specific)
+
+Linux implementation introduced wrapper scripts to solve library discovery:
+
+```bash
+#!/bin/bash
+INSTALL_DIR="$HOME/.local/share/task-message-manager"
+export LD_LIBRARY_PATH="$INSTALL_DIR/lib:$LD_LIBRARY_PATH"
+exec "$INSTALL_DIR/bin/manager" "$@"
+```
+
+This approach:
+- Eliminates need for system-wide library installation
+- Avoids RPATH complications during build
+- Works seamlessly from command line and desktop files
+- Properly passes all arguments to underlying executable
+
+### Testing Verification
+
+✅ All success criteria met:
+1. User can run `./install_linux.sh` with no arguments from extracted archive
+2. Script automatically detects manager vs worker component
+3. Component-specific directories prevent conflicts
+4. Wrapper scripts enable library discovery without system modifications
+5. Desktop integration works with proper config paths
+6. Uninstall script auto-detects component and cleans up properly
+7. Config directories separated by component
+8. `--remove-config` flag available for testing/clean uninstall
 
 ## Summary
 
