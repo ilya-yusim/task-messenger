@@ -38,6 +38,38 @@ task-messenger/
 └── extras/                     # Build and installation scripts
 ```
 
+## Building
+
+Task Messenger uses Meson as its build system.
+
+### Build All Components (Manager + Worker)
+
+```bash
+meson setup builddir --buildtype=release
+meson compile -C builddir
+```
+
+### Build Only Manager (no FTXUI dependency)
+
+```bash
+meson setup builddir-manager -Dbuild_worker=false --buildtype=release
+meson compile -C builddir-manager
+```
+
+### Build Only Worker
+
+```bash
+meson setup builddir-worker -Dbuild_manager=false --buildtype=release
+meson compile -C builddir-worker
+```
+
+### Build Options
+
+- `-Dbuild_manager=true|false`: Build the manager component (default: true)
+- `-Dbuild_worker=true|false`: Build the worker component (default: true)
+- `-Ddebug_logging=true|false`: Enable debug logging (default: false)
+- `-Dprofiling_unwind=true|false`: Enable profiling-friendly unwind flags (default: false)
+
 ## Configuration
 
 Configuration files are located in the `config/` directory:

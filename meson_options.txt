@@ -1,3 +1,5 @@
 option('debug_logging', type: 'boolean', value: false, description: 'Enable debug logging')
 option('enable_boost_asio_handler_tracking', type: 'boolean', value: false, description: 'Enable Boost.Asio handler tracking')
 option('profiling_unwind', type: 'boolean', value: false, description: 'Enable profiling-friendly unwind flags (-fno-omit-frame-pointer, -fasynchronous-unwind-tables, -fno-optimize-sibling-calls)')
+option('build_manager', type: 'boolean', value: true, description: 'Build the manager component')
+option('build_worker', type: 'boolean', value: true, description: 'Build the worker component')

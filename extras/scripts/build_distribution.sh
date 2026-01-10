@@ -52,12 +52,23 @@ build_component() {
     # Clean previous build
     rm -rf "$builddir"
     
+    # Determine build options based on component
+    local build_opts=()
+    if [[ "$comp" == "manager" ]]; then
+        build_opts+=("-Dbuild_worker=false")
+        echo "Building manager only (FTXUI disabled for faster build)"
+    elif [[ "$comp" == "worker" ]]; then
+        build_opts+=("-Dbuild_manager=false")
+        echo "Building worker only"
+    fi
+    
     # Setup meson
     meson setup "$builddir" \
         --prefix="$PREFIX" \
         --buildtype="$BUILDTYPE" \
         -Ddebug_logging=false \
-        -Dprofiling_unwind=false
+        -Dprofiling_unwind=false \
+        "${build_opts[@]}"
     
     # Compile
     meson compile -C "$builddir"

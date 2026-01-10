@@ -55,12 +55,23 @@ function Build-Component {
         Remove-Item -Recurse -Force $BuildDir
     }
     
+    # Determine build options based on component
+    $BuildOptions = @()
+    if ($Comp -eq "manager") {
+        $BuildOptions += "-Dbuild_worker=false"
+        Write-Host "Building manager only (FTXUI disabled for faster build)"
+    } elseif ($Comp -eq "worker") {
+        $BuildOptions += "-Dbuild_manager=false"
+        Write-Host "Building worker only"
+    }
+    
     # Setup meson
     meson setup $BuildDir `
         --prefix="$Prefix" `
         --buildtype=$BuildType `
         -Ddebug_logging=false `
-        -Dprofiling_unwind=false
+        -Dprofiling_unwind=false `
+        @BuildOptions
     
     # Compile
     meson compile -C $BuildDir

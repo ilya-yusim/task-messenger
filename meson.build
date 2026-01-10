@@ -85,8 +85,13 @@ shared_dep = shared_sp.get_variable('shared_dep')
 # Build Targets
 # =============================================================================
 
-subdir('manager')
-subdir('worker')
+if get_option('build_manager')
+  subdir('manager')
+endif
+
+if get_option('build_worker')
+  subdir('worker')
+endif
 
 # =============================================================================
 # Installation
