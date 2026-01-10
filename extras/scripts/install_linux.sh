@@ -184,14 +184,14 @@ install_component() {
     # Copy identity directory for manager (from etc/ to component-specific XDG config directory)
     # Note: Fixed bug - previous version incorrectly looked for identity files in bin/
     if [ "$component" = "manager" ]; then
-        local identity_dir="$etc_dir/.vn_manager_identity"
+        local identity_dir="$etc_dir/vn-manager-identity"
         
         if [ -d "$identity_dir" ]; then
             mkdir -p "$config_dir"
             cp -r "$identity_dir" "$config_dir/"
             
             # Set restrictive permissions on secret file
-            local secret_path="$config_dir/.vn_manager_identity/identity.secret"
+            local secret_path="$config_dir/vn-manager-identity/identity.secret"
             if [ -f "$secret_path" ]; then
                 chmod 600 "$secret_path"
                 print_success "Installed identity files with restricted permissions"

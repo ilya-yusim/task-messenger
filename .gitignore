@@ -1,4 +1,3 @@
-# Ignore bundled libzt distribution (libzt-wrapper can download/build it)
 subprojects/libzt-wrapper/libzt/
 subprojects/.wraplock
 
@@ -18,4 +17,3 @@ out/
 .github/prompts/plan-taskMessengerCodeReview.prompt.md
 dist/
 dist-*/
-vn-manager-identity/peers.d/
