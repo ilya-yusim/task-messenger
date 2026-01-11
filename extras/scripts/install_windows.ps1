@@ -64,7 +64,13 @@ function Get-DefaultInstallDir {
 }
 
 function Get-ConfigDir {
-    return Join-Path $env:APPDATA "task-messenger"
+    param([string]$Component)
+    
+    if ($Component -eq "manager") {
+        return Join-Path $env:APPDATA "TaskMessageManager"
+    } else {
+        return Join-Path $env:APPDATA "TaskMessageWorker"
+    }
 }
 
 function Find-Archive {
@@ -214,22 +220,25 @@ function Install-Component {
         Copy-Item $dllPath $InstallDir -Force
     }
     
-    # Copy config file from etc/
-    $etcDir = Join-Path $extractedDir "etc"
-    $configFile = Join-Path $etcDir "config-$Component.json"
+    # Copy config file from config/ to APPDATA (XDG-style)
+    $configSourceDir = Join-Path $extractedDir "config"
+    $configFile = Join-Path $configSourceDir "config-$Component.json"
+    $configDir = Get-ConfigDir -Component $Component
+    New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+    
     if (Test-Path $configFile) {
-        Copy-Item $configFile $InstallDir -Force
+        Copy-Item $configFile $configDir -Force
     }
     
-    # Copy identity directory for manager
+    # Copy identity directory for manager to config directory (APPDATA)
     if ($Component -eq "manager") {
-        $identityDir = Join-Path $etcDir "vn-manager-identity"
+        $identityDir = Join-Path $configSourceDir "vn-manager-identity"
         
         if (Test-Path $identityDir) {
-            Copy-Item $identityDir $InstallDir -Recurse -Force
+            Copy-Item $identityDir $configDir -Recurse -Force
             
             # Set restrictive permissions on secret file
-            $secretPath = Join-Path $InstallDir "vn-manager-identity\identity.secret"
+            $secretPath = Join-Path $configDir "vn-manager-identity\identity.secret"
             if (Test-Path $secretPath) {
                 $acl = Get-Acl $secretPath
                 $acl.SetAccessRuleProtection($true, $false)
@@ -245,7 +254,7 @@ function Install-Component {
     }
     
     # Copy documentation
-    $docSourceDir = Join-Path $extractedDir "share\doc"
+    $docSourceDir = Join-Path $extractedDir "doc"
     if (Test-Path $docSourceDir) {
         $docDestDir = Join-Path $InstallDir "doc"
         New-Item -ItemType Directory -Path $docDestDir -Force | Out-Null
@@ -296,30 +305,14 @@ function Add-ToPath {
 function New-ConfigTemplate {
     param([string]$Component)
     
-    $configDir = Get-ConfigDir
-    New-Item -ItemType Directory -Path $configDir -Force | Out-Null
-    
+    $configDir = Get-ConfigDir -Component $Component
     $configFile = Join-Path $configDir "config-$Component.json"
     
-    # Only create config template if it doesn't exist
-    if (-not (Test-Path $configFile)) {
-        $configContent = @"
-{
-  "network": {
-    "zerotier_network_id": "",
-    "zerotier_identity_path": ""
-  },
-  "logging": {
-    "level": "info",
-    "file": ""
-  }
-}
-"@
-        Set-Content -Path $configFile -Value $configContent
-        Write-Success "Created config template: $configFile"
-        Write-Warning "Please edit the config file to set your ZeroTier network ID and other settings"
+    # Config was already copied by Install-Component, just report its location
+    if (Test-Path $configFile) {
+        Write-Info "Config file: $configFile"
     } else {
-        Write-Info "Config file already exists: $configFile"
+        Write-Warning "Config file not found at: $configFile"
     }
 }
 
@@ -336,8 +329,9 @@ function New-StartMenuShortcut {
     $exePath = Join-Path $InstallDir "$Component.exe"
     $shortcutPath = Join-Path $startMenuDir "$componentName.lnk"
     
-    # Get config file path from installation directory
-    $configFile = Join-Path $InstallDir "config-$Component.json"
+    # Get config file path from APPDATA (XDG-style)
+    $configDir = Get-ConfigDir -Component $Component
+    $configFile = Join-Path $configDir "config-$Component.json"
     
     $WScriptShell = New-Object -ComObject WScript.Shell
     $shortcut = $WScriptShell.CreateShortcut($shortcutPath)
@@ -487,7 +481,7 @@ function Main {
     }
     
     # Get config directory
-    $configDir = Get-ConfigDir
+    $configDir = Get-ConfigDir -Component $Component
     
     Write-Info "=========================================="
     Write-Info "TaskMessenger $Component Installation"

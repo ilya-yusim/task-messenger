@@ -108,12 +108,12 @@ create_archive() {
         mkdir -p "$archive_root/lib"
         cp "$staging_prefix/lib/libzt.so" "$archive_root/lib/libzt.so"
         
-        mkdir -p "$archive_root/etc"
-        cp "$staging_prefix/etc/task-messenger/config-manager.json" "$archive_root/etc/"
-        cp -r "$staging_prefix/etc/task-messenger/vn-manager-identity" "$archive_root/etc/"
+        mkdir -p "$archive_root/config"
+        cp "$staging_prefix/etc/task-messenger/config-manager.json" "$archive_root/config/"
+        cp -r "$staging_prefix/etc/task-messenger/vn-manager-identity" "$archive_root/config/"
         
-        mkdir -p "$archive_root/share/doc"
-        cp -r "$staging_prefix/share/doc/task-messenger" "$archive_root/share/doc/"
+        mkdir -p "$archive_root/doc"
+        cp -r "$staging_prefix/share/doc/task-messenger/"* "$archive_root/doc/"
         
         # Copy LICENSE to root for visibility
         cp "$PROJECT_ROOT/LICENSE" "$archive_root/"
@@ -125,11 +125,11 @@ create_archive() {
         mkdir -p "$archive_root/lib"
         cp "$staging_prefix/lib/libzt.so" "$archive_root/lib/libzt.so"
         
-        mkdir -p "$archive_root/etc"
-        cp "$staging_prefix/etc/task-messenger/config-worker.json" "$archive_root/etc/"
+        mkdir -p "$archive_root/config"
+        cp "$staging_prefix/etc/task-messenger/config-worker.json" "$archive_root/config/"
         
-        mkdir -p "$archive_root/share/doc"
-        cp -r "$staging_prefix/share/doc/task-messenger" "$archive_root/share/doc/"
+        mkdir -p "$archive_root/doc"
+        cp -r "$staging_prefix/share/doc/task-messenger/"* "$archive_root/doc/"
         
         # Copy LICENSE to root for visibility
         cp "$PROJECT_ROOT/LICENSE" "$archive_root/"

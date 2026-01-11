@@ -133,19 +133,19 @@ function Create-Archive {
     }
     
     # Copy config files
-    $EtcDir = Join-Path $TaskMessengerDir "etc"
-    New-Item -ItemType Directory -Force -Path $EtcDir | Out-Null
-    Copy-Item (Join-Path $CompStagingPrefix "etc\task-messenger\config-$Comp.json") $EtcDir
+    $ConfigDir = Join-Path $TaskMessengerDir "config"
+    New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
+    Copy-Item (Join-Path $CompStagingPrefix "etc\task-messenger\config-$Comp.json") $ConfigDir
     
     # Copy manager identity directory (only for manager component)
     if ($Comp -eq "manager") {
-        Copy-Item (Join-Path $CompStagingPrefix "etc\task-messenger\vn-manager-identity") $EtcDir -Recurse
+        Copy-Item (Join-Path $CompStagingPrefix "etc\task-messenger\vn-manager-identity") $ConfigDir -Recurse
     }
     
     # Copy documentation
-    $DocDir = Join-Path $TaskMessengerDir "share\doc"
+    $DocDir = Join-Path $TaskMessengerDir "doc"
     New-Item -ItemType Directory -Force -Path $DocDir | Out-Null
-    Copy-Item (Join-Path $CompStagingPrefix "share\doc\task-messenger") $DocDir -Recurse
+    Copy-Item (Join-Path $CompStagingPrefix "share\doc\task-messenger\*") $DocDir
     
     # Copy installation scripts
     $ScriptsDir = Join-Path $TaskMessengerDir "scripts"

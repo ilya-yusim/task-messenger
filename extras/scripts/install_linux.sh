@@ -166,25 +166,25 @@ install_component() {
     fi
     
     # Copy documentation
-    if [ -d "$extracted_dir/share/doc" ]; then
+    if [ -d "$extracted_dir/doc" ]; then
         mkdir -p "$install_dir/doc"
-        cp -r "$extracted_dir/share/doc/"* "$install_dir/doc/"
+        cp -r "$extracted_dir/doc/"* "$install_dir/doc/"
     fi
     
     # Copy config file from archive to component-specific XDG config directory
     local config_dir="$CONFIG_BASE/task-message-$component"
-    local etc_dir="$extracted_dir/etc"
-    local config_file="$etc_dir/config-$component.json"
+    local config_source_dir="$extracted_dir/config"
+    local config_file="$config_source_dir/config-$component.json"
     if [ -f "$config_file" ]; then
         mkdir -p "$config_dir"
         cp "$config_file" "$config_dir/"
         print_success "Installed config: $config_dir/config-$component.json"
     fi
     
-    # Copy identity directory for manager (from etc/ to component-specific XDG config directory)
+    # Copy identity directory for manager (from config/ to component-specific XDG config directory)
     # Note: Fixed bug - previous version incorrectly looked for identity files in bin/
     if [ "$component" = "manager" ]; then
-        local identity_dir="$etc_dir/vn-manager-identity"
+        local identity_dir="$config_source_dir/vn-manager-identity"
         
         if [ -d "$identity_dir" ]; then
             mkdir -p "$config_dir"

@@ -77,6 +77,64 @@ Configuration files are located in the `config/` directory:
 - `config-worker.json`: Worker settings
 - `vn-manager-identity/`: Manager's ZeroTier identity directory (only identity.public and identity.secret are version-controlled)
 
+## Installation
+
+Task Messenger provides distribution packages for both manager and worker components. Installation scripts follow XDG directory standards:
+
+### Windows Installation Paths
+
+**Binaries** (in `%LOCALAPPDATA%`):
+- Manager: `%LOCALAPPDATA%\TaskMessageManager\manager.exe`
+- Worker: `%LOCALAPPDATA%\TaskMessageWorker\worker.exe`
+
+**Configuration and Identity** (in `%APPDATA%` - roaming):
+- Manager config: `%APPDATA%\TaskMessageManager\config-manager.json`
+- Manager identity: `%APPDATA%\TaskMessageManager\vn-manager-identity\`
+- Worker config: `%APPDATA%\TaskMessageWorker\config-worker.json`
+
+**Installation:**
+```powershell
+# Extract distribution archive, then run from extracted directory:
+.\extras\scripts\install_windows.ps1
+
+# Or specify archive manually:
+.\extras\scripts\install_windows.ps1 -Archive task-messenger-manager-v1.0.0-windows-x64.zip
+```
+
+**Uninstallation:**
+```powershell
+# From installation directory:
+.\uninstall_windows.ps1
+
+# Or run from extras/scripts:
+.\extras\scripts\uninstall_windows.ps1 -Component manager
+```
+
+### Linux Installation Paths
+
+**Binaries** (in `~/.local/share`):
+- Manager: `~/.local/share/TaskMessageManager/bin/manager`
+- Worker: `~/.local/share/TaskMessageWorker/bin/worker`
+
+**Configuration and Identity** (in `~/.config` - XDG standard):
+- Manager config: `~/.config/task-messenger/config-manager.json`
+- Manager identity: `~/.config/task-messenger/vn-manager-identity/`
+- Worker config: `~/.config/task-messenger/config-worker.json`
+
+**Installation:**
+```bash
+# Extract distribution archive, then run from extracted directory:
+./extras/scripts/install_linux.sh
+
+# Or specify archive manually:
+./extras/scripts/install_linux.sh --archive task-messenger-manager-v1.0.0-linux-x64.tar.gz
+```
+
+**Uninstallation:**
+```bash
+./extras/scripts/uninstall_linux.sh --component manager
+```
+
 ## Documentation
 - Generated API/user docs: `meson compile -C builddir-manager docs` then open `builddir-manager/doxygen/html/index.html`.
 - High-level modules: see `docs/TaskMessenger.md`, `manager/README.md`, `worker/README.md`, and the README files inside `message/` and `transport/`.
