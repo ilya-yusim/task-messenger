@@ -70,6 +70,48 @@ meson compile -C builddir-worker
 - `-Ddebug_logging=true|false`: Enable debug logging (default: false)
 - `-Dprofiling_unwind=true|false`: Enable profiling-friendly unwind flags (default: false)
 
+## Creating Distribution Packages
+
+Task Messenger provides automated scripts to build distribution packages for deployment:
+
+### Windows Distributions
+
+```powershell
+# Build manager distribution (ZIP + self-extracting installer)
+.\extras\scripts\build_distribution.ps1 -Component manager
+
+# Build worker distribution (ZIP + self-extracting installer)
+.\extras\scripts\build_distribution.ps1 -Component worker
+
+# Build both
+.\extras\scripts\build_distribution.ps1 -Component manager
+.\extras\scripts\build_distribution.ps1 -Component worker
+```
+
+**Output Files** (in `dist/` directory):
+- `task-messenger-{component}-v{version}-windows-x64-installer.exe` - Self-extracting installer
+- `.sha256` checksum file
+
+The self-extracting installer automatically extracts and runs the installation script, providing a one-click installation experience.
+
+### Linux Distributions
+
+```bash
+# Build manager distribution
+./extras/scripts/build_distribution.sh --component manager
+
+# Build worker distribution
+./extras/scripts/build_distribution.sh --component worker
+
+# Build both
+./extras/scripts/build_distribution.sh --component manager
+./extras/scripts/build_distribution.sh --component worker
+```
+
+**Output Files** (in `dist/` directory):
+- `task-messenger-{component}-v{version}-linux-x64.tar.gz` - Compressed tarball
+- `.sha256` checksum file
+
 ## Configuration
 
 Configuration files are located in the `config/` directory:

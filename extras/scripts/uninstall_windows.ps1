@@ -222,6 +222,21 @@ function Remove-Component {
     
     # Remove Start Menu shortcuts
     Remove-StartMenuShortcut -Component $Component
+    
+    # Remove from Windows Add/Remove Programs
+    Unregister-FromWindowsUninstall -Component $Component
+}
+
+function Unregister-FromWindowsUninstall {
+    param([string]$Component)
+    
+    $componentName = Get-ComponentName -Component $Component
+    $uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$componentName"
+    
+    if (Test-Path $uninstallKey) {
+        Remove-Item -Path $uninstallKey -Recurse -Force
+        Write-Success "Removed from Windows Programs and Features"
+    }
 }
 
 function Remove-FromPath {

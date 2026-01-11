@@ -237,18 +237,24 @@ function Install-Component {
         if (Test-Path $identityDir) {
             Copy-Item $identityDir $configDir -Recurse -Force
             
-            # Set restrictive permissions on secret file
+            # Set restrictive permissions on secret file (best effort - may require admin privileges)
             $secretPath = Join-Path $configDir "vn-manager-identity\identity.secret"
             if (Test-Path $secretPath) {
-                $acl = Get-Acl $secretPath
-                $acl.SetAccessRuleProtection($true, $false)
-                $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-                    [System.Security.Principal.WindowsIdentity]::GetCurrent().Name,
-                    "FullControl",
-                    "Allow"
-                )
-                $acl.SetAccessRule($rule)
-                Set-Acl $secretPath $acl
+                try {
+                    $acl = Get-Acl $secretPath
+                    $acl.SetAccessRuleProtection($true, $false)
+                    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+                        [System.Security.Principal.WindowsIdentity]::GetCurrent().Name,
+                        "FullControl",
+                        "Allow"
+                    )
+                    $acl.SetAccessRule($rule)
+                    Set-Acl $secretPath $acl -ErrorAction Stop
+                } catch {
+                    # Non-critical: file permissions could not be hardened
+                    # This typically requires SeSecurityPrivilege which non-admin users may not have
+                    Write-Verbose "Note: Could not set restrictive ACL on identity.secret (requires elevated privileges)"
+                }
             }
         }
     }
@@ -358,16 +364,64 @@ function New-StartMenuShortcut {
     Write-Success "Created Start Menu shortcut: $shortcutPath"
 }
 
+function Register-InWindowsUninstall {
+    param(
+        [string]$Component,
+        [string]$InstallDir,
+        [string]$Version
+    )
+    
+    $componentName = Get-ComponentName -Component $Component
+    $uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\$componentName"
+    
+    # Get size of installation directory
+    $installSize = (Get-ChildItem -Path $InstallDir -Recurse -File | Measure-Object -Property Length -Sum).Sum
+    $installSizeKB = [math]::Round($installSize / 1KB)
+    
+    # Get uninstall script path (copy it to install directory)
+    $uninstallScriptSource = Join-Path $PSScriptRoot "uninstall_windows.ps1"
+    $uninstallScriptDest = Join-Path $InstallDir "uninstall.ps1"
+    
+    if (Test-Path $uninstallScriptSource) {
+        Copy-Item -Path $uninstallScriptSource -Destination $uninstallScriptDest -Force
+    }
+    
+    # Create registry entry
+    if (-not (Test-Path $uninstallKey)) {
+        New-Item -Path $uninstallKey -Force | Out-Null
+    }
+    
+    $displayName = "TaskMessenger $Component"
+    $publisher = "TaskMessenger Project"
+    $installDate = Get-Date -Format "yyyyMMdd"
+    $uninstallString = "powershell.exe -ExecutionPolicy Bypass -File `"$uninstallScriptDest`" -Component $Component"
+    
+    # Set registry values
+    Set-ItemProperty -Path $uninstallKey -Name "DisplayName" -Value $displayName
+    Set-ItemProperty -Path $uninstallKey -Name "DisplayVersion" -Value $Version
+    Set-ItemProperty -Path $uninstallKey -Name "Publisher" -Value $publisher
+    Set-ItemProperty -Path $uninstallKey -Name "InstallDate" -Value $installDate
+    Set-ItemProperty -Path $uninstallKey -Name "InstallLocation" -Value $InstallDir
+    Set-ItemProperty -Path $uninstallKey -Name "UninstallString" -Value $uninstallString
+    Set-ItemProperty -Path $uninstallKey -Name "QuietUninstallString" -Value "$uninstallString -Quiet"
+    Set-ItemProperty -Path $uninstallKey -Name "EstimatedSize" -Value $installSizeKB -Type DWord
+    Set-ItemProperty -Path $uninstallKey -Name "NoModify" -Value 1 -Type DWord
+    Set-ItemProperty -Path $uninstallKey -Name "NoRepair" -Value 1 -Type DWord
+    
+    # Set icon if exe exists
+    $exePath = Join-Path $InstallDir "$Component.exe"
+    if (Test-Path $exePath) {
+        Set-ItemProperty -Path $uninstallKey -Name "DisplayIcon" -Value $exePath
+    }
+    
+    Write-Success "Registered in Windows Programs and Features"
+}
+
 # Main script
 function Main {
     if ($Help) {
         Show-Usage
         exit 0
-    }
-    
-    # Set default install directory if not provided
-    if (-not $InstallDir) {
-        $InstallDir = Get-DefaultInstallDir -Component $Component
     }
     
     # First, check if we're running from an extracted archive and detect component
@@ -510,6 +564,9 @@ function Main {
     
     # Create Start Menu shortcut
     New-StartMenuShortcut -Component $Component -InstallDir $InstallDir
+    
+    # Register in Windows Add/Remove Programs
+    Register-InWindowsUninstall -Component $Component -InstallDir $InstallDir -Version $version
     
     Write-Host ""
     Write-Success "=========================================="
