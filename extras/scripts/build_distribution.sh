@@ -32,6 +32,11 @@ BUILDTYPE="release"
 STAGING_DIR="$PROJECT_ROOT/dist-staging"
 OUTPUT_DIR="$PROJECT_ROOT/dist"
 
+# Track generated files for summary
+declare -a GENERATED_FILES=()
+MAKESELF_BIN=""
+MAKESELF_AVAILABLE=false
+
 echo "=================================================="
 echo "Task Messenger Distribution Builder (Linux)"
 echo "=================================================="
@@ -40,6 +45,72 @@ echo "Version: $VERSION"
 echo "Platform: $PLATFORM-$ARCH"
 echo "Prefix: $PREFIX"
 echo "=================================================="
+
+# Function to ensure makeself is available
+ensure_makeself() {
+    # Check if makeself is in PATH
+    if command -v makeself &> /dev/null; then
+        MAKESELF_BIN="makeself"
+        MAKESELF_AVAILABLE=true
+        echo "Found makeself in PATH: $(which makeself)"
+        return 0
+    fi
+    
+    # Check for local copy
+    local local_makeself="$SCRIPT_DIR/makeself/makeself.sh"
+    if [[ -f "$local_makeself" ]]; then
+        MAKESELF_BIN="$local_makeself"
+        MAKESELF_AVAILABLE=true
+        echo "Found local makeself: $local_makeself"
+        return 0
+    fi
+    
+    # Download makeself
+    echo "Makeself not found. Downloading version 2.5.0..."
+    local makeself_dir="$SCRIPT_DIR/makeself"
+    mkdir -p "$makeself_dir"
+    
+    local makeself_url="https://github.com/megastep/makeself/releases/download/release-2.5.0/makeself-2.5.0.run"
+    local makeself_run="$makeself_dir/makeself-2.5.0.run"
+    
+    if command -v wget &> /dev/null; then
+        wget -q -O "$makeself_run" "$makeself_url" || {
+            echo "Warning: Failed to download makeself. Skipping .run generation."
+            return 1
+        }
+    elif command -v curl &> /dev/null; then
+        curl -sL -o "$makeself_run" "$makeself_url" || {
+            echo "Warning: Failed to download makeself. Skipping .run generation."
+            return 1
+        }
+    else
+        echo "Warning: Neither wget nor curl available. Cannot download makeself. Skipping .run generation."
+        return 1
+    fi
+    
+    chmod +x "$makeself_run"
+    
+    # Extract makeself (it's self-extracting)
+    echo "Extracting makeself..."
+    cd "$makeself_dir"
+    ./makeself-2.5.0.run --target "$makeself_dir" --quiet || {
+        echo "Warning: Failed to extract makeself. Skipping .run generation."
+        cd "$PROJECT_ROOT"
+        return 1
+    }
+    cd "$PROJECT_ROOT"
+    
+    # Verify makeself.sh exists
+    if [[ -f "$local_makeself" ]]; then
+        MAKESELF_BIN="$local_makeself"
+        MAKESELF_AVAILABLE=true
+        echo "Successfully installed makeself to: $local_makeself"
+        return 0
+    else
+        echo "Warning: Makeself extraction did not create expected file. Skipping .run generation."
+        return 1
+    fi
+}
 
 # Function to build and install a component
 build_component() {
@@ -181,8 +252,7 @@ EOF
     tar -czf "$archive_path" "task-message-$comp/"
     cd "$PROJECT_ROOT"
     
-    # Clean up temporary directory
-    rm -rf "$temp_archive_dir"
+    # Note: Don't clean up temp_archive_dir yet - needed for makeself
     
     # Generate SHA256 checksum
     echo "Generating checksum..."
@@ -190,7 +260,68 @@ EOF
     
     echo "Created: $archive_path"
     echo "Checksum: $OUTPUT_DIR/${archive_name}.sha256"
+    
+    # Track generated files
+    GENERATED_FILES+=("$archive_name")
+    GENERATED_FILES+=("${archive_name}.sha256")
 }
+
+# Function to create makeself self-extracting archive
+create_makeself_archive() {
+    local comp=$1
+    
+    if [[ "$MAKESELF_AVAILABLE" != "true" ]]; then
+        return 0
+    fi
+    
+    local run_name="task-message-${comp}-v${VERSION}-${PLATFORM}-${ARCH}.run"
+    local run_path="$OUTPUT_DIR/$run_name"
+    
+    echo ""
+    echo "Creating Makeself archive: $run_name"
+    
+    # Use the same staging directory that was created for tar.gz
+    local temp_archive_dir="$STAGING_DIR/archive-$comp"
+    local staging_archive_dir="$temp_archive_dir/task-message-$comp"
+    
+    # Recreate the archive directory if it doesn't exist
+    if [[ ! -d "$staging_archive_dir" ]]; then
+        echo "Warning: Archive directory not found. Skipping .run generation for $comp."
+        return 1
+    fi
+    
+    # Build makeself command
+    local makeself_label="TaskMessenger ${comp^} v$VERSION Installer"
+    
+    # Execute makeself
+    "$MAKESELF_BIN" \
+        --nox11 \
+        --license "$staging_archive_dir/LICENSE" \
+        "$staging_archive_dir" \
+        "$run_path" \
+        "$makeself_label" \
+        ./scripts/install_linux.sh || {
+        echo "Warning: Makeself generation failed for $comp. Skipping."
+        return 1
+    }
+    
+    # Make the .run file executable
+    chmod +x "$run_path"
+    
+    # Generate SHA256 checksum
+    echo "Generating checksum..."
+    (cd "$OUTPUT_DIR" && sha256sum "$run_name" > "${run_name}.sha256")
+    
+    echo "Created: $run_path"
+    echo "Checksum: $OUTPUT_DIR/${run_name}.sha256"
+    
+    # Track generated files
+    GENERATED_FILES+=("$run_name")
+    GENERATED_FILES+=("${run_name}.sha256")
+}
+
+# Ensure makeself is available
+ensure_makeself
 
 # Clean staging and output directories
 rm -rf "$STAGING_DIR" "$OUTPUT_DIR"
@@ -201,10 +332,16 @@ if [[ "$COMPONENT" == "all" ]]; then
     for comp in manager worker; do
         build_component "$comp"
         create_archive "$comp"
+        create_makeself_archive "$comp"
+        # Clean up temporary archive directory after both formats are created
+        rm -rf "$STAGING_DIR/archive-$comp"
     done
 else
     build_component "$COMPONENT"
     create_archive "$COMPONENT"
+    create_makeself_archive "$COMPONENT"
+    # Clean up temporary archive directory after both formats are created
+    rm -rf "$STAGING_DIR/archive-$COMPONENT"
 fi
 
 # Summary
@@ -212,6 +349,45 @@ echo ""
 echo "=================================================="
 echo "Distribution build complete!"
 echo "=================================================="
+echo "Version: $VERSION"
+echo "Platform: $PLATFORM-$ARCH"
 echo "Output directory: $OUTPUT_DIR"
-ls -lh "$OUTPUT_DIR"
+echo ""
+echo "Generated files:"
+echo "--------------------------------------------------"
+
+if [[ ${#GENERATED_FILES[@]} -gt 0 ]]; then
+    for file in "${GENERATED_FILES[@]}"; do
+        if [[ -f "$OUTPUT_DIR/$file" ]]; then
+            size=$(du -h "$OUTPUT_DIR/$file" | cut -f1)
+            if [[ "$file" =~ \.sha256$ ]]; then
+                echo "  📝 $file ($size)"
+            elif [[ "$file" =~ \.run$ ]]; then
+                echo "  🚀 $file ($size)"
+            else
+                echo "  📦 $file ($size)"
+            fi
+        fi
+    done
+    echo "--------------------------------------------------"
+    echo "Total files: ${#GENERATED_FILES[@]}"
+else
+    echo "  No files generated."
+fi
+
+echo ""
+if [[ "$MAKESELF_AVAILABLE" == "true" ]]; then
+    echo "✅ Created both .tar.gz and .run archives"
+    echo ""
+    echo "Installation options:"
+    echo "  • Extract and run: tar -xzf <file>.tar.gz && cd task-message-* && ./scripts/install_linux.sh"
+    echo "  • Direct install:  chmod +x <file>.run && ./<file>.run"
+    echo "  • Custom extract:  ./<file>.run --target /custom/path"
+else
+    echo "⚠️  Makeself not available - only .tar.gz archives created"
+    echo ""
+    echo "Installation:"
+    echo "  tar -xzf <file>.tar.gz && cd task-message-* && ./scripts/install_linux.sh"
+fi
+
 echo "=================================================="

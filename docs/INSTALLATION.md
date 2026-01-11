@@ -52,13 +52,59 @@ Each component can be installed independently based on your needs. Both componen
 
 ## Linux Installation
 
-### Step 1: Download the Distribution Package
+TaskMessenger provides two installation formats for Linux:
+- **`.run` files**: Self-extracting installers (recommended - simplest)
+- **`.tar.gz` files**: Traditional compressed archives
+
+### Option A: Self-Extracting Installer (.run) - Recommended
+
+This is the simplest installation method, similar to Windows installers.
+
+#### Step 1: Download the Installer
+
+Download the appropriate `.run` file for your component:
+- `task-message-manager-v1.0.0-linux-x86_64.run`
+- `task-message-worker-v1.0.0-linux-x86_64.run`
+
+#### Step 2: Make Executable and Run
+
+```bash
+chmod +x task-message-manager-v1.0.0-linux-x86_64.run
+./task-message-manager-v1.0.0-linux-x86_64.run
+```
+
+Or for worker:
+```bash
+chmod +x task-message-worker-v1.0.0-linux-x86_64.run
+./task-message-worker-v1.0.0-linux-x86_64.run
+```
+
+The installer will automatically extract and run the installation script.
+
+**Advanced options:**
+```bash
+# Extract to a custom temporary location
+./task-message-manager-v1.0.0-linux-x86_64.run --target /tmp/custom
+
+# Keep extracted files for inspection (don't auto-delete)
+./task-message-manager-v1.0.0-linux-x86_64.run --keep
+
+# Extract only, don't run installer
+./task-message-manager-v1.0.0-linux-x86_64.run --noexec
+
+# See all available options
+./task-message-manager-v1.0.0-linux-x86_64.run --help
+```
+
+### Option B: Traditional tar.gz Archive
+
+#### Step 1: Download the Archive
 
 Download the appropriate archive for your component:
 - `task-messenger-manager-v1.0.0-linux-x86_64.tar.gz`
 - `task-messenger-worker-v1.0.0-linux-x86_64.tar.gz`
 
-### Step 2: Extract the Archive
+#### Step 2: Extract the Archive
 
 ```bash
 tar -xzf task-messenger-manager-v1.0.0-linux-x86_64.tar.gz
@@ -66,21 +112,26 @@ tar -xzf task-messenger-manager-v1.0.0-linux-x86_64.tar.gz
 tar -xzf task-messenger-worker-v1.0.0-linux-x86_64.tar.gz
 ```
 
-### Step 3: Run the Installation Script
+#### Step 3: Run the Installation Script
 
 ```bash
-cd opt/task-messenger
-./scripts/install_linux.sh manager
+cd task-message-manager
+./scripts/install_linux.sh
 # or
-./scripts/install_linux.sh worker
+cd task-message-worker
+./scripts/install_linux.sh
 ```
+
+### What the Installer Does
+
+### What the Installer Does
 
 The script will:
 1. Check for existing installations and offer to upgrade
-2. Install the component to `~/.local/share/task-messenger/{component}/`
+2. Install the component to `~/.local/share/task-message-{component}/`
 3. Create a symlink in `~/.local/bin/`
 4. Install a desktop entry
-5. Create a configuration template at `~/.config/task-messenger/config-{component}.json`
+5. Create a configuration template at `~/.config/task-message-{component}/config-{component}.json`
 
 ### Step 4: Configure PATH (if needed)
 

@@ -17,3 +17,6 @@ out/
 .github/prompts/plan-taskMessengerCodeReview.prompt.md
 dist/
 dist-*/
+
+# Downloaded tools
+extras/scripts/makeself/
