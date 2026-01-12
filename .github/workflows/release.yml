@@ -32,14 +32,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.os != '' && fromJSON(format('["{0}"]', github.event.inputs.os)) || fromJSON('["windows-latest", "ubuntu-latest"]') }}
-        component: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.component != '' && fromJSON(format('["{0}"]', github.event.inputs.component)) || fromJSON('["manager", "worker"]') }}
-    
-    # Skip matrix combinations if specific inputs provided but don't match
-    if: |
-      (github.event_name != 'workflow_dispatch') ||
-      (github.event.inputs.os == '' || matrix.os == github.event.inputs.os) &&
-      (github.event.inputs.component == '' || matrix.component == github.event.inputs.component)
+        os: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.os != '') && fromJSON(format('["{0}"]', github.event.inputs.os)) || fromJSON('["windows-latest", "ubuntu-latest"]') }}
+        component: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.component != '') && fromJSON(format('["{0}"]', github.event.inputs.component)) || fromJSON('["manager", "worker"]') }}
     
     steps:
       - name: Checkout repository
