@@ -81,6 +81,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-meson-
       
+      - name: Set up MSVC environment (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      
       - name: Build distribution (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
