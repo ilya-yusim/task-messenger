@@ -5,6 +5,23 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      os:
+        description: 'OS to build (leave empty for all)'
+        required: false
+        type: choice
+        options:
+          - ''
+          - 'windows-latest'
+          - 'ubuntu-latest'
+      component:
+        description: 'Component to build (leave empty for all)'
+        required: false
+        type: choice
+        options:
+          - ''
+          - 'manager'
+          - 'worker'
 
 permissions:
   contents: write
@@ -15,8 +32,14 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [windows-latest, ubuntu-latest]
-        component: [manager, worker]
+        os: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.os != '' && fromJSON(format('["{0}"]', github.event.inputs.os)) || fromJSON('["windows-latest", "ubuntu-latest"]') }}
+        component: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.component != '' && fromJSON(format('["{0}"]', github.event.inputs.component)) || fromJSON('["manager", "worker"]') }}
+    
+    # Skip matrix combinations if specific inputs provided but don't match
+    if: |
+      (github.event_name != 'workflow_dispatch') ||
+      (github.event.inputs.os == '' || matrix.os == github.event.inputs.os) &&
+      (github.event.inputs.component == '' || matrix.component == github.event.inputs.component)
     
     steps:
       - name: Checkout repository
