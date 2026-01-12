@@ -24,7 +24,13 @@ $cmakeBuildType = switch ($BuildType.ToLower()) {
 # source the build script
 . .\build.ps1
 # Invoke Build-Host with the CMake-cased build type
+Write-Host "Invoking Build-Host -BuildType $cmakeBuildType -Arch x64"
 Build-Host -BuildType $cmakeBuildType -Arch "x64"
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Build-Host failed with exit code $LASTEXITCODE"
+    exit $LASTEXITCODE
+}
 
 # Determine the target and cache paths based on build type
 # These use lowercase for consistency with libzt's output structure
@@ -37,12 +43,16 @@ $cachePath = "cache\\win-x64-host-$buildTypeLower"
 # Note: CMake outputs to lib\$BuildType (proper case) subdirectory
 $importLibSrc = Join-Path $cachePath "lib\\$cmakeBuildType\\zt-shared.lib"
 $importLibDst = Join-Path $targetPath "lib\\zt-shared.lib"
+
+Write-Host "Looking for import library at: $importLibSrc"
 if (Test-Path $importLibSrc) {
     Copy-Item $importLibSrc $importLibDst -Force
     Write-Host "Copied DLL import library: $importLibSrc -> $importLibDst"
 } else {
-    Write-Warning "DLL import library not found at: $importLibSrc"
-    Write-Warning "Shared library linking may fail!"
+    Write-Error "DLL import library not found at: $importLibSrc"
+    Write-Host "Directory contents of cache:"
+    Get-ChildItem $cachePath -Recurse | Select-Object FullName
+    exit 1
 }
 
 # Copy the DLL to match the import library name
