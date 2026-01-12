@@ -1,0 +1,294 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.component }} on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+        component: [manager, worker]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      
+      - name: Extract version from tag
+        id: version
+        shell: bash
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            VERSION="${GITHUB_REF#refs/tags/v}"
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "Version: $VERSION"
+          else
+            echo "version=0.0.0-dev" >> $GITHUB_OUTPUT
+            echo "No tag found, using dev version"
+          fi
+      
+      - name: Update meson.build version (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.version }}"
+          $content = Get-Content meson.build -Raw
+          $content = $content -replace "version:\s*'[^']*'", "version: '$version'"
+          Set-Content -Path meson.build -Value $content
+          Write-Host "Updated version to: $version"
+          Get-Content meson.build | Select-String "version:"
+      
+      - name: Update meson.build version (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          sed -i "s/version:\s*'[^']*'/version: '$version'/" meson.build
+          echo "Updated version to: $version"
+          grep "version:" meson.build
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install meson ninja
+      
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential
+      
+      - name: Cache Meson subprojects
+        uses: actions/cache@v4
+        with:
+          path: subprojects/packagecache
+          key: ${{ runner.os }}-meson-${{ hashFiles('subprojects/*.wrap') }}
+          restore-keys: |
+            ${{ runner.os }}-meson-
+      
+      - name: Build distribution (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          .\extras\scripts\build_distribution.ps1 -Component ${{ matrix.component }}
+      
+      - name: Build distribution (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          chmod +x ./extras/scripts/build_distribution.sh
+          ./extras/scripts/build_distribution.sh ${{ matrix.component }}
+      
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.component }}-${{ runner.os }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: Create Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Check if test release
+        id: test_check
+        run: |
+          TAG_NAME="${GITHUB_REF#refs/tags/}"
+          if [[ "$TAG_NAME" == "vtest" ]]; then
+            echo "is_test=true" >> $GITHUB_OUTPUT
+            echo "This is a test release"
+          else
+            echo "is_test=false" >> $GITHUB_OUTPUT
+            echo "This is a production release"
+          fi
+      
+      - name: Delete existing test release
+        if: steps.test_check.outputs.is_test == 'true'
+        uses: actions/github-script@v7
+        continue-on-error: true
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            
+            // Try to get the release by tag
+            try {
+              const release = await github.rest.repos.getReleaseByTag({
+                owner,
+                repo,
+                tag: 'vtest'
+              });
+              
+              // Delete the release
+              await github.rest.repos.deleteRelease({
+                owner,
+                repo,
+                release_id: release.data.id
+              });
+              console.log('Deleted existing vtest release');
+            } catch (error) {
+              console.log('No existing vtest release found or already deleted');
+            }
+            
+            // Try to delete the tag
+            try {
+              await github.rest.git.deleteRef({
+                owner,
+                repo,
+                ref: 'tags/vtest'
+              });
+              console.log('Deleted existing vtest tag');
+            } catch (error) {
+              console.log('No existing vtest tag found or already deleted');
+            }
+      
+      - name: Get previous tag
+        id: prev_tag
+        run: |
+          CURRENT_TAG="${GITHUB_REF#refs/tags/}"
+          
+          # Get all tags sorted by version
+          PREV_TAG=$(git tag --sort=-v:refname | grep -v "^vtest$" | grep -v "^${CURRENT_TAG}$" | head -n 1)
+          
+          if [[ -n "$PREV_TAG" ]]; then
+            echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
+            echo "Previous tag: $PREV_TAG"
+          else
+            echo "previous_tag=" >> $GITHUB_OUTPUT
+            echo "No previous tag found (first release)"
+          fi
+      
+      - name: Generate changelog
+        id: changelog
+        run: |
+          CURRENT_TAG="${GITHUB_REF#refs/tags/}"
+          PREV_TAG="${{ steps.prev_tag.outputs.previous_tag }}"
+          
+          if [[ -z "$PREV_TAG" ]]; then
+            # First release - use placeholder
+            cat > changelog.md << 'EOF'
+          ## 🎉 Initial Release
+          
+          This is the first release of task-messenger.
+          
+          ### Features
+          - Manager component for task distribution
+          - Worker component for task processing
+          - ZeroTier-based peer-to-peer networking
+          - Cross-platform support (Windows and Linux)
+          
+          See the [documentation](README.md) for installation and usage instructions.
+          EOF
+          else
+            # Generate changelog from commits
+            echo "## What's Changed" > changelog.md
+            echo "" >> changelog.md
+            
+            # Get commits between tags
+            COMMITS=$(git log ${PREV_TAG}..${CURRENT_TAG} --pretty=format:"%s|||%h" --no-merges)
+            
+            # Parse conventional commits
+            declare -A sections
+            sections["feat"]="### ✨ Features"
+            sections["fix"]="### 🐛 Bug Fixes"
+            sections["breaking"]="### ⚠️ Breaking Changes"
+            sections["perf"]="### ⚡ Performance"
+            sections["docs"]="### 📚 Documentation"
+            sections["refactor"]="### ♻️ Refactoring"
+            sections["test"]="### ✅ Tests"
+            sections["chore"]="### 🔧 Chores"
+            sections["ci"]="### 👷 CI/CD"
+            sections["other"]="### 🔀 Other Changes"
+            
+            declare -A changes
+            
+            while IFS='|||' read -r message hash; do
+              # Check for breaking change
+              if [[ "$message" == *"BREAKING CHANGE"* ]] || [[ "$message" == *"!"* ]]; then
+                changes["breaking"]+="- $message (\`$hash\`)\n"
+              # Check conventional commit types
+              elif [[ "$message" =~ ^feat(\([^)]+\))?:\ (.+)$ ]]; then
+                changes["feat"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
+              elif [[ "$message" =~ ^fix(\([^)]+\))?:\ (.+)$ ]]; then
+                changes["fix"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
+              elif [[ "$message" =~ ^perf(\([^)]+\))?:\ (.+)$ ]]; then
+                changes["perf"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
+              elif [[ "$message" =~ ^docs(\([^)]+\))?:\ (.+)$ ]]; then
+                changes["docs"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
+              elif [[ "$message" =~ ^refactor(\([^)]+\))?:\ (.+)$ ]]; then
+                changes["refactor"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
+              elif [[ "$message" =~ ^test(\([^)]+\))?:\ (.+)$ ]]; then
+                changes["test"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
+              elif [[ "$message" =~ ^chore(\([^)]+\))?:\ (.+)$ ]]; then
+                changes["chore"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
+              elif [[ "$message" =~ ^ci(\([^)]+\))?:\ (.+)$ ]]; then
+                changes["ci"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
+              else
+                changes["other"]+="- $message (\`$hash\`)\n"
+              fi
+            done <<< "$COMMITS"
+            
+            # Output sections in order
+            for type in breaking feat fix perf docs refactor test chore ci other; do
+              if [[ -n "${changes[$type]}" ]]; then
+                echo "" >> changelog.md
+                echo "${sections[$type]}" >> changelog.md
+                echo -e "${changes[$type]}" >> changelog.md
+              fi
+            done
+            
+            # Add comparison link
+            echo "" >> changelog.md
+            echo "---" >> changelog.md
+            echo "" >> changelog.md
+            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${CURRENT_TAG}" >> changelog.md
+          fi
+          
+          # Output for use in release
+          cat changelog.md
+          echo "changelog_file=changelog.md" >> $GITHUB_OUTPUT
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      
+      - name: Display artifact structure
+        run: |
+          echo "Downloaded artifacts:"
+          find artifacts -type f
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          body_path: changelog.md
+          files: |
+            artifacts/**/*
+          draft: false
+          prerelease: ${{ steps.test_check.outputs.is_test == 'true' }}
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
