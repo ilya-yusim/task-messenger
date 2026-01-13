@@ -114,6 +114,16 @@ jobs:
         run: |
           .\extras\scripts\build_distribution.ps1 -Component ${{ matrix.component }}
       
+      - name: Upload build logs on failure (Windows)
+        if: failure() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ matrix.component }}-windows
+          path: |
+            subprojects/libzt-wrapper/libzt/build.log
+            builddir-*/meson-logs/meson-log.txt
+          if-no-files-found: ignore
+      
       - name: Build distribution (Linux)
         if: runner.os == 'Linux'
         shell: bash

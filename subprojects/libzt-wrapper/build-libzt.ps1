@@ -57,16 +57,26 @@ try {
 
 # Invoke Build-Host with the CMake-cased build type
 Write-Host "Invoking Build-Host -BuildType $cmakeBuildType -Arch x64"
+
+$logFile = Join-Path $LibztDir "build.log"
 try {
-    Build-Host -BuildType $cmakeBuildType -Arch "x64"
+    Build-Host -BuildType $cmakeBuildType -Arch "x64" 2>&1 | Tee-Object -FilePath $logFile
     Write-Host "Build-Host completed"
 } catch {
     Write-Error "Build-Host failed: $_"
+    if (Test-Path $logFile) {
+        Write-Host "`n=== Last 50 lines of build.log ==="
+        Get-Content $logFile -Tail 50
+    }
     exit 1
 }
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Build-Host failed with exit code $LASTEXITCODE"
+    if (Test-Path $logFile) {
+        Write-Host "`n=== Last 50 lines of build.log ==="
+        Get-Content $logFile -Tail 50
+    }
     exit $LASTEXITCODE
 }
 
