@@ -25,7 +25,14 @@ if (Test-Path $sdkPath) {
     $env:WindowsSDKVersion = "$latestSDK\"
 }
 
-$env:CMAKE_ARGS = "-DCMAKE_POLICY_VERSION_MINIMUM=3.10 -DBUILD_SHARED_LIB=ON -DBUILD_STATIC_LIB=ON -DCMAKE_SYSTEM_VERSION=10.0"
+# Pass the detected SDK version to CMake via system version
+if ($env:WindowsSDKVersion) {
+    $sdkVersionNumber = $env:WindowsSDKVersion.TrimEnd('\')
+    Write-Host "Configuring CMake to use Windows SDK: $sdkVersionNumber"
+    $env:CMAKE_ARGS = "-DCMAKE_POLICY_VERSION_MINIMUM=3.10 -DBUILD_SHARED_LIB=ON -DBUILD_STATIC_LIB=ON -DCMAKE_SYSTEM_VERSION=$sdkVersionNumber"
+} else {
+    $env:CMAKE_ARGS = "-DCMAKE_POLICY_VERSION_MINIMUM=3.10 -DBUILD_SHARED_LIB=ON -DBUILD_STATIC_LIB=ON -DCMAKE_SYSTEM_VERSION=10.0"
+}
 
 # NOTE: File override / patch logic has been centralized in sync_overrides.py (Meson run_command)
 # prior to invoking this script on all platforms. The manual copy steps formerly here are removed
@@ -45,6 +52,14 @@ if (-not (Test-Path ".\build.ps1")) {
     exit 1
 }
 Write-Host "build.ps1 found"
+
+# Clean CMake cache to avoid stale SDK version references
+$cacheDir = "cache\win-x64-host-$($cmakeBuildType.ToLower())"
+if (Test-Path $cacheDir) {
+    Write-Host "Cleaning existing CMake cache: $cacheDir"
+    Remove-Item -Path "$cacheDir\CMakeCache.txt" -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path "$cacheDir\CMakeFiles" -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 # Convert Meson build type (lowercase) to CMake build type (proper case)
 # Meson: 'debug', 'relwithdebinfo', 'release'
