@@ -265,22 +265,22 @@ jobs:
               # Check for breaking change
               if [[ "$message" == *"BREAKING CHANGE"* ]] || [[ "$message" == *"!"* ]]; then
                 changes["breaking"]+="- $message (\`$hash\`)\n"
-              # Check conventional commit types
-              elif [[ "$message" =~ ^feat(\([^)]+\))?:\ (.+)$ ]]; then
+              # Check conventional commit types (scope is optional group with parentheses)
+              elif [[ "$message" =~ ^feat(\([^)]+\))?:[[:space:]](.+)$ ]]; then
                 changes["feat"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
-              elif [[ "$message" =~ ^fix(\([^)]+\))?:\ (.+)$ ]]; then
+              elif [[ "$message" =~ ^fix(\([^)]+\))?:[[:space:]](.+)$ ]]; then
                 changes["fix"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
-              elif [[ "$message" =~ ^perf(\([^)]+\))?:\ (.+)$ ]]; then
+              elif [[ "$message" =~ ^perf(\([^)]+\))?:[[:space:]](.+)$ ]]; then
                 changes["perf"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
-              elif [[ "$message" =~ ^docs(\([^)]+\))?:\ (.+)$ ]]; then
+              elif [[ "$message" =~ ^docs(\([^)]+\))?:[[:space:]](.+)$ ]]; then
                 changes["docs"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
-              elif [[ "$message" =~ ^refactor(\([^)]+\))?:\ (.+)$ ]]; then
+              elif [[ "$message" =~ ^refactor(\([^)]+\))?:[[:space:]](.+)$ ]]; then
                 changes["refactor"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
-              elif [[ "$message" =~ ^test(\([^)]+\))?:\ (.+)$ ]]; then
+              elif [[ "$message" =~ ^test(\([^)]+\))?:[[:space:]](.+)$ ]]; then
                 changes["test"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
-              elif [[ "$message" =~ ^chore(\([^)]+\))?:\ (.+)$ ]]; then
+              elif [[ "$message" =~ ^chore(\([^)]+\))?:[[:space:]](.+)$ ]]; then
                 changes["chore"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
-              elif [[ "$message" =~ ^ci(\([^)]+\))?:\ (.+)$ ]]; then
+              elif [[ "$message" =~ ^ci(\([^)]+\))?:[[:space:]](.+)$ ]]; then
                 changes["ci"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
               else
                 changes["other"]+="- $message (\`$hash\`)\n"
