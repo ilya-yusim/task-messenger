@@ -114,13 +114,18 @@ endif
 
 if host_machine.system() == 'windows'
   message('📦 Building libzt (Windows)... buildtype=' + libzt_buildtype)
-  run_command(
+  build_result = run_command(
     'powershell', '-ExecutionPolicy', 'Bypass', '-File',
     join_paths(meson.current_source_dir(), 'build-libzt.ps1'),
     libzt_dir,
     libzt_buildtype,
-    check: true
+    check: false,
+    capture: true
   )
+  if build_result.returncode() != 0
+    error('libzt build failed:\n' + build_result.stdout() + '\n' + build_result.stderr())
+  endif
+  message(build_result.stdout())
 else
   message('📦 Building libzt (Linux/macOS)... buildtype=' + libzt_buildtype)
   run_command(
