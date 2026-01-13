@@ -4,12 +4,36 @@ param (
     [string]$BuildType = 'Debug'
 )
 
+# Enable verbose error output
+$ErrorActionPreference = "Stop"
+$VerbosePreference = "Continue"
+
+Write-Host "========================================="
+Write-Host "Starting libzt build"
+Write-Host "LibztDir: $LibztDir"
+Write-Host "BuildType: $BuildType"
+Write-Host "========================================="
+
 $env:CMAKE_ARGS = "-DCMAKE_POLICY_VERSION_MINIMUM=3.10 -DBUILD_SHARED_LIB=ON -DBUILD_STATIC_LIB=ON"
 
 # NOTE: File override / patch logic has been centralized in sync_overrides.py (Meson run_command)
 # prior to invoking this script on all platforms. The manual copy steps formerly here are removed
 # to avoid duplication. This script now assumes the libzt tree already contains the overridden files.
+
+Write-Host "Changing directory to: $LibztDir"
+if (-not (Test-Path $LibztDir)) {
+    Write-Error "LibztDir does not exist: $LibztDir"
+    exit 1
+}
 cd $LibztDir
+
+Write-Host "Current directory: $(Get-Location)"
+Write-Host "Looking for build.ps1..."
+if (-not (Test-Path ".\build.ps1")) {
+    Write-Error "build.ps1 not found in $LibztDir"
+    exit 1
+}
+Write-Host "build.ps1 found"
 
 # Convert Meson build type (lowercase) to CMake build type (proper case)
 # Meson: 'debug', 'relwithdebinfo', 'release'
@@ -22,10 +46,24 @@ $cmakeBuildType = switch ($BuildType.ToLower()) {
 }
 
 # source the build script
-. .\build.ps1
+Write-Host "Sourcing build.ps1..."
+try {
+    . .\build.ps1
+    Write-Host "build.ps1 sourced successfully"
+} catch {
+    Write-Error "Failed to source build.ps1: $_"
+    exit 1
+}
+
 # Invoke Build-Host with the CMake-cased build type
 Write-Host "Invoking Build-Host -BuildType $cmakeBuildType -Arch x64"
-Build-Host -BuildType $cmakeBuildType -Arch "x64"
+try {
+    Build-Host -BuildType $cmakeBuildType -Arch "x64"
+    Write-Host "Build-Host completed"
+} catch {
+    Write-Error "Build-Host failed: $_"
+    exit 1
+}
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Build-Host failed with exit code $LASTEXITCODE"
