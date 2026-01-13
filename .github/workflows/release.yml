@@ -54,10 +54,8 @@ jobs:
           if [[ "${{ github.ref }}" == refs/tags/* ]]; then
             VERSION="${GITHUB_REF#refs/tags/v}"
             echo "version=$VERSION" >> $GITHUB_OUTPUT
-            echo "Version: $VERSION"
           else
             echo "version=0.0.0-dev" >> $GITHUB_OUTPUT
-            echo "No tag found, using dev version"
           fi
       
       - name: Update meson.build version (Windows)
@@ -68,8 +66,6 @@ jobs:
           $content = Get-Content meson.build -Raw
           $content = $content -replace "version:\s*'[^']*'", "version: '$version'"
           Set-Content -Path meson.build -Value $content
-          Write-Host "Updated version to: $version"
-          Get-Content meson.build | Select-String "version:"
       
       - name: Update meson.build version (Linux)
         if: runner.os == 'Linux'
@@ -77,8 +73,6 @@ jobs:
         run: |
           version="${{ steps.version.outputs.version }}"
           sed -i "s/version:\s*'[^']*'/version: '$version'/" meson.build
-          echo "Updated version to: $version"
-          grep "version:" meson.build
       
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -162,10 +156,8 @@ jobs:
           TAG_NAME="${GITHUB_REF#refs/tags/}"
           if [[ "$TAG_NAME" == "vtest" ]]; then
             echo "is_test=true" >> $GITHUB_OUTPUT
-            echo "This is a test release"
           else
             echo "is_test=false" >> $GITHUB_OUTPUT
-            echo "This is a production release"
           fi
       
       - name: Delete existing test release
@@ -190,9 +182,8 @@ jobs:
                 repo,
                 release_id: release.data.id
               });
-              console.log('Deleted existing vtest release');
             } catch (error) {
-              console.log('No existing vtest release found or already deleted');
+              // Ignore if not found
             }
             
             // Try to delete the tag
@@ -202,9 +193,8 @@ jobs:
                 repo,
                 ref: 'tags/vtest'
               });
-              console.log('Deleted existing vtest tag');
             } catch (error) {
-              console.log('No existing vtest tag found or already deleted');
+              // Ignore if not found
             }
       
       - name: Get previous tag
@@ -217,10 +207,8 @@ jobs:
           
           if [[ -n "$PREV_TAG" ]]; then
             echo "previous_tag=$PREV_TAG" >> $GITHUB_OUTPUT
-            echo "Previous tag: $PREV_TAG"
           else
             echo "previous_tag=" >> $GITHUB_OUTPUT
-            echo "No previous tag found (first release)"
           fi
       
       - name: Generate changelog
@@ -318,12 +306,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
-      
-      - name: Display artifact structure
-        if: ${{ !inputs.skip_build }}
-        run: |
-          echo "Downloaded artifacts:"
-          find artifacts -type f
       
       - name: Create Release
         if: ${{ !inputs.skip_build }}
