@@ -123,14 +123,15 @@ if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne $null) {
 # Determine the target and cache paths based on build type
 # These use lowercase for consistency with libzt's output structure
 $buildTypeLower = $cmakeBuildType.ToLower()
-$targetPath = "dist\\win-x64-host-$buildTypeLower"
-$cachePath = "cache\\win-x64-host-$buildTypeLower"
+$targetPath = "dist\win-x64-host-$buildTypeLower"
+$cachePath = "cache\win-x64-host-$buildTypeLower"
 
 # Copy the DLL import library from build cache to dist
 # The CMake build creates zt-shared.lib in the cache directory but libzt's build.ps1 doesn't copy it
 # Note: CMake outputs to lib\$BuildType (proper case) subdirectory
-$importLibSrc = Join-Path $cachePath "lib\\$cmakeBuildType\\zt-shared.lib"
-$importLibDst = Join-Path $targetPath "lib\\zt-shared.lib"
+$libDir = Join-Path (Join-Path $cachePath "lib") $cmakeBuildType
+$importLibSrc = Join-Path $libDir "zt-shared.lib"
+$importLibDst = Join-Path (Join-Path $targetPath "lib") "zt-shared.lib"
 
 Write-Host "Looking for import library at: $importLibSrc"
 if (Test-Path $importLibSrc) {
@@ -145,8 +146,8 @@ if (Test-Path $importLibSrc) {
 
 # Copy the DLL to match the import library name
 # libzt builds the DLL as zt-shared.dll in cache, we copy it to dist
-$dllSrc = Join-Path $cachePath "lib\\$cmakeBuildType\\zt-shared.dll"
-$dllDst = Join-Path $targetPath "lib\\zt-shared.dll"
+$dllSrc = Join-Path $libDir "zt-shared.dll"
+$dllDst = Join-Path (Join-Path $targetPath "lib") "zt-shared.dll"
 if (Test-Path $dllSrc) {
     Copy-Item $dllSrc $dllDst -Force
     Write-Host "Copied shared library DLL: $dllSrc -> $dllDst"
