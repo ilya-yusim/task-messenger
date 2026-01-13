@@ -271,22 +271,22 @@ jobs:
               # Check for breaking change
               if [[ "$message" == *"BREAKING CHANGE"* ]] || [[ "$message" == *"!"* ]]; then
                 changes["breaking"]+="- $message (\`$hash\`)\n"
-              # Check conventional commit types (scope is optional group with parentheses)
-              elif [[ "$message" =~ ^feat(\([^)]+\))?:[[:space:]](.+)$ ]]; then
+              # Check conventional commit types (use .* for optional scope to avoid bash regex issues)
+              elif [[ "$message" =~ ^feat(\(.*\))?:[[:space:]](.+)$ ]]; then
                 changes["feat"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
-              elif [[ "$message" =~ ^fix(\([^)]+\))?:[[:space:]](.+)$ ]]; then
+              elif [[ "$message" =~ ^fix(\(.*\))?:[[:space:]](.+)$ ]]; then
                 changes["fix"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
-              elif [[ "$message" =~ ^perf(\([^)]+\))?:[[:space:]](.+)$ ]]; then
+              elif [[ "$message" =~ ^perf(\(.*\))?:[[:space:]](.+)$ ]]; then
                 changes["perf"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
-              elif [[ "$message" =~ ^docs(\([^)]+\))?:[[:space:]](.+)$ ]]; then
+              elif [[ "$message" =~ ^docs(\(.*\))?:[[:space:]](.+)$ ]]; then
                 changes["docs"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
-              elif [[ "$message" =~ ^refactor(\([^)]+\))?:[[:space:]](.+)$ ]]; then
+              elif [[ "$message" =~ ^refactor(\(.*\))?:[[:space:]](.+)$ ]]; then
                 changes["refactor"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
-              elif [[ "$message" =~ ^test(\([^)]+\))?:[[:space:]](.+)$ ]]; then
+              elif [[ "$message" =~ ^test(\(.*\))?:[[:space:]](.+)$ ]]; then
                 changes["test"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
-              elif [[ "$message" =~ ^chore(\([^)]+\))?:[[:space:]](.+)$ ]]; then
+              elif [[ "$message" =~ ^chore(\(.*\))?:[[:space:]](.+)$ ]]; then
                 changes["chore"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
-              elif [[ "$message" =~ ^ci(\([^)]+\))?:[[:space:]](.+)$ ]]; then
+              elif [[ "$message" =~ ^ci(\(.*\))?:[[:space:]](.+)$ ]]; then
                 changes["ci"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
               else
                 changes["other"]+="- $message (\`$hash\`)\n"
