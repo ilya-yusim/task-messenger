@@ -6,6 +6,11 @@ on:
       - 'v*'
   workflow_dispatch:
     inputs:
+      skip_build:
+        description: 'Skip build (test changelog only)'
+        required: false
+        type: boolean
+        default: false
       os:
         description: 'OS to build (leave empty for all)'
         required: false
@@ -29,6 +34,7 @@ permissions:
 jobs:
   build:
     name: Build ${{ matrix.component }} on ${{ matrix.os }}
+    if: ${{ !inputs.skip_build }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -141,8 +147,8 @@ jobs:
   release:
     name: Create Release
     needs: build
+    if: ${{ !failure() && !cancelled() && (startsWith(github.ref, 'refs/tags/') || inputs.skip_build) }}
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
     
     steps:
       - name: Checkout repository
@@ -308,16 +314,19 @@ jobs:
           echo "changelog_file=changelog.md" >> $GITHUB_OUTPUT
       
       - name: Download all artifacts
+        if: ${{ !inputs.skip_build }}
         uses: actions/download-artifact@v4
         with:
           path: artifacts
       
       - name: Display artifact structure
+        if: ${{ !inputs.skip_build }}
         run: |
           echo "Downloaded artifacts:"
           find artifacts -type f
       
       - name: Create Release
+        if: ${{ !inputs.skip_build }}
         uses: softprops/action-gh-release@v1
         with:
           body_path: changelog.md
