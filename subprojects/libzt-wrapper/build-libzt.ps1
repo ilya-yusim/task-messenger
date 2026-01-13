@@ -14,26 +14,6 @@ Write-Host "LibztDir: $LibztDir"
 Write-Host "BuildType: $BuildType"
 Write-Host "========================================="
 
-# Let CMake auto-detect the Windows SDK version instead of using a hardcoded one
-# Query available Windows SDK versions
-$sdkPath = "C:\Program Files (x86)\Windows Kits\10\Lib"
-if (Test-Path $sdkPath) {
-    $availableSDKs = Get-ChildItem $sdkPath | Where-Object { $_.PSIsContainer } | Select-Object -ExpandProperty Name
-    Write-Host "Available Windows SDK versions: $($availableSDKs -join ', ')"
-    $latestSDK = $availableSDKs | Sort-Object -Descending | Select-Object -First 1
-    Write-Host "Using Windows SDK: $latestSDK"
-    $env:WindowsSDKVersion = "$latestSDK\"
-}
-
-# Pass the detected SDK version to CMake via system version
-if ($env:WindowsSDKVersion) {
-    $sdkVersionNumber = $env:WindowsSDKVersion.TrimEnd('\')
-    Write-Host "Configuring CMake to use Windows SDK: $sdkVersionNumber"
-    $env:CMAKE_ARGS = "-DCMAKE_POLICY_VERSION_MINIMUM=3.10 -DBUILD_SHARED_LIB=ON -DBUILD_STATIC_LIB=ON -DCMAKE_SYSTEM_VERSION=$sdkVersionNumber"
-} else {
-    $env:CMAKE_ARGS = "-DCMAKE_POLICY_VERSION_MINIMUM=3.10 -DBUILD_SHARED_LIB=ON -DBUILD_STATIC_LIB=ON -DCMAKE_SYSTEM_VERSION=10.0"
-}
-
 # NOTE: File override / patch logic has been centralized in sync_overrides.py (Meson run_command)
 # prior to invoking this script on all platforms. The manual copy steps formerly here are removed
 # to avoid duplication. This script now assumes the libzt tree already contains the overridden files.
@@ -63,14 +43,6 @@ $cmakeBuildType = switch ($BuildType.ToLower()) {
     default { $BuildType } # Fallback to original if unknown
 }
 
-# Clean CMake cache to avoid stale SDK version references
-$cacheDir = "cache\win-x64-host-$($cmakeBuildType.ToLower())"
-if (Test-Path $cacheDir) {
-    Write-Host "Cleaning entire CMake cache directory: $cacheDir"
-    Remove-Item -Path $cacheDir -Recurse -Force -ErrorAction SilentlyContinue
-    Write-Host "Cache directory removed"
-}
-
 # source the build script
 Write-Host "Sourcing build.ps1..."
 try {
@@ -83,6 +55,9 @@ try {
 
 # Invoke Build-Host with the CMake-cased build type
 Write-Host "Invoking Build-Host -BuildType $cmakeBuildType -Arch x64"
+
+# Save current directory before Build-Host (it may change the working directory)
+Push-Location
 
 $logFile = Join-Path $LibztDir "build.log"
 try {
@@ -97,12 +72,17 @@ try {
             Write-Host "`n=== Last 50 lines of build.log ==="
             Get-Content $logFile -Tail 50
         }
+        Pop-Location
         exit 1
     } else {
         Write-Host "Build completed (test runner found no tests, which is expected)"
         $global:LASTEXITCODE = 0
     }
 }
+
+# Restore directory after Build-Host
+Pop-Location
+Write-Host "Restored directory to: $(Get-Location)"
 
 if ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne $null) {
     # Check if this is just the CTest "no tests" error
@@ -135,11 +115,20 @@ $importLibDst = Join-Path (Join-Path $targetPath "lib") "zt-shared.lib"
 
 Write-Host "Looking for import library at: $importLibSrc"
 if (Test-Path $importLibSrc) {
+    # Ensure destination directory exists
+    $importLibDstDir = Split-Path $importLibDst -Parent
+    if (-not (Test-Path $importLibDstDir)) {
+        New-Item -ItemType Directory -Path $importLibDstDir -Force | Out-Null
+        Write-Host "Created directory: $importLibDstDir"
+    }
     Copy-Item $importLibSrc $importLibDst -Force
     Write-Host "Copied DLL import library: $importLibSrc -> $importLibDst"
 } else {
     Write-Error "DLL import library not found at: $importLibSrc"
-    Write-Host "Directory contents of cache:"
+    Write-Host "libDir variable: $libDir"
+    Write-Host "Directory contents of libDir:"
+    Get-ChildItem $libDir -ErrorAction SilentlyContinue | Select-Object Name, Length
+    Write-Host "`nDirectory contents of cache:"
     Get-ChildItem $cachePath -Recurse | Select-Object FullName
     exit 1
 }

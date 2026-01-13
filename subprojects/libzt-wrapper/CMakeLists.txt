@@ -423,14 +423,28 @@ endif()
 
 # WINDOWS-specific MSVC flags and libraries
 if(BUILD_WIN)
+    # Use CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION set by CMAKE_SYSTEM_VERSION
+    # This allows the SDK version to be controlled by build-libzt.ps1
+    if(NOT CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION)
+        # Fallback: detect available SDK version if not set
+        file(GLOB SDK_VERSIONS 
+            LIST_DIRECTORIES true
+            "C:/Program Files (x86)/Windows Kits/10/Lib/*")
+        list(SORT SDK_VERSIONS)
+        list(REVERSE SDK_VERSIONS)
+        list(GET SDK_VERSIONS 0 LATEST_SDK_PATH)
+        get_filename_component(CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION "${LATEST_SDK_PATH}" NAME)
+        message(STATUS "Auto-detected Windows SDK: ${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}")
+    endif()
+    
     # 64-bit
     if(BUILD_WIN64)
         set(WINLIBDIR
-                "C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22000.0/um/x64")
+                "C:/Program Files (x86)/Windows Kits/10/Lib/${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}/um/x64")
     else()
     # 32-bit
         set(WINLIBDIR
-                "C:/Program Files (x86)/Windows Kits/10/Lib/10.0.22000.0/um/x86")
+                "C:/Program Files (x86)/Windows Kits/10/Lib/${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}/um/x86")
     endif()
 
     # find_library (ws2_32_LIBRARY_PATH NAMES WS2_32 HINTS ${WINLIBDIR})
