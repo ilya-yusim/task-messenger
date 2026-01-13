@@ -53,14 +53,6 @@ if (-not (Test-Path ".\build.ps1")) {
 }
 Write-Host "build.ps1 found"
 
-# Clean CMake cache to avoid stale SDK version references
-$cacheDir = "cache\win-x64-host-$($cmakeBuildType.ToLower())"
-if (Test-Path $cacheDir) {
-    Write-Host "Cleaning existing CMake cache: $cacheDir"
-    Remove-Item -Path "$cacheDir\CMakeCache.txt" -Force -ErrorAction SilentlyContinue
-    Remove-Item -Path "$cacheDir\CMakeFiles" -Recurse -Force -ErrorAction SilentlyContinue
-}
-
 # Convert Meson build type (lowercase) to CMake build type (proper case)
 # Meson: 'debug', 'relwithdebinfo', 'release'
 # CMake: 'Debug', 'RelWithDebInfo', 'Release'
@@ -69,6 +61,14 @@ $cmakeBuildType = switch ($BuildType.ToLower()) {
     'relwithdebinfo' { 'RelWithDebInfo' }
     'release' { 'Release' }
     default { $BuildType } # Fallback to original if unknown
+}
+
+# Clean CMake cache to avoid stale SDK version references
+$cacheDir = "cache\win-x64-host-$($cmakeBuildType.ToLower())"
+if (Test-Path $cacheDir) {
+    Write-Host "Cleaning existing CMake cache: $cacheDir"
+    Remove-Item -Path "$cacheDir\CMakeCache.txt" -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path "$cacheDir\CMakeFiles" -Recurse -Force -ErrorAction SilentlyContinue
 }
 
 # source the build script
