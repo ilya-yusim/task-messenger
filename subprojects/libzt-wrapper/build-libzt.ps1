@@ -66,9 +66,9 @@ $cmakeBuildType = switch ($BuildType.ToLower()) {
 # Clean CMake cache to avoid stale SDK version references
 $cacheDir = "cache\win-x64-host-$($cmakeBuildType.ToLower())"
 if (Test-Path $cacheDir) {
-    Write-Host "Cleaning existing CMake cache: $cacheDir"
-    Remove-Item -Path "$cacheDir\CMakeCache.txt" -Force -ErrorAction SilentlyContinue
-    Remove-Item -Path "$cacheDir\CMakeFiles" -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "Cleaning entire CMake cache directory: $cacheDir"
+    Remove-Item -Path $cacheDir -Recurse -Force -ErrorAction SilentlyContinue
+    Write-Host "Cache directory removed"
 }
 
 # source the build script
