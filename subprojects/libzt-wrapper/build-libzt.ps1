@@ -14,7 +14,18 @@ Write-Host "LibztDir: $LibztDir"
 Write-Host "BuildType: $BuildType"
 Write-Host "========================================="
 
-$env:CMAKE_ARGS = "-DCMAKE_POLICY_VERSION_MINIMUM=3.10 -DBUILD_SHARED_LIB=ON -DBUILD_STATIC_LIB=ON"
+# Let CMake auto-detect the Windows SDK version instead of using a hardcoded one
+# Query available Windows SDK versions
+$sdkPath = "C:\Program Files (x86)\Windows Kits\10\Lib"
+if (Test-Path $sdkPath) {
+    $availableSDKs = Get-ChildItem $sdkPath | Where-Object { $_.PSIsContainer } | Select-Object -ExpandProperty Name
+    Write-Host "Available Windows SDK versions: $($availableSDKs -join ', ')"
+    $latestSDK = $availableSDKs | Sort-Object -Descending | Select-Object -First 1
+    Write-Host "Using Windows SDK: $latestSDK"
+    $env:WindowsSDKVersion = "$latestSDK\"
+}
+
+$env:CMAKE_ARGS = "-DCMAKE_POLICY_VERSION_MINIMUM=3.10 -DBUILD_SHARED_LIB=ON -DBUILD_STATIC_LIB=ON -DCMAKE_SYSTEM_VERSION=10.0"
 
 # NOTE: File override / patch logic has been centralized in sync_overrides.py (Meson run_command)
 # prior to invoking this script on all platforms. The manual copy steps formerly here are removed
