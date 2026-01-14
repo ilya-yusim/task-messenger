@@ -114,6 +114,34 @@ jobs:
         run: |
           .\extras\scripts\build_distribution.ps1 -Component ${{ matrix.component }}
       
+      - name: Diagnose FTXUI build (Windows worker)
+        if: runner.os == 'Windows' && matrix.component == 'worker'
+        shell: pwsh
+        run: |
+          Write-Host "=== FTXUI Diagnostic Information ==="
+          Write-Host ""
+          Write-Host "Checking builddir-worker-dist for ftxui..."
+          if (Test-Path "builddir-worker-dist/subprojects") {
+            Get-ChildItem "builddir-worker-dist/subprojects" -Directory | ForEach-Object {
+              Write-Host "Found subproject: $($_.Name)"
+            }
+          }
+          Write-Host ""
+          Write-Host "Checking for ftxui in meson-info..."
+          if (Test-Path "builddir-worker-dist/meson-info/intro-dependencies.json") {
+            $deps = Get-Content "builddir-worker-dist/meson-info/intro-dependencies.json" | ConvertFrom-Json
+            $deps | Where-Object { $_.name -like "*ftxui*" } | ForEach-Object {
+              Write-Host "FTXUI dependency: $($_.name) - Found: $($_.found)"
+            }
+          }
+          Write-Host ""
+          Write-Host "Checking staged files for FTXUI DLLs..."
+          if (Test-Path "dist-staging/worker") {
+            Get-ChildItem "dist-staging/worker" -Recurse -Filter "*.dll" | ForEach-Object {
+              Write-Host "Found DLL: $($_.FullName)"
+            }
+          }
+      
       - name: Upload build logs on failure (Windows)
         if: failure() && runner.os == 'Windows'
         uses: actions/upload-artifact@v4
@@ -122,6 +150,9 @@ jobs:
           path: |
             subprojects/libzt-wrapper/libzt/build.log
             builddir-*/meson-logs/meson-log.txt
+            builddir-*/subprojects/ftxui*/meson-log.txt
+            builddir-*/subprojects/ftxui*/CMakeFiles/CMakeOutput.log
+            builddir-*/subprojects/ftxui*/CMakeFiles/CMakeError.log
           if-no-files-found: ignore
       
       - name: Build distribution (Linux)
@@ -130,6 +161,39 @@ jobs:
         run: |
           chmod +x ./extras/scripts/build_distribution.sh
           ./extras/scripts/build_distribution.sh ${{ matrix.component }}
+      
+      - name: Diagnose FTXUI build (Linux worker)
+        if: runner.os == 'Linux' && matrix.component == 'worker'
+        shell: bash
+        run: |
+          echo "=== FTXUI Diagnostic Information ==="
+          echo ""
+          echo "Checking builddir-worker-dist for ftxui..."
+          if [ -d "builddir-worker-dist/subprojects" ]; then
+            ls -la builddir-worker-dist/subprojects/
+          fi
+          echo ""
+          echo "Checking for ftxui in meson-info..."
+          if [ -f "builddir-worker-dist/meson-info/intro-dependencies.json" ]; then
+            cat builddir-worker-dist/meson-info/intro-dependencies.json | grep -i ftxui || echo "No ftxui dependencies found"
+          fi
+          echo ""
+          echo "Checking staged files for FTXUI shared libraries..."
+          if [ -d "dist-staging/worker" ]; then
+            find dist-staging/worker -name "*.so*" -o -name "*.a"
+          fi
+      
+      - name: Upload build logs on failure (Linux)
+        if: failure() && runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ matrix.component }}-linux
+          path: |
+            builddir-*/meson-logs/meson-log.txt
+            builddir-*/subprojects/ftxui*/meson-log.txt
+            builddir-*/subprojects/ftxui*/CMakeFiles/CMakeOutput.log
+            builddir-*/subprojects/ftxui*/CMakeFiles/CMakeError.log
+          if-no-files-found: ignore
       
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
