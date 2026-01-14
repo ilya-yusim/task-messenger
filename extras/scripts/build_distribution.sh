@@ -254,16 +254,10 @@ EOF
     
     # Note: Don't clean up temp_archive_dir yet - needed for makeself
     
-    # Generate SHA256 checksum
-    echo "Generating checksum..."
-    (cd "$OUTPUT_DIR" && sha256sum "$archive_name" > "${archive_name}.sha256")
-    
     echo "Created: $archive_path"
-    echo "Checksum: $OUTPUT_DIR/${archive_name}.sha256"
     
     # Track generated files
     GENERATED_FILES+=("$archive_name")
-    GENERATED_FILES+=("${archive_name}.sha256")
 }
 
 # Function to create makeself self-extracting archive
@@ -308,16 +302,10 @@ create_makeself_archive() {
     # Make the .run file executable
     chmod +x "$run_path"
     
-    # Generate SHA256 checksum
-    echo "Generating checksum..."
-    (cd "$OUTPUT_DIR" && sha256sum "$run_name" > "${run_name}.sha256")
-    
     echo "Created: $run_path"
-    echo "Checksum: $OUTPUT_DIR/${run_name}.sha256"
     
     # Track generated files
     GENERATED_FILES+=("$run_name")
-    GENERATED_FILES+=("${run_name}.sha256")
 }
 
 # Ensure makeself is available
@@ -360,9 +348,7 @@ if [[ ${#GENERATED_FILES[@]} -gt 0 ]]; then
     for file in "${GENERATED_FILES[@]}"; do
         if [[ -f "$OUTPUT_DIR/$file" ]]; then
             size=$(du -h "$OUTPUT_DIR/$file" | cut -f1)
-            if [[ "$file" =~ \.sha256$ ]]; then
-                echo "  📝 $file ($size)"
-            elif [[ "$file" =~ \.run$ ]]; then
+            if [[ "$file" =~ \.run$ ]]; then
                 echo "  🚀 $file ($size)"
             else
                 echo "  📦 $file ($size)"

@@ -182,14 +182,7 @@ For help:
     # Create ZIP archive
     Compress-Archive -Path "$TempArchiveDir\*" -DestinationPath $ArchivePath -Force
     
-    # Generate SHA256 checksum
-    Write-Host "Generating checksum..."
-    $Hash = (Get-FileHash -Path $ArchivePath -Algorithm SHA256).Hash
-    $ChecksumFile = "$ArchivePath.sha256"
-    "$Hash  $ArchiveName" | Out-File -FilePath $ChecksumFile -Encoding ASCII
-    
     Write-Host "Created: $ArchivePath"
-    Write-Host "Checksum: $ChecksumFile"
     
     # Clean up temp directory
     Remove-Item -Recurse -Force $TempArchiveDir
@@ -371,16 +364,9 @@ SourceFiles0=$IExpressTemp
     if (Test-Path $InstallerPath) {
         Write-Host "Created self-extracting installer: $InstallerPath"
         
-        # Generate SHA256 checksum for installer
-        $Hash = (Get-FileHash -Path $InstallerPath -Algorithm SHA256).Hash
-        $ChecksumFile = "$InstallerPath.sha256"
-        "$Hash  $InstallerName" | Out-File -FilePath $ChecksumFile -Encoding ASCII
-        Write-Host "Checksum: $ChecksumFile"
-        
         # Clean up ZIP archive (no longer needed since installer contains it)
         Write-Host "Removing intermediate ZIP archive..."
         Remove-Item -Force $ZipArchive -ErrorAction SilentlyContinue
-        Remove-Item -Force "$ZipArchive.sha256" -ErrorAction SilentlyContinue
         
         # Clean up IExpress temporary files (.DDF files in output directory)
         Get-ChildItem -Path $OutputDir -Filter "*.DDF" | Remove-Item -Force -ErrorAction SilentlyContinue
