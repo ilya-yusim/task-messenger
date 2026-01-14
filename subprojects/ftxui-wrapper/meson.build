@@ -5,7 +5,17 @@
 project('ftxui-wrapper', 'cpp', version: '0')
 
 cmake_mod = import('cmake')
-ftxui_proj = cmake_mod.subproject('ftxui')
+
+# Configure CMake options for ftxui
+cmake_opts = cmake_mod.subproject_options()
+cmake_opts.add_cmake_defines({
+  'FTXUI_BUILD_EXAMPLES': 'OFF',
+  'FTXUI_BUILD_DOCS': 'OFF',
+  'FTXUI_BUILD_TESTS': 'OFF',
+  'FTXUI_ENABLE_INSTALL': 'ON',
+})
+
+ftxui_proj = cmake_mod.subproject('ftxui', options: cmake_opts)
 
 ftxui_dep = declare_dependency(
   dependencies: [
