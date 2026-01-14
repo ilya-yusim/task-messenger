@@ -149,10 +149,24 @@ jobs:
           name: build-logs-${{ matrix.component }}-windows
           path: |
             subprojects/libzt-wrapper/libzt/build.log
-            builddir-*/meson-logs/meson-log.txt
+            builddir-${{ matrix.component }}-dist/meson-logs/
+            builddir-*/meson-logs/
             builddir-*/subprojects/ftxui*/meson-log.txt
             builddir-*/subprojects/ftxui*/CMakeFiles/CMakeOutput.log
             builddir-*/subprojects/ftxui*/CMakeFiles/CMakeError.log
+          if-no-files-found: ignore
+      
+      - name: Upload diagnostic logs (Windows worker)
+        if: runner.os == 'Windows' && matrix.component == 'worker'
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-logs-worker-windows
+          path: |
+            builddir-worker-dist/meson-logs/
+            builddir-worker-dist/meson-info/intro-dependencies.json
+            builddir-worker-dist/subprojects/ftxui*/meson-log.txt
+            builddir-worker-dist/subprojects/ftxui*/CMakeFiles/CMakeOutput.log
+            builddir-worker-dist/subprojects/ftxui*/CMakeFiles/CMakeError.log
           if-no-files-found: ignore
       
       - name: Build distribution (Linux)
@@ -189,10 +203,24 @@ jobs:
         with:
           name: build-logs-${{ matrix.component }}-linux
           path: |
-            builddir-*/meson-logs/meson-log.txt
+            builddir-${{ matrix.component }}-dist/meson-logs/
+            builddir-*/meson-logs/
             builddir-*/subprojects/ftxui*/meson-log.txt
             builddir-*/subprojects/ftxui*/CMakeFiles/CMakeOutput.log
             builddir-*/subprojects/ftxui*/CMakeFiles/CMakeError.log
+          if-no-files-found: ignore
+      
+      - name: Upload diagnostic logs (Linux worker)
+        if: runner.os == 'Linux' && matrix.component == 'worker'
+        uses: actions/upload-artifact@v4
+        with:
+          name: diagnostic-logs-worker-linux
+          path: |
+            builddir-worker-dist/meson-logs/
+            builddir-worker-dist/meson-info/intro-dependencies.json
+            builddir-worker-dist/subprojects/ftxui*/meson-log.txt
+            builddir-worker-dist/subprojects/ftxui*/CMakeFiles/CMakeOutput.log
+            builddir-worker-dist/subprojects/ftxui*/CMakeFiles/CMakeError.log
           if-no-files-found: ignore
       
       - name: Upload artifacts
