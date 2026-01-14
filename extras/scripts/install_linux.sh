@@ -255,9 +255,9 @@ install_desktop_entry() {
     local config_path="$config_dir/config-$component.json"
     local lib_path="$install_dir/lib"
     local exec_cmd="env LD_LIBRARY_PATH=\\\"$lib_path\\\" $install_dir/bin/$component -c \\\"$config_path\\\""
-    # Add --ui flag for worker
+    # Worker defaults to UI enabled
     if [ "$component" = "worker" ]; then
-        exec_cmd="$exec_cmd --ui"
+        exec_cmd="$exec_cmd"
     fi
     # Copy and update Exec path in desktop entry
     local installed_desktop="$DESKTOP_DIR/task-messenger-${component}.desktop"

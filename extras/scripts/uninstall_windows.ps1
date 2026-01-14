@@ -35,6 +35,18 @@ function Write-ErrorMsg {
     Write-Host "[ERROR] $Message" -ForegroundColor Red
 }
 
+function Exit-WithError {
+    param(
+        [string]$Message,
+        [int]$ExitCode = 1
+    )
+    Write-ErrorMsg $Message
+    Write-Host ""
+    Write-Host "Press any key to exit..."
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    exit $ExitCode
+}
+
 function Show-Usage {
     @"
 TaskMessenger Windows Uninstallation Script
@@ -98,16 +110,14 @@ function Test-Installation {
         
         if (-not (Test-Path $managerBinDir) -and -not (Test-Path $workerBinDir) -and
             -not (Test-Path $managerCfgDir) -and -not (Test-Path $workerCfgDir)) {
-            Write-ErrorMsg "No TaskMessenger installation found"
-            exit 1
+            Exit-WithError "No TaskMessenger installation found"
         }
     } else {
         $installDir = Get-DefaultInstallDir -Component $Component
         $configDir = Get-ConfigDir -Component $Component
         
         if (-not (Test-Path $installDir) -and -not (Test-Path $configDir)) {
-            Write-ErrorMsg "$Component is not installed at: $installDir or $configDir"
-            exit 1
+            Exit-WithError "$Component is not installed at: $installDir or $configDir"
         }
     }
 }
@@ -147,7 +157,7 @@ function Select-Component {
     param([string[]]$InstalledComponents)
     
     if ($InstalledComponents.Count -eq 0) {
-        return $null
+        Exit-WithError "No TaskMessenger installation found"
     }
     
     if ($InstalledComponents.Count -eq 1) {
@@ -278,23 +288,16 @@ function Remove-ConfigFile {
     $configFile = Join-Path $configDir "config-$Component.json"
     
     if (Test-Path $configFile) {
-        Write-Warning "Configuration file found: $configFile"
-        $response = Read-Host "Do you want to remove the configuration file? [y/N]"
+        Remove-Item $configFile -Force
+        Write-Success "Removed configuration file: $configFile"
         
-        if ($response -match '^[Yy]$') {
-            Remove-Item $configFile -Force
-            Write-Success "Removed configuration file: $configFile"
-            
-            # Also remove backup files
-            $backupPattern = "$configFile.backup.*"
-            $backupFiles = Get-ChildItem -Path (Split-Path $configFile) -Filter (Split-Path $backupPattern -Leaf) -ErrorAction SilentlyContinue
-            
-            if ($backupFiles) {
-                $backupFiles | Remove-Item -Force
-                Write-Success "Removed configuration backups"
-            }
-        } else {
-            Write-Info "Configuration file preserved"
+        # Also remove backup files
+        $backupPattern = "$configFile.backup.*"
+        $backupFiles = Get-ChildItem -Path (Split-Path $configFile) -Filter (Split-Path $backupPattern -Leaf) -ErrorAction SilentlyContinue
+        
+        if ($backupFiles) {
+            $backupFiles | Remove-Item -Force
+            Write-Success "Removed configuration backups"
         }
     }
 }
@@ -340,15 +343,13 @@ function Main {
             $installedComponents = Get-InstalledComponents
             
             if ($installedComponents.Count -eq 0) {
-                Write-ErrorMsg "No TaskMessenger installation found"
-                exit 1
+                Exit-WithError "No TaskMessenger installation found"
             }
             
             $Component = Select-Component -InstalledComponents $installedComponents
             
             if (-not $Component) {
-                Write-ErrorMsg "Failed to select component"
-                exit 1
+                Exit-WithError "Failed to select component"
             }
         }
         
@@ -374,12 +375,6 @@ function Main {
     Write-Info "Remove config:    $RemoveConfig"
     Write-Info "=========================================="
     Write-Host ""
-    
-    $response = Read-Host "Are you sure you want to uninstall? [y/N]"
-    if ($response -notmatch '^[Yy]$') {
-        Write-Info "Uninstallation cancelled by user"
-        exit 0
-    }
     
     # Remove components
     if ($Component -eq "all") {

@@ -141,7 +141,7 @@
 		{
 			"label": "Run Blocking Worker (Linux)",
 			"type": "shell",
-			"command": "builddir/worker/worker -c config/config-worker.json --mode blocking --ui",
+			"command": "builddir/worker/worker -c config/config-worker.json --mode blocking",
 			// "isBackground": true,
 			"group": "test",
 			"presentation": {
@@ -154,7 +154,7 @@
 		{
 			"label": "Run Blocking Worker",
 			"type": "shell",
-			"command": "cmd.exe /c start \"\" cmd.exe /k \"builddir\\worker\\worker.exe -c config/config-worker.json --mode blocking --ui\"",
+			"command": "cmd.exe /c start \"\" cmd.exe /k \"builddir\\worker\\worker.exe -c config/config-worker.json --mode blocking\"",
 			// "isBackground": true,
 			"group": "test",
 			"presentation": {
@@ -177,7 +177,7 @@
 		{
 			"label": "Run Async Worker",
 			"type": "shell",
-			"command": "cmd.exe /c start \"\" cmd.exe /k \"builddir\\worker\\worker.exe -c config/config-worker.json --mode async --ui\"",
+			"command": "cmd.exe /c start \"\" cmd.exe /k \"builddir\\worker\\worker.exe -c config/config-worker.json --mode async\"",
 //			"command": "builddir-worker/worker/worker.exe -c config/config-worker.json --mode async",
 			"isBackground": false,
 			"group": "test",

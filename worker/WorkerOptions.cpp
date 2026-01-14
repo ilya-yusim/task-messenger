@@ -41,12 +41,12 @@ void register_options() {
             ->check(CLI::IsMember({"blocking","async"}))
             ->group("Worker");
 
-        bool ui_default = false;
+        bool ui_default = true;
         if (j.contains("worker") && j["worker"].contains("ui") && j["worker"]["ui"].is_boolean()) {
             ui_default = j["worker"]["ui"].get<bool>();
         }
         g_ui_enabled = ui_default;
-        app.add_flag("--ui", g_ui_enabled, "Enable interactive terminal UI (tasks, logs, byte totals)")
+        app.add_flag("--noui,!--ui", g_ui_enabled, "Disable interactive terminal UI (run headless)")
             ->group("Worker");
 
         // Worker-specific connection options

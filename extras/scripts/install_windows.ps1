@@ -32,6 +32,18 @@ function Write-ErrorMsg {
     Write-Host "[ERROR] $Message" -ForegroundColor Red
 }
 
+function Exit-WithError {
+    param(
+        [string]$Message,
+        [int]$ExitCode = 1
+    )
+    Write-ErrorMsg $Message
+    Write-Host ""
+    Write-Host "Press any key to exit..."
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+    exit $ExitCode
+}
+
 function Show-Usage {
     @"
 TaskMessenger Windows Installation Script
@@ -150,15 +162,9 @@ function Test-ExistingInstallation {
         }
         
         if ($installedVersion) {
-            Write-Warning "Found existing installation of $Component (version $installedVersion)"
+            Write-Info "Found existing installation of $Component (version $installedVersion) - upgrading"
         } else {
-            Write-Warning "Found existing installation of $Component"
-        }
-        
-        $response = Read-Host "Do you want to upgrade? This will replace the existing installation. [y/N]"
-        if ($response -notmatch '^[Yy]$') {
-            Write-Info "Installation cancelled by user"
-            exit 0
+            Write-Info "Found existing installation of $Component - upgrading"
         }
         
         return $true
@@ -208,9 +214,7 @@ function Install-Component {
     if (Test-Path $binaryPath) {
         Copy-Item $binaryPath $InstallDir -Force
     } else {
-        Write-ErrorMsg "Binary not found: $binaryPath"
-        Remove-Item -Path $tempDir -Recurse -Force
-        exit 1
+        Exit-WithError "Binary not found: $binaryPath"
     }
     
     # Copy shared library
@@ -343,9 +347,9 @@ function New-StartMenuShortcut {
     $shortcut = $WScriptShell.CreateShortcut($shortcutPath)
     $shortcut.TargetPath = $exePath
     
-    # Add --ui argument for worker component
+    # Worker defaults to UI enabled
     if ($Component -eq "worker") {
-        $shortcut.Arguments = "-c `"$configFile`" --ui"
+        $shortcut.Arguments = "-c `"$configFile`"
     } else {
         $shortcut.Arguments = "-c `"$configFile`""
     }
@@ -463,21 +467,12 @@ function Main {
     } else {
         # Fall back to archive-based installation
         if (-not $Archive) {
-            Write-ErrorMsg "Could not detect component from extracted files"
-            Write-ErrorMsg ""
-            Write-ErrorMsg "Solutions:"
-            Write-ErrorMsg "  1. Extract a TaskMessenger distribution archive (manager or worker)"
-            Write-ErrorMsg "     and run this script from the extracted TaskMessenger directory"
-            Write-ErrorMsg ""
-            Write-ErrorMsg "  2. Specify the archive path manually:"
-            Write-ErrorMsg "     .\install_windows.ps1 -Archive 'path\to\task-messenger-{component}-v1.0.0-windows-x64.zip'"
-            exit 1
+            Exit-WithError "Could not detect component from extracted files`n`nSolutions:`n  1. Extract a TaskMessenger distribution archive (manager or worker)`n     and run this script from the extracted TaskMessenger directory`n`n  2. Specify the archive path manually:`n     .\install_windows.ps1 -Archive 'path\to\task-messenger-{component}-v1.0.0-windows-x64.zip'"
         }
         
         # Validate archive exists
         if (-not (Test-Path $Archive)) {
-            Write-ErrorMsg "Archive not found: $Archive"
-            exit 1
+            Exit-WithError "Archive not found: $Archive"
         }
         
         # Extract archive to temporary directory
@@ -496,9 +491,7 @@ function Main {
             $sourceDir = $workerCheck
             $Component = "worker"
         } else {
-            Write-ErrorMsg "Unexpected archive structure. Expected TaskMessageManager or TaskMessageWorker directory."
-            Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
-            exit 1
+            Exit-WithError "Unexpected archive structure. Expected TaskMessageManager or TaskMessageWorker directory."
         }
         
         # Update install directory based on detected component if not specified
@@ -515,9 +508,7 @@ function Main {
         } elseif (Test-Path $workerPath) {
             $Component = "worker"
         } else {
-            Write-ErrorMsg "Could not detect component. No manager.exe or worker.exe found."
-            Remove-Item -Path $tempDir -Recurse -Force -ErrorAction SilentlyContinue
-            exit 1
+            Exit-WithError "Could not detect component. No manager.exe or worker.exe found."
         }
         
         Write-Info "Detected component: $Component"
@@ -530,8 +521,7 @@ function Main {
     
     # Validate we detected a component
     if (-not $Component) {
-        Write-ErrorMsg "Failed to detect component (manager or worker)"
-        exit 1
+        Exit-WithError "Failed to detect component (manager or worker)"
     }
     
     # Get config directory
