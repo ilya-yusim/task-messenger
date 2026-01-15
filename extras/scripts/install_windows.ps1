@@ -349,7 +349,7 @@ function New-StartMenuShortcut {
     
     # Worker defaults to UI enabled
     if ($Component -eq "worker") {
-        $shortcut.Arguments = "-c `"$configFile`"
+        $shortcut.Arguments = "-c `"$configFile`""
     } else {
         $shortcut.Arguments = "-c `"$configFile`""
     }

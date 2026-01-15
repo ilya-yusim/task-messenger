@@ -368,6 +368,9 @@ SourceFiles0=$IExpressTemp
         Write-Host "Removing intermediate ZIP archive..."
         Remove-Item -Force $ZipArchive -ErrorAction SilentlyContinue
         
+        # Clean up IExpress log file (only needed for debugging failures)
+        Remove-Item -Force $LogFile -ErrorAction SilentlyContinue
+        
         # Clean up IExpress temporary files (.DDF files in output directory)
         Get-ChildItem -Path $OutputDir -Filter "*.DDF" | Remove-Item -Force -ErrorAction SilentlyContinue
         
