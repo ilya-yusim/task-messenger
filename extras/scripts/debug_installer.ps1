@@ -277,10 +277,10 @@ if %INSTALL_EXIT_CODE% equ 0 (
     echo Installation was successful!
 ) else (
     echo Installation failed. Please check the errors above.
+    echo Press any key to close this window...
+    pause >nul
 )
-echo.
-echo Press any key to close this window...
-pause >nul
+
 exit /b %INSTALL_EXIT_CODE%
 "@
     Set-Content -Path $ExtractAndInstallBat -Value $ExtractScript -Encoding ASCII
@@ -300,7 +300,7 @@ exit /b %INSTALL_EXIT_CODE%
     # Build strings with explicit variable expansion to avoid here-string issues
     $InstallPromptText = "Install TaskMessenger $Comp v${Version}?"
     $FriendlyNameText = "TaskMessenger $Comp v${Version} Installer"
-    $FinishMessageText = "TaskMessenger $Comp v${Version} has been successfully installed! You can now run it from the Start Menu or by typing 'tm-$Comp' in a terminal."
+    $FinishMessageText = "TaskMessenger $Comp v${Version} has been installed! You can now run it from the Start Menu or by typing 'tm-$Comp' in a terminal."
     
     $SedContent = @"
 [Version]
@@ -343,11 +343,6 @@ SourceFiles0=$IExpressTemp
 %FILE0%=
 %FILE1%=
 "@
-
-#AppLaunched=cmd.exe /k "extract_and_install.bat & exit"
-#AppLaunched=cmd.exe /k "extract_and_install.bat"
-#AppLaunched=cmd.exe /c start "" cmd.exe /c "extract_and_install.bat"
-#
     # Ensure proper line endings for Windows (CRLF)
     $SedContentWithCRLF = $SedContent -replace "`n", "`r`n"
     
