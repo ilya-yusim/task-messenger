@@ -151,7 +151,7 @@ build_component() {
 # Function to create archive for a component
 create_archive() {
     local comp=$1
-    local archive_name="task-messenger-${comp}-v${VERSION}-${PLATFORM}-${ARCH}.tar.gz"
+    local archive_name="tm-${comp}-v${VERSION}-${PLATFORM}-${ARCH}.tar.gz"
     local archive_path="$OUTPUT_DIR/$archive_name"
     
     echo ""
@@ -163,18 +163,18 @@ create_archive() {
     # Create temporary archive directory with component-specific naming
     local temp_archive_dir="$STAGING_DIR/archive-$comp"
     rm -rf "$temp_archive_dir"
-    mkdir -p "$temp_archive_dir/task-message-$comp"
+    mkdir -p "$temp_archive_dir/tm-$comp"
     
     # Navigate to staging
     local staging_prefix="$STAGING_DIR/$comp$PREFIX"
     
     # Copy files for this component
-    local archive_root="$temp_archive_dir/task-message-$comp"
+    local archive_root="$temp_archive_dir/tm-$comp"
     
     if [[ "$comp" == "manager" ]]; then
         # Manager: executable, libzt, configs, identity directory, docs
         mkdir -p "$archive_root/bin"
-        cp "$staging_prefix/bin/manager" "$archive_root/bin/"
+        cp "$staging_prefix/bin/tm-manager" "$archive_root/bin/"
         
         mkdir -p "$archive_root/lib"
         cp "$staging_prefix/lib/libzt.so" "$archive_root/lib/libzt.so"
@@ -191,7 +191,7 @@ create_archive() {
     else
         # Worker: executable, libzt, configs, docs
         mkdir -p "$archive_root/bin"
-        cp "$staging_prefix/bin/worker" "$archive_root/bin/"
+        cp "$staging_prefix/bin/tm-worker" "$archive_root/bin/"
         
         mkdir -p "$archive_root/lib"
         cp "$staging_prefix/lib/libzt.so" "$archive_root/lib/libzt.so"
@@ -215,18 +215,18 @@ create_archive() {
     # Copy launchers
     mkdir -p "$archive_root/launchers"
     if [[ "$comp" == "manager" ]]; then
-        cp "$PROJECT_ROOT/extras/launchers/start-manager.sh" "$archive_root/launchers/"
+        cp "$PROJECT_ROOT/extras/launchers/start-tm-manager.sh" "$archive_root/launchers/"
     else
-        cp "$PROJECT_ROOT/extras/launchers/start-worker.sh" "$archive_root/launchers/"
+        cp "$PROJECT_ROOT/extras/launchers/start-tm-worker.sh" "$archive_root/launchers/"
     fi
     chmod +x "$archive_root/launchers/"*.sh
     
     # Copy desktop files
     mkdir -p "$archive_root/desktop"
     if [[ "$comp" == "manager" ]]; then
-        cp "$PROJECT_ROOT/extras/desktop/task-messenger-manager.desktop" "$archive_root/desktop/"
+        cp "$PROJECT_ROOT/extras/desktop/tm-manager.desktop" "$archive_root/desktop/"
     else
-        cp "$PROJECT_ROOT/extras/desktop/task-messenger-worker.desktop" "$archive_root/desktop/"
+        cp "$PROJECT_ROOT/extras/desktop/tm-worker.desktop" "$archive_root/desktop/"
     fi
     
     # Create installation instructions
@@ -234,7 +234,7 @@ create_archive() {
 TaskMessenger $comp Installation Instructions
 
 To install, run:
-    cd task-message-$comp
+    cd tm-$comp
     ./scripts/install_linux.sh
 
 The component ($comp) is automatically detected.

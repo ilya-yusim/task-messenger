@@ -20,7 +20,7 @@ if (( COUNT < 1 )); then
 fi
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-exe="$(realpath "$script_dir/../builddir-worker/worker/worker")"
+exe="$(realpath "$script_dir/../builddir-worker/worker/tm-worker")"
 
 if [[ ! -x "$exe" ]]; then
   echo "Executable not found or not executable: $exe" >&2

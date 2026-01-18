@@ -86,10 +86,10 @@ get_component_from_script_location() {
     local dir_name="$(basename "$parent_dir")"
     
     # Check if parent directory matches component pattern
-    if [[ "$dir_name" == "task-message-manager" ]]; then
+    if [[ "$dir_name" == "tm-manager" ]]; then
         echo "manager:$parent_dir"
         return 0
-    elif [[ "$dir_name" == "task-message-worker" ]]; then
+    elif [[ "$dir_name" == "tm-worker" ]]; then
         echo "worker:$parent_dir"
         return 0
     fi
@@ -107,7 +107,7 @@ remove_component() {
     
     # Extract component name from directory
     local dir_name="$(basename "$install_dir")"
-    local component="${dir_name#task-message-}"
+    local component="${dir_name#tm-}"
     
     local version=$(get_installed_version "$install_dir")
     print_info "Removing $component (version $version)..."
@@ -117,7 +117,7 @@ remove_component() {
     print_success "Removed installation directory: $install_dir"
     
     # Remove wrapper script
-    local wrapper_path="$BIN_SYMLINK_DIR/$component"
+    local wrapper_path="$BIN_SYMLINK_DIR/tm-$component"
     if [ -f "$wrapper_path" ]; then
         rm -f "$wrapper_path"
         print_success "Removed wrapper script: $wrapper_path"

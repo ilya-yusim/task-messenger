@@ -9,7 +9,7 @@
 # Coroutine-based manager using CoroSocketAdapter architecture
 # Handles task distribution, worker connections, and session management
 manager_exe = executable(
-  'manager', 
+  'tm-manager', 
 sources: [
   'managerMain.cpp',
   'transport/AsyncTransportOptions.cpp',

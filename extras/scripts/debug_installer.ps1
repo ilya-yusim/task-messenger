@@ -1,10 +1,16 @@
-# build_distribution.ps1 - Create distributable packages for task-messenger on Windows
-# Usage: .\build_distribution.ps1 [manager|worker|all]
+# debug_installer.ps1 - Test self-extracting installer creation without rebuilding
+# Usage: .\debug_installer.ps1 [manager|worker] [-StagingDir <path>]
 
 param(
-    [Parameter(Position=0)]
-    [ValidateSet("manager", "worker", "all")]
-    [string]$Component = "all"
+    [Parameter(Position=0, Mandatory=$true)]
+    [ValidateSet("manager", "worker")]
+    [string]$Component,
+    
+    [Parameter()]
+    [string]$StagingDir = "",
+    
+    [Parameter()]
+    [switch]$SkipZip
 )
 
 $ErrorActionPreference = "Stop"
@@ -28,60 +34,85 @@ $Platform = "windows"
 
 # Build configuration
 $Prefix = "C:\TaskMessenger"
-$BuildType = "release"
-$StagingDir = Join-Path $ProjectRoot "dist-staging"
 $OutputDir = Join-Path $ProjectRoot "dist"
 
 Write-Host "=================================================="
-Write-Host "Task Messenger Distribution Builder (Windows)"
+Write-Host "Task Messenger Installer Debug Tool"
 Write-Host "=================================================="
 Write-Host "Component: $Component"
 Write-Host "Version: $Version"
 Write-Host "Platform: $Platform-$Arch"
-Write-Host "Prefix: $Prefix"
 Write-Host "=================================================="
 
-# Function to build and install a component
-function Build-Component {
-    param([string]$Comp)
-    
-    $BuildDir = "builddir-$Comp-dist"
-    
-    Write-Host ""
-    Write-Host "Building $Comp..."
-    
-    # Clean previous build
-    if (Test-Path $BuildDir) {
-        Remove-Item -Recurse -Force $BuildDir
-    }
-    
-    # Determine build options based on component
-    $BuildOptions = @()
-    if ($Comp -eq "manager") {
-        $BuildOptions += "-Dbuild_worker=false"
-        Write-Host "Building manager only (FTXUI disabled for faster build)"
-    } elseif ($Comp -eq "worker") {
-        $BuildOptions += "-Dbuild_manager=false"
-        Write-Host "Building worker only"
-    }
-    
-    # Setup meson
-    meson setup $BuildDir `
-        --prefix="$Prefix" `
-        --buildtype=$BuildType `
-        -Ddebug_logging=false `
-        -Dprofiling_unwind=false `
-        @BuildOptions
-    
-    # Compile
-    meson compile -C $BuildDir
-    
-    # Install to staging directory
-    $CompStagingDir = Join-Path $StagingDir $Comp
-    $env:DESTDIR = $CompStagingDir
-    meson install -C $BuildDir --no-rebuild
-    Remove-Item Env:\DESTDIR
+# Determine staging directory
+if ([string]::IsNullOrEmpty($StagingDir)) {
+    $StagingDir = Join-Path $ProjectRoot "dist-staging"
 }
+
+$Comp = $Component
+$CompStagingDir = Join-Path $StagingDir $Comp
+
+# Verify staging directory exists
+$PrefixPath = $Prefix -replace '^[A-Z]:', ''
+$CompStagingPrefix = Join-Path $CompStagingDir $PrefixPath
+
+if (-not (Test-Path $CompStagingPrefix)) {
+    Write-Warning "Staging directory not found: $CompStagingPrefix"
+    Write-Host "Attempting to create staging directory from build output..."
+
+    # Determine builddir for the component
+    $BuildDir = if ($Comp -eq "manager") { "builddir-manager-dist" } else { "builddir-worker-dist" }
+    $BuildDirPath = Join-Path $ProjectRoot $BuildDir
+    if (-not (Test-Path $BuildDirPath)) {
+        Write-Error "Build directory not found: $BuildDirPath. Cannot create staging directory."
+        exit 1
+    }
+
+    # Create the expected staging directory structure
+    $CompStagingDir = Join-Path $StagingDir $Comp
+    $CompStagingPrefix = Join-Path $CompStagingDir $PrefixPath
+    New-Item -ItemType Directory -Force -Path (Join-Path $CompStagingPrefix "bin") | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $CompStagingPrefix "etc\task-messenger") | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $CompStagingPrefix "share\doc\task-messenger") | Out-Null
+
+    # Copy binaries
+    if ($Comp -eq "manager") {
+        Copy-Item (Join-Path $BuildDirPath "manager\tm-manager.exe") (Join-Path $CompStagingPrefix "bin\tm-manager.exe") -Force
+        Copy-Item (Join-Path $BuildDirPath "manager\zt-shared.dll") (Join-Path $CompStagingPrefix "bin\zt-shared.dll") -Force
+    } else {
+        Copy-Item (Join-Path $BuildDirPath "worker\tm-worker.exe") (Join-Path $CompStagingPrefix "bin\tm-worker.exe") -Force
+        Copy-Item (Join-Path $BuildDirPath "worker\zt-shared.dll") (Join-Path $CompStagingPrefix "bin\zt-shared.dll") -Force
+    }
+
+    # Copy config files
+    $ConfigFile = "config-$Comp.json"
+    $ConfigSrc = Join-Path $ProjectRoot "config\$ConfigFile"
+    $ConfigDst = Join-Path $CompStagingPrefix "etc\task-messenger\$ConfigFile"
+    if (Test-Path $ConfigSrc) {
+        Copy-Item $ConfigSrc $ConfigDst -Force
+    }
+
+    # Copy manager identity (if manager)
+    if ($Comp -eq "manager") {
+        $IdentitySrc = Join-Path $ProjectRoot "config\vn-manager-identity"
+        $IdentityDst = Join-Path $CompStagingPrefix "etc\task-messenger\vn-manager-identity"
+        if (Test-Path $IdentitySrc) {
+            Copy-Item $IdentitySrc $IdentityDst -Recurse -Force
+        }
+    }
+
+    # Copy documentation
+    $DocSrc = Join-Path $ProjectRoot "docs"
+    $DocDst = Join-Path $CompStagingPrefix "share\doc\task-messenger"
+    if (Test-Path $DocSrc) {
+        Copy-Item $DocSrc\* $DocDst -Recurse -Force
+    }
+
+    Write-Host "Staging directory created at: $CompStagingPrefix"
+}
+
+Write-Host "Using staging directory: $CompStagingPrefix"
+Write-Host ""
 
 # Function to create archive for a component
 function Create-Archive {
@@ -90,24 +121,13 @@ function Create-Archive {
     $ArchiveName = "tm-$Comp-v$Version-$Platform-$Arch.zip"
     $ArchivePath = Join-Path $OutputDir $ArchiveName
     
-    Write-Host ""
     Write-Host "Creating archive: $ArchiveName"
     
     # Create output directory
     New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
     
-    # Navigate to staging (strip drive letter from prefix for staging path)
-    $PrefixPath = $Prefix -replace '^[A-Z]:', ''
-    $CompStagingRoot = Join-Path $StagingDir $Comp
-    $CompStagingPrefix = Join-Path $CompStagingRoot $PrefixPath
-    
-    if (-not (Test-Path $CompStagingPrefix)) {
-        Write-Error "Staging directory not found: $CompStagingPrefix"
-        exit 1
-    }
-    
     # Create a temporary directory for the archive contents
-    $TempArchiveDir = Join-Path $StagingDir "archive-$Comp"
+    $TempArchiveDir = Join-Path $StagingDir "archive-$Comp-debug"
     if (Test-Path $TempArchiveDir) {
         Remove-Item -Recurse -Force $TempArchiveDir
     }
@@ -198,15 +218,16 @@ function Create-SelfExtractingInstaller {
     $ZipArchive = Join-Path $OutputDir "tm-$Comp-v$Version-$Platform-$Arch.zip"
     
     if (-not (Test-Path $ZipArchive)) {
-        Write-Warning "ZIP archive not found, skipping self-extracting installer creation"
-        return
+        Write-Error "ZIP archive not found: $ZipArchive"
+        Write-Host "Run without -SkipZip first to create the archive"
+        exit 1
     }
     
     Write-Host ""
     Write-Host "Creating self-extracting installer: $InstallerName"
     
     # Create temporary directory for IExpress files
-    $IExpressTemp = Join-Path $StagingDir "iexpress-$Comp"
+    $IExpressTemp = Join-Path $StagingDir "iexpress-$Comp-debug"
     if (Test-Path $IExpressTemp) {
         Remove-Item -Recurse -Force $IExpressTemp
     }
@@ -214,11 +235,13 @@ function Create-SelfExtractingInstaller {
     
     # Copy ZIP archive to temp directory
     Copy-Item $ZipArchive $IExpressTemp
-    
+
     # Create extraction and installation batch script
     $ExtractAndInstallBat = Join-Path $IExpressTemp "extract_and_install.bat"
     $ExtractScript = @"
 @echo off
+set LOGFILE=%TEMP%\\tm_install_debug.log
+echo Starting installer > %LOGFILE%
 title TaskMessenger $Comp Installer v$Version
 echo ================================================
 echo TaskMessenger $Comp Installer v$Version
@@ -235,6 +258,7 @@ if errorlevel 1 (
     exit /b 1
 )
 echo.
+echo Extracted archive >> %LOGFILE%
 echo Starting installation...
 echo.
 cd /d "%TEMP%\TaskMessengerInstall\$ComponentName"
@@ -258,11 +282,20 @@ if %INSTALL_EXIT_CODE% equ 0 (
     echo Installation failed. Please check the errors above.
 )
 echo.
+echo  installation finished >> %LOGFILE%
 echo Press any key to close this window...
 pause >nul
 exit /b %INSTALL_EXIT_CODE%
 "@
     Set-Content -Path $ExtractAndInstallBat -Value $ExtractScript -Encoding ASCII
+    
+    Write-Host "Created batch script: $ExtractAndInstallBat"
+    Write-Host ""
+    Write-Host "Batch script contents:"
+    Write-Host "----------------------------------------"
+    Get-Content $ExtractAndInstallBat | ForEach-Object { Write-Host $_ }
+    Write-Host "----------------------------------------"
+    Write-Host ""
     
     # Create IExpress SED directive file
     $SedFile = Join-Path $IExpressTemp "installer.sed"
@@ -279,7 +312,7 @@ Class=IEXPRESS
 SEDVersion=3
 [Options]
 PackagePurpose=InstallApp
-ShowInstallProgramWindow=1
+ShowInstallProgramWindow=0
 HideExtractAnimation=0
 UseLongFileName=1
 InsideCompressed=0
@@ -299,11 +332,11 @@ SourceFiles=SourceFiles
 [Strings]
 InstallPrompt=$InstallPromptText
 DisplayLicense=
-FinishMessage=$FinishMessageText
+FinishMessage=
 TargetName=$InstallerPath
 FriendlyName=$FriendlyNameText
-AppLaunched=cmd.exe /k "extract_and_install.bat & exit"
-PostInstallCmd=<None>
+AppLaunched=cmd.exe /c "extract_and_install.bat"
+PostInstallCmd=<NONE>
 AdminQuietInstCmd=
 UserQuietInstCmd=
 FILE0=extract_and_install.bat
@@ -314,20 +347,24 @@ SourceFiles0=$IExpressTemp
 %FILE0%=
 %FILE1%=
 "@
+
+#AppLaunched=cmd.exe /k "extract_and_install.bat & exit"
+#AppLaunched=cmd.exe /k "extract_and_install.bat"
+#AppLaunched=cmd.exe /c start "" cmd.exe /c "extract_and_install.bat"
+#
     # Ensure proper line endings for Windows (CRLF)
     $SedContentWithCRLF = $SedContent -replace "`n", "`r`n"
     
     # Write SED file
     [System.IO.File]::WriteAllText($SedFile, $SedContentWithCRLF, [System.Text.Encoding]::ASCII)
     
-    # Verify the file was created
-    if (-not (Test-Path $SedFile)) {
-        Write-Error "Failed to create SED file at: $SedFile"
-        return
-    }
-    
-    Write-Host "SED file created at: $SedFile"
-    Write-Host "Temp directory: $IExpressTemp"
+    Write-Host "Created SED file: $SedFile"
+    Write-Host ""
+    Write-Host "SED file contents:"
+    Write-Host "----------------------------------------"
+    Get-Content $SedFile | ForEach-Object { Write-Host $_ }
+    Write-Host "----------------------------------------"
+    Write-Host ""
     
     # Get short path name for IExpress (it doesn't handle long paths well)
     $fso = New-Object -ComObject Scripting.FileSystemObject
@@ -335,20 +372,21 @@ SourceFiles0=$IExpressTemp
     
     # Run IExpress to create self-extracting installer
     Write-Host "Running IExpress..."
-    Write-Host "Using short path: $sedFileShort"
+    Write-Host "Command: iexpress.exe /N $sedFileShort"
+    Write-Host ""
     $IExpressExe = "$env:SystemRoot\System32\iexpress.exe"
     
     # Create a log file for IExpress output
-    $LogFile = Join-Path $OutputDir "iexpress-$Comp.log"
+    $LogFile = Join-Path $OutputDir "iexpress-$Comp-debug.log"
     
     # Run IExpress and capture output
     $ProcessInfo = New-Object System.Diagnostics.ProcessStartInfo
     $ProcessInfo.FileName = $IExpressExe
-    $ProcessInfo.Arguments = "/N $sedFileShort"  # No quotes around short path
+    $ProcessInfo.Arguments = "/N $sedFileShort"
     $ProcessInfo.RedirectStandardOutput = $true
     $ProcessInfo.RedirectStandardError = $true
     $ProcessInfo.UseShellExecute = $false
-    $ProcessInfo.CreateNoWindow = $false  # Show window to see progress
+    $ProcessInfo.CreateNoWindow = $false
     
     $Process = New-Object System.Diagnostics.Process
     $Process.StartInfo = $ProcessInfo
@@ -365,83 +403,67 @@ SourceFiles0=$IExpressTemp
     "STDERR:`r`n$stderr" | Out-File -FilePath $LogFile -Append
     
     Write-Host "IExpress exit code: $exitCode"
+    Write-Host "Log file: $LogFile"
+    Write-Host ""
+    
+    if ($stdout) {
+        Write-Host "IExpress STDOUT:"
+        Write-Host $stdout
+        Write-Host ""
+    }
+    
+    if ($stderr) {
+        Write-Host "IExpress STDERR:"
+        Write-Host $stderr
+        Write-Host ""
+    }
+    
     if ($exitCode -ne 0) {
         Write-Warning "IExpress failed with exit code: $exitCode"
-        Write-Host "Log file: $LogFile"
-        Write-Host "SED file: $SedFile"
-        Write-Host "Temp directory kept for inspection: $IExpressTemp"
+        Write-Host ""
+        Write-Host "Debug information:"
+        Write-Host "  SED file: $SedFile"
+        Write-Host "  Temp directory: $IExpressTemp"
+        Write-Host "  Log file: $LogFile"
+        Write-Host ""
+        Write-Host "Temp directory kept for inspection"
         Write-Host ""
         Write-Host "To manually test IExpress, run:"
         Write-Host "  iexpress.exe /N `"$SedFile`""
-        return
+        Write-Host ""
+        Write-Host "To test the batch script directly:"
+        Write-Host "  cd `"$IExpressTemp`""
+        Write-Host "  .\extract_and_install.bat"
+        exit 1
     }
     
     if (Test-Path $InstallerPath) {
         Write-Host "Created self-extracting installer: $InstallerPath"
-        
-        # Clean up ZIP archive (no longer needed since installer contains it)
-        Write-Host "Removing intermediate ZIP archive..."
-        Remove-Item -Force $ZipArchive -ErrorAction SilentlyContinue
-        
-        # Clean up IExpress log file (only needed for debugging failures)
-        Remove-Item -Force $LogFile -ErrorAction SilentlyContinue
-        
-        # Clean up IExpress temporary files (.DDF files in output directory)
-        Get-ChildItem -Path $OutputDir -Filter "*.DDF" | Remove-Item -Force -ErrorAction SilentlyContinue
-        
-        # Clean up temp directory (with retry in case IExpress still has file handles)
-        $CleanupAttempts = 0
-        while ($CleanupAttempts -lt 3) {
-            try {
-                Remove-Item -Recurse -Force $IExpressTemp -ErrorAction Stop
-                break
-            } catch {
-                $CleanupAttempts++
-                if ($CleanupAttempts -lt 3) {
-                    Start-Sleep -Milliseconds 500
-                } else {
-                    Write-Warning "Could not clean up temp directory: $IExpressTemp (IExpress may still have files open)"
-                }
-            }
-        }
+        Write-Host ""
+        Write-Host "Installer size: $((Get-Item $InstallerPath).Length / 1MB) MB"
+        Write-Host ""
+        Write-Host "To test the installer:"
+        Write-Host "  .\dist\$InstallerName"
+        Write-Host ""
+        Write-Host "Debug files kept in: $IExpressTemp"
     } else {
-        Write-Warning "Failed to create self-extracting installer (timeout after $MaxWaitSeconds seconds)"
-        if ($IExpressOutput) {
-            Write-Warning "IExpress output: $IExpressOutput"
-        }
+        Write-Warning "Installer not found after IExpress completed"
         Write-Host "Temp files kept in: $IExpressTemp"
-        Write-Host "SED file: $SedFile"
     }
 }
 
-# Clean staging directory (but keep output directory to accumulate builds)
-if (Test-Path $StagingDir) {
-    Remove-Item -Recurse -Force $StagingDir
-}
-# Create output directory if it doesn't exist
-if (-not (Test-Path $OutputDir)) {
-    New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
-}
-New-Item -ItemType Directory -Force -Path $StagingDir | Out-Null
-
-# Build and package based on component selection
-if ($Component -eq "all") {
-    foreach ($Comp in @("manager", "worker")) {
-        Build-Component -Comp $Comp
-        Create-Archive -Comp $Comp
-        Create-SelfExtractingInstaller -Comp $Comp
-    }
-} else {
-    Build-Component -Comp $Component
+# Create archive unless skipped
+if (-not $SkipZip) {
     Create-Archive -Comp $Component
-    Create-SelfExtractingInstaller -Comp $Component
+} else {
+    Write-Host "Skipping ZIP creation (using existing archive)"
+    Write-Host ""
 }
 
-# Summary
+# Create self-extracting installer
+Create-SelfExtractingInstaller -Comp $Component
+
 Write-Host ""
 Write-Host "=================================================="
-Write-Host "Distribution build complete!"
-Write-Host "=================================================="
-Write-Host "Output directory: $OutputDir"
-Get-ChildItem $OutputDir | Format-Table Name, Length -AutoSize
+Write-Host "Debug installer creation complete!"
 Write-Host "=================================================="

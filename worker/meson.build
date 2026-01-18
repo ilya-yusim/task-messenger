@@ -21,7 +21,7 @@ endif
 # Unified worker application supporting both blocking and async runtime modes
 # Handles task processing, manager connection, and optional interactive UI
 worker_exe = executable(
-  'worker',
+  'tm-worker',
   sources: [
     'workerMain.cpp',
     'runtime/IRuntimeMode.hpp',

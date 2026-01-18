@@ -31,7 +31,7 @@ flowchart LR
 ```powershell
 meson configure builddir-worker -Dwith_ftxui=true
 meson compile -C builddir-worker worker worker-ui-demo
-./builddir-worker/worker/worker.exe --ui
+./builddir-worker/worker/tm-worker.exe --ui
 ./builddir-worker/worker/worker-ui-demo.exe
 ```
 

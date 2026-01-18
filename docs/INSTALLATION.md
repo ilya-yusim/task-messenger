@@ -63,20 +63,20 @@ This is the simplest installation method, similar to Windows installers.
 #### Step 1: Download the Installer
 
 Download the appropriate `.run` file for your component:
-- `task-message-manager-v1.0.0-linux-x86_64.run`
-- `task-message-worker-v1.0.0-linux-x86_64.run`
+- `tm-manager-v1.0.0-linux-x86_64.run`
+- `tm-worker-v1.0.0-linux-x86_64.run`
 
 #### Step 2: Make Executable and Run
 
 ```bash
-chmod +x task-message-manager-v1.0.0-linux-x86_64.run
-./task-message-manager-v1.0.0-linux-x86_64.run
+chmod +x tm-manager-v1.0.0-linux-x86_64.run
+./tm-manager-v1.0.0-linux-x86_64.run
 ```
 
 Or for worker:
 ```bash
-chmod +x task-message-worker-v1.0.0-linux-x86_64.run
-./task-message-worker-v1.0.0-linux-x86_64.run
+chmod +x tm-worker-v1.0.0-linux-x86_64.run
+./tm-worker-v1.0.0-linux-x86_64.run
 ```
 
 The installer will automatically extract and run the installation script.
@@ -84,16 +84,16 @@ The installer will automatically extract and run the installation script.
 **Advanced options:**
 ```bash
 # Extract to a custom temporary location
-./task-message-manager-v1.0.0-linux-x86_64.run --target /tmp/custom
+./tm-manager-v1.0.0-linux-x86_64.run --target /tmp/custom
 
 # Keep extracted files for inspection (don't auto-delete)
-./task-message-manager-v1.0.0-linux-x86_64.run --keep
+./tm-manager-v1.0.0-linux-x86_64.run --keep
 
 # Extract only, don't run installer
-./task-message-manager-v1.0.0-linux-x86_64.run --noexec
+./tm-manager-v1.0.0-linux-x86_64.run --noexec
 
 # See all available options
-./task-message-manager-v1.0.0-linux-x86_64.run --help
+./tm-manager-v1.0.0-linux-x86_64.run --help
 ```
 
 ### Option B: Traditional tar.gz Archive
@@ -101,24 +101,24 @@ The installer will automatically extract and run the installation script.
 #### Step 1: Download the Archive
 
 Download the appropriate archive for your component:
-- `task-messenger-manager-v1.0.0-linux-x86_64.tar.gz`
-- `task-messenger-worker-v1.0.0-linux-x86_64.tar.gz`
+- `tm-manager-v1.0.0-linux-x86_64.tar.gz`
+- `tm-worker-v1.0.0-linux-x86_64.tar.gz`
 
 #### Step 2: Extract the Archive
 
 ```bash
-tar -xzf task-messenger-manager-v1.0.0-linux-x86_64.tar.gz
+tar -xzf tm-manager-v1.0.0-linux-x86_64.tar.gz
 # or
-tar -xzf task-messenger-worker-v1.0.0-linux-x86_64.tar.gz
+tar -xzf tm-worker-v1.0.0-linux-x86_64.tar.gz
 ```
 
 #### Step 3: Run the Installation Script
 
 ```bash
-cd task-message-manager
+cd tm-manager
 ./scripts/install_linux.sh
 # or
-cd task-message-worker
+cd tm-worker
 ./scripts/install_linux.sh
 ```
 
@@ -128,10 +128,10 @@ cd task-message-worker
 
 The script will:
 1. Check for existing installations and offer to upgrade
-2. Install the component to `~/.local/share/task-message-{component}/`
+2. Install the component to `~/.local/share/task-messenger/tm-{component}/`
 3. Create a symlink in `~/.local/bin/`
 4. Install a desktop entry
-5. Create a configuration template at `~/.config/task-message-{component}/config-{component}.json`
+5. Create a configuration template at `~/.config/task-messenger/tm-{component}/config-{component}.json`
 
 ### Step 4: Configure PATH (if needed)
 
@@ -156,9 +156,9 @@ source ~/.bashrc  # or source ~/.zshrc
 
 Edit the configuration file:
 ```bash
-nano ~/.config/task-messenger/config-manager.json
+nano ~/.config/task-messenger/tm-manager/config-manager.json
 # or
-nano ~/.config/task-messenger/config-worker.json
+nano ~/.config/task-messenger/tm-worker/config-worker.json
 ```
 
 See [Configuration](#configuration) section for details.
@@ -178,15 +178,15 @@ Note: Custom installations won't create desktop entries automatically.
 ### Step 1: Download the Distribution Package
 
 Download the appropriate archive for your component:
-- `task-messenger-manager-v1.0.0-windows-x64.zip`
-- `task-messenger-worker-v1.0.0-windows-x64.zip`
+- `tm-manager-v1.0.0-windows-x64.zip`
+- `tm-worker-v1.0.0-windows-x64.zip`
 
 ### Step 2: Extract the Archive
 
 Right-click the ZIP file and select "Extract All..." or use PowerShell:
 
 ```powershell
-Expand-Archive -Path task-messenger-manager-v1.0.0-windows-x64.zip -DestinationPath .
+Expand-Archive -Path tm-manager-v1.0.0-windows-x64.zip -DestinationPath .
 ```
 
 ### Step 3: Run the Installation Script
@@ -217,9 +217,9 @@ The script will:
 Edit the configuration file using Notepad or your preferred text editor:
 
 ```powershell
-notepad $env:APPDATA\task-messenger\config-manager.json
+notepad $env:APPDATA\task-messenger\tm-manager\config-manager.json
 # or
-notepad $env:APPDATA\task-messenger\config-worker.json
+notepad $env:APPDATA\task-messenger\tm-worker\config-worker.json
 ```
 
 See [Configuration](#configuration) section for details.
@@ -314,7 +314,7 @@ If you prefer to upgrade manually:
 **Linux:**
 ```bash
 # Extract new version
-tar -xzf task-messenger-manager-v1.1.0-linux-x86_64.tar.gz
+tar -xzf tm-manager-v1.1.0-linux-x86_64.tar.gz
 cd opt/task-messenger
 
 # Run installation (will prompt for upgrade)
@@ -324,7 +324,7 @@ cd opt/task-messenger
 **Windows:**
 ```powershell
 # Extract new version
-Expand-Archive -Path task-messenger-manager-v1.1.0-windows-x64.zip -DestinationPath .
+Expand-Archive -Path tm-manager-v1.1.0-windows-x64.zip -DestinationPath .
 cd TaskMessenger
 
 # Run installation (will prompt for upgrade)
@@ -497,7 +497,7 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 
 4. Alternatively, use the Start Menu shortcut or full path:
    ```powershell
-   & "$env:LOCALAPPDATA\TaskMessenger\manager\manager.exe"
+   & "$env:LOCALAPPDATA\TaskMessenger\tm-manager\tm-manager.exe"
    ```
 
 #### DLL not found error
@@ -507,7 +507,7 @@ Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
 **Solution**:
 1. Verify the DLL is in the same directory as the executable:
    ```powershell
-   dir "$env:LOCALAPPDATA\TaskMessenger\manager"
+   dir "$env:LOCALAPPDATA\TaskMessenger\tm-manager"
    ```
 
 2. Reinstall if the DLL is missing

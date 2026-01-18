@@ -80,9 +80,9 @@ function Get-DefaultInstallDir {
     param([string]$Component)
     
     if ($Component -eq "manager") {
-        return Join-Path $env:LOCALAPPDATA "TaskMessageManager"
+        return Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-manager"
     } elseif ($Component -eq "worker") {
-        return Join-Path $env:LOCALAPPDATA "TaskMessageWorker"
+        return Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-worker"
     } else {
         # For 'all', return parent directory
         return $env:LOCALAPPDATA
@@ -93,9 +93,9 @@ function Get-ConfigDir {
     param([string]$Component)
     
     if ($Component -eq "manager") {
-        return Join-Path $env:APPDATA "TaskMessageManager"
+        return Join-Path $env:APPDATA "TaskMessenger\tm-manager"
     } else {
-        return Join-Path $env:APPDATA "TaskMessageWorker"
+        return Join-Path $env:APPDATA "TaskMessenger\tm-worker"
     }
 }
 
@@ -103,10 +103,10 @@ function Test-Installation {
     param([string]$Component)
     
     if ($Component -eq "all") {
-        $managerBinDir = Join-Path $env:LOCALAPPDATA "TaskMessageManager"
-        $workerBinDir = Join-Path $env:LOCALAPPDATA "TaskMessageWorker"
-        $managerCfgDir = Join-Path $env:APPDATA "TaskMessageManager"
-        $workerCfgDir = Join-Path $env:APPDATA "TaskMessageWorker"
+        $managerBinDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-manager"
+        $workerBinDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-worker"
+        $managerCfgDir = Join-Path $env:APPDATA "TaskMessenger\tm-manager"
+        $workerCfgDir = Join-Path $env:APPDATA "TaskMessenger\tm-worker"
         
         if (-not (Test-Path $managerBinDir) -and -not (Test-Path $workerBinDir) -and
             -not (Test-Path $managerCfgDir) -and -not (Test-Path $workerCfgDir)) {
@@ -139,8 +139,8 @@ function Get-InstalledVersion {
 function Get-InstalledComponents {
     $components = @()
     
-    $managerDir = Join-Path $env:LOCALAPPDATA "TaskMessageManager"
-    $workerDir = Join-Path $env:LOCALAPPDATA "TaskMessageWorker"
+    $managerDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-manager"
+    $workerDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-worker"
     
     if (Test-Path $managerDir) {
         $components += "manager"
@@ -188,8 +188,8 @@ function Get-ComponentFromScriptLocation {
     $scriptDir = Split-Path -Parent $scriptPath
     
     # Check if script is in a component directory
-    $managerDir = Join-Path $env:LOCALAPPDATA "TaskMessageManager"
-    $workerDir = Join-Path $env:LOCALAPPDATA "TaskMessageWorker"
+    $managerDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-manager"
+    $workerDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-worker"
     
     if ($scriptDir -eq $managerDir) {
         return "manager"
@@ -272,7 +272,7 @@ function Remove-FromPath {
 function Remove-StartMenuShortcut {
     param([string]$Component)
     
-    $componentName = if ($Component -eq "manager") { "TaskMessageManager" } else { "TaskMessageWorker" }
+    $componentName = if ($Component -eq "manager") { "TMManager" } else { "TMWorker" }
     $startMenuDir = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\$componentName"
     
     if (Test-Path $startMenuDir) {
@@ -369,8 +369,8 @@ function Main {
         Write-Info "Install location: $InstallDir"
         Write-Info "Config location:  $configDir"
     } else {
-        Write-Info "Install locations: %LOCALAPPDATA%\TaskMessageManager and TaskMessageWorker"
-        Write-Info "Config locations:  %APPDATA%\TaskMessageManager and TaskMessageWorker"
+        Write-Info "Install locations: %LOCALAPPDATA%\TaskMessenger\tm-manager and tm-worker"
+        Write-Info "Config locations:  %APPDATA%\TaskMessenger\tm-manager and tm-worker"
     }
     Write-Info "Remove config:    $RemoveConfig"
     Write-Info "=========================================="

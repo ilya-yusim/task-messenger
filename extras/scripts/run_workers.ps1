@@ -8,7 +8,7 @@ if ($Count -lt 1) {
     exit 1
 }
 
-$exe = Join-Path $PSScriptRoot "..\builddir-worker\worker\worker.exe"
+$exe = Join-Path $PSScriptRoot "..\builddir-worker\worker\tm-worker.exe"
 $exe = [System.IO.Path]::GetFullPath($exe)
 
 for ($i = 1; $i -le $Count; $i++) {

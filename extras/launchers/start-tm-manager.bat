@@ -14,14 +14,14 @@ set "SCRIPT_DIR=%~dp0"
 set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 
 REM Determine manager executable path
-if exist "%SCRIPT_DIR%\..\manager\manager.exe" (
-    set "MANAGER_BIN=%SCRIPT_DIR%\..\manager\manager.exe"
-) else if exist "%DEFAULT_INSTALL_DIR%\manager\manager.exe" (
-    set "MANAGER_BIN=%DEFAULT_INSTALL_DIR%\manager\manager.exe"
+if exist "%SCRIPT_DIR%\..\manager\tm-manager.exe" (
+    set "MANAGER_BIN=%SCRIPT_DIR%\..\manager\tm-manager.exe"
+) else if exist "%DEFAULT_INSTALL_DIR%\tm-manager\tm-manager.exe" (
+    set "MANAGER_BIN=%DEFAULT_INSTALL_DIR%\tm-manager\tm-manager.exe"
 ) else (
-    where manager.exe >nul 2>&1
+    where tm-manager.exe >nul 2>&1
     if !errorlevel! equ 0 (
-        set "MANAGER_BIN=manager.exe"
+        set "MANAGER_BIN=tm-manager.exe"
     ) else (
         echo [ERROR] Could not find manager executable >&2
         exit /b 1

@@ -14,14 +14,14 @@ set "SCRIPT_DIR=%~dp0"
 set "SCRIPT_DIR=%SCRIPT_DIR:~0,-1%"
 
 REM Determine worker executable path
-if exist "%SCRIPT_DIR%\..\worker\worker.exe" (
-    set "WORKER_BIN=%SCRIPT_DIR%\..\worker\worker.exe"
-) else if exist "%DEFAULT_INSTALL_DIR%\worker\worker.exe" (
-    set "WORKER_BIN=%DEFAULT_INSTALL_DIR%\worker\worker.exe"
+if exist "%SCRIPT_DIR%\..\worker\tm-worker.exe" (
+    set "WORKER_BIN=%SCRIPT_DIR%\..\worker\tm-worker.exe"
+) else if exist "%DEFAULT_INSTALL_DIR%\tm-worker\tm-worker.exe" (
+    set "WORKER_BIN=%DEFAULT_INSTALL_DIR%\tm-worker\tm-worker.exe"
 ) else (
-    where worker.exe >nul 2>&1
+    where tm-worker.exe >nul 2>&1
     if !errorlevel! equ 0 (
-        set "WORKER_BIN=worker.exe"
+        set "WORKER_BIN=tm-worker.exe"
     ) else (
         echo [ERROR] Could not find worker executable >&2
         exit /b 1

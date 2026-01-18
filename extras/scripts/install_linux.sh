@@ -40,7 +40,7 @@ show_usage() {
 Usage: $0 [OPTIONS]
 
 Options:
-  --install-dir PATH     Custom installation directory (default: ~/.local/share/task-message-{manager|worker})
+  --install-dir PATH     Custom installation directory (default: ~/.local/share/task-messenger/tm-{manager|worker})
   --archive PATH         Path to distribution archive (auto-detected if not provided)
   --help                 Show this help message
 
@@ -49,7 +49,7 @@ Note: The component (manager or worker) is automatically detected from the extra
 Examples:
   $0
   $0 --install-dir /custom/path
-  $0 --archive task-messenger-manager-v1.0.0-linux-x86_64.tar.gz
+  $0 --archive tm-manager-v1.0.0-linux-x86_64.tar.gz
 
 EOF
 }
@@ -63,8 +63,8 @@ detect_extracted_files() {
     
     if [ -f "$lib_path" ]; then
         # Detect component by checking which executable exists
-        local manager_path="$extracted_root/bin/manager"
-        local worker_path="$extracted_root/bin/worker"
+        local manager_path="$extracted_root/bin/tm-manager"
+        local worker_path="$extracted_root/bin/tm-worker"
         
         if [ -f "$manager_path" ]; then
             echo "manager:$extracted_root"
@@ -80,7 +80,7 @@ detect_extracted_files() {
 
 detect_archive() {
     local component=$1
-    local pattern="task-messenger-${component}-v*-linux-*.tar.gz"
+    local pattern="tm-${component}-v*-linux-*.tar.gz"
     
     # Search in current directory and parent directory
     local archive=$(find . .. -maxdepth 1 -name "$pattern" 2>/dev/null | head -n 1)
@@ -95,7 +95,7 @@ detect_archive() {
 
 extract_version() {
     local archive=$1
-    # Extract version from filename: task-messenger-manager-v1.0.0-linux-x86_64.tar.gz -> 1.0.0
+    # Extract version from filename: tm-manager-v1.0.0-linux-x86_64.tar.gz -> 1.0.0
     echo "$archive" | sed -n 's/.*-v\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/p'
 }
 
@@ -151,11 +151,11 @@ install_component() {
     mkdir -p "$install_dir/bin"
     
     # Copy binaries
-    if [ -f "$extracted_dir/bin/${component}" ]; then
-        cp "$extracted_dir/bin/${component}" "$install_dir/bin/"
-        chmod +x "$install_dir/bin/${component}"
+    if [ -f "$extracted_dir/bin/tm-${component}" ]; then
+        cp "$extracted_dir/bin/tm-${component}" "$install_dir/bin/"
+        chmod +x "$install_dir/bin/tm-${component}"
     else
-        print_error "Binary not found: $extracted_dir/bin/${component}"
+        print_error "Binary not found: $extracted_dir/bin/tm-${component}"
         exit 1
     fi
     
@@ -172,7 +172,7 @@ install_component() {
     fi
     
     # Copy config file from archive to component-specific XDG config directory
-    local config_dir="$CONFIG_BASE/task-message-$component"
+    local config_dir="$CONFIG_BASE/task-messenger/tm-$component"
     local config_source_dir="$extracted_dir/config"
     local config_file="$config_source_dir/config-$component.json"
     if [ -f "$config_file" ]; then
@@ -220,8 +220,8 @@ create_wrapper_script() {
     
     mkdir -p "$BIN_SYMLINK_DIR"
     
-    local wrapper_path="$BIN_SYMLINK_DIR/$component"
-    local target_path="$install_dir/bin/$component"
+    local wrapper_path="$BIN_SYMLINK_DIR/tm-$component"
+    local target_path="$install_dir/bin/tm-$component"
     local lib_path="$install_dir/lib"
     
     # Create wrapper script that sets LD_LIBRARY_PATH
@@ -241,7 +241,7 @@ install_desktop_entry() {
     
     # Find desktop file in the distribution
     local script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    local desktop_file="$script_dir/../desktop/task-messenger-${component}.desktop"
+    local desktop_file="$script_dir/../desktop/tm-${component}.desktop"
     
     if [ ! -f "$desktop_file" ]; then
         print_warning "Desktop entry file not found: $desktop_file"
@@ -251,16 +251,16 @@ install_desktop_entry() {
     mkdir -p "$DESKTOP_DIR"
     
     # Build Exec command with library path and config argument
-    local config_dir="$CONFIG_BASE/task-message-$component"
+    local config_dir="$CONFIG_BASE/task-messenger/tm-$component"
     local config_path="$config_dir/config-$component.json"
     local lib_path="$install_dir/lib"
-    local exec_cmd="env LD_LIBRARY_PATH=\\\"$lib_path\\\" $install_dir/bin/$component -c \\\"$config_path\\\""
+    local exec_cmd="env LD_LIBRARY_PATH=\\\"$lib_path\\\" $install_dir/bin/tm-$component -c \\\"$config_path\\\""
     # Worker defaults to UI enabled
     if [ "$component" = "worker" ]; then
         exec_cmd="$exec_cmd"
     fi
     # Copy and update Exec path in desktop entry
-    local installed_desktop="$DESKTOP_DIR/task-messenger-${component}.desktop"
+    local installed_desktop="$DESKTOP_DIR/tm-${component}.desktop"
     sed "s|Exec=.*|Exec=$exec_cmd|" "$desktop_file" > "$installed_desktop"
     chmod +x "$installed_desktop"
     
@@ -336,7 +336,7 @@ main() {
             print_error "     and run this script from the extracted directory"
             print_error ""
             print_error "  2. Specify the archive path manually:"
-            print_error "     $0 --archive 'task-messenger-{component}-v1.0.0-linux-x86_64.tar.gz'"
+            print_error "     $0 --archive 'tm-{component}-v1.0.0-linux-x86_64.tar.gz'"
             exit 1
         fi
         
@@ -350,18 +350,18 @@ main() {
         local temp_dir=$(mktemp -d)
         tar -xzf "$ARCHIVE" -C "$temp_dir"
         
-        # Detect archive structure: task-message-{manager|worker}/
-        extracted_dir=$(find "$temp_dir" -maxdepth 1 -type d \( -name "task-message-manager" -o -name "task-message-worker" \) 2>/dev/null | head -n 1)
+        # Detect archive structure: tm-{manager|worker}/
+        extracted_dir=$(find "$temp_dir" -maxdepth 1 -type d \( -name "tm-manager" -o -name "tm-worker" \) 2>/dev/null | head -n 1)
         
         if [ -z "$extracted_dir" ]; then
-            print_error "Unexpected archive structure. Expected task-message-manager/ or task-message-worker/ directory."
+            print_error "Unexpected archive structure. Expected tm-manager/ or tm-worker/ directory."
             rm -rf "$temp_dir"
             exit 1
         fi
         
         # Detect component from directory name
         local dir_name=$(basename "$extracted_dir")
-        if [[ "$dir_name" == "task-message-manager" ]]; then
+        if [[ "$dir_name" == "tm-manager" ]]; then
             COMPONENT="manager"
         else
             COMPONENT="worker"
@@ -379,10 +379,10 @@ main() {
     if [ -n "$CUSTOM_INSTALL_DIR" ]; then
         INSTALL_DIR="$CUSTOM_INSTALL_DIR"
     else
-        INSTALL_DIR="$DEFAULT_INSTALL_BASE/task-message-$COMPONENT"
+        INSTALL_DIR="$DEFAULT_INSTALL_BASE/task-messenger/tm-$COMPONENT"
     fi
     
-    local CONFIG_DIR="$CONFIG_BASE/task-message-$COMPONENT"
+    local CONFIG_DIR="$CONFIG_BASE/task-messenger/tm-$COMPONENT"
     
     print_info "=========================================="
     print_info "TaskMessenger $COMPONENT Installation"
@@ -391,7 +391,7 @@ main() {
     print_info "Version:          $VERSION"
     print_info "Install location: $INSTALL_DIR"
     print_info "Config location:  $CONFIG_DIR"
-    print_info "Symlink location: $BIN_SYMLINK_DIR/$COMPONENT"
+    print_info "Symlink location: $BIN_SYMLINK_DIR/tm-$COMPONENT"
     print_info "=========================================="
     echo ""
     
@@ -412,14 +412,14 @@ main() {
     # Check PATH
     check_path
     
-    local CONFIG_DIR="$CONFIG_BASE/task-message-$COMPONENT"
+    local CONFIG_DIR="$CONFIG_BASE/task-messenger/tm-$COMPONENT"
     
     echo ""
     print_success "=========================================="
     print_success "Installation completed successfully!"
     print_success "=========================================="
-    print_info "You can now run: $COMPONENT"
-    print_info "Or use the full path: $INSTALL_DIR/bin/$COMPONENT"
+    print_info "You can now run: tm-$COMPONENT"
+    print_info "Or use the full path: $INSTALL_DIR/bin/tm-$COMPONENT"
     print_info "Config file: $CONFIG_DIR/config-$COMPONENT.json"
     if [ "$COMPONENT" = "manager" ]; then
         print_info "Identity files: $CONFIG_DIR/vn-manager-identity/"

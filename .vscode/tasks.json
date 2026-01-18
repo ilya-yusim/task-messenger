@@ -81,7 +81,7 @@
 		{
 			"label": "Run Manager (linux)",
 			"type": "shell",
-			"command": "builddir/manager/manager -c config/config-manager.json",
+			"command": "builddir/manager/tm-manager -c config/config-manager.json",
 			"group": {
 				"kind": "test",
 				"isDefault": false
@@ -122,7 +122,7 @@
 		{
 			"label": "Run Manager",
 			"type": "shell",
-			"command": "builddir/manager/manager.exe -c config/config-manager.json",
+			"command": "builddir/manager/tm-manager.exe -c config/config-manager.json",
 			"group": {
 				"kind": "test",
 				"isDefault": false
@@ -141,7 +141,7 @@
 		{
 			"label": "Run Blocking Worker (Linux)",
 			"type": "shell",
-			"command": "builddir/worker/worker -c config/config-worker.json --mode blocking",
+			"command": "builddir/worker/tm-worker -c config/config-worker.json --mode blocking",
 			// "isBackground": true,
 			"group": "test",
 			"presentation": {
@@ -154,7 +154,7 @@
 		{
 			"label": "Run Blocking Worker",
 			"type": "shell",
-			"command": "cmd.exe /c start \"\" cmd.exe /k \"builddir\\worker\\worker.exe -c config/config-worker.json --mode blocking\"",
+			"command": "cmd.exe /c start \"\" cmd.exe /k \"builddir\\worker\\tm-worker.exe -c config/config-worker.json --mode blocking\"",
 			// "isBackground": true,
 			"group": "test",
 			"presentation": {
@@ -167,7 +167,7 @@
 		{
 			"label": "Run Async Worker (Linux)",
 			"type": "shell",
-			"command": "builddir/worker/worker -c config/config-worker.json --mode async",
+			"command": "builddir/worker/tm-worker -c config/config-worker.json --mode async",
 			"isBackground": false,
 			"group": "test",
 			"presentation": {
@@ -177,8 +177,8 @@
 		{
 			"label": "Run Async Worker",
 			"type": "shell",
-			"command": "cmd.exe /c start \"\" cmd.exe /k \"builddir\\worker\\worker.exe -c config/config-worker.json --mode async\"",
-//			"command": "builddir-worker/worker/worker.exe -c config/config-worker.json --mode async",
+			"command": "cmd.exe /c start \"\" cmd.exe /k \"builddir\\worker\\tm-worker.exe -c config/config-worker.json --mode async\"",
+//			"command": "builddir-worker/worker/tm-worker.exe -c config/config-worker.json --mode async",
 			"isBackground": false,
 			"group": "test",
 			"presentation": {

@@ -69,9 +69,9 @@ function Get-DefaultInstallDir {
     param([string]$Component)
     
     if ($Component -eq "manager") {
-        return Join-Path $env:LOCALAPPDATA "TaskMessageManager"
+        return Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-manager"
     } else {
-        return Join-Path $env:LOCALAPPDATA "TaskMessageWorker"
+        return Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-worker"
     }
 }
 
@@ -79,16 +79,16 @@ function Get-ConfigDir {
     param([string]$Component)
     
     if ($Component -eq "manager") {
-        return Join-Path $env:APPDATA "TaskMessageManager"
+        return Join-Path $env:APPDATA "TaskMessenger\tm-manager"
     } else {
-        return Join-Path $env:APPDATA "TaskMessageWorker"
+        return Join-Path $env:APPDATA "TaskMessenger\tm-worker"
     }
 }
 
 function Find-Archive {
     param([string]$Component)
     
-    $pattern = "task-messenger-$Component-v*-windows-*.zip"
+    $pattern = "tm-$Component-v*-windows-*.zip"
     
     # Search in current directory and parent directory
     $archive = Get-ChildItem -Path @(".", "..") -Filter $pattern -ErrorAction SilentlyContinue | Select-Object -First 1
@@ -110,8 +110,8 @@ function Test-ExtractedFiles {
     
     if (Test-Path $dllPath) {
         # Detect which component by checking which executable exists
-        $managerPath = Join-Path $extractedRoot "bin\manager.exe"
-        $workerPath = Join-Path $extractedRoot "bin\worker.exe"
+        $managerPath = Join-Path $extractedRoot "bin\tm-manager.exe"
+        $workerPath = Join-Path $extractedRoot "bin\tm-worker.exe"
         
         if (Test-Path $managerPath) {
             return @{ Root = $extractedRoot; Component = "manager" }
@@ -127,16 +127,16 @@ function Get-ComponentName {
     param([string]$Component)
     
     if ($Component -eq "manager") {
-        return "TaskMessageManager"
+        return "TMManager"
     } else {
-        return "TaskMessageWorker"
+        return "TMWorker"
     }
 }
 
 function Get-VersionFromArchive {
     param([string]$ArchiveName)
     
-    # Extract version from filename: task-messenger-manager-v1.0.0-windows-x64.zip -> 1.0.0
+    # Extract version from filename: tm-manager-v1.0.0-windows-x64.zip -> 1.0.0
     if ($ArchiveName -match '-v(\d+\.\d+\.\d+)-') {
         return $matches[1]
     }
@@ -210,7 +210,7 @@ function Install-Component {
     Write-Info "Installing files..."
     
     # Copy binary
-    $binaryPath = Join-Path $extractedDir "bin\$Component.exe"
+    $binaryPath = Join-Path $extractedDir "bin\tm-$Component.exe"
     if (Test-Path $binaryPath) {
         Copy-Item $binaryPath $InstallDir -Force
     } else {
@@ -336,7 +336,7 @@ function New-StartMenuShortcut {
     $startMenuDir = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\$componentName"
     New-Item -ItemType Directory -Path $startMenuDir -Force | Out-Null
     
-    $exePath = Join-Path $InstallDir "$Component.exe"
+    $exePath = Join-Path $InstallDir "tm-$Component.exe"
     $shortcutPath = Join-Path $startMenuDir "$componentName.lnk"
     
     # Get config file path from APPDATA (XDG-style)
@@ -413,7 +413,7 @@ function Register-InWindowsUninstall {
     Set-ItemProperty -Path $uninstallKey -Name "NoRepair" -Value 1 -Type DWord
     
     # Set icon if exe exists
-    $exePath = Join-Path $InstallDir "$Component.exe"
+    $exePath = Join-Path $InstallDir "tm-$Component.exe"
     if (Test-Path $exePath) {
         Set-ItemProperty -Path $uninstallKey -Name "DisplayIcon" -Value $exePath
     }
@@ -467,7 +467,7 @@ function Main {
     } else {
         # Fall back to archive-based installation
         if (-not $Archive) {
-            Exit-WithError "Could not detect component from extracted files`n`nSolutions:`n  1. Extract a TaskMessenger distribution archive (manager or worker)`n     and run this script from the extracted TaskMessenger directory`n`n  2. Specify the archive path manually:`n     .\install_windows.ps1 -Archive 'path\to\task-messenger-{component}-v1.0.0-windows-x64.zip'"
+            Exit-WithError "Could not detect component from extracted files`n`nSolutions:`n  1. Extract a TaskMessenger distribution archive (manager or worker)`n     and run this script from the extracted TaskMessenger directory`n`n  2. Specify the archive path manually:`n     .\install_windows.ps1 -Archive 'path\to\tm-{component}-v1.0.0-windows-x64.zip'"
         }
         
         # Validate archive exists
@@ -481,8 +481,8 @@ function Main {
         Expand-Archive -Path $Archive -DestinationPath $tempDir -Force
         
         # Detect component from extracted files first
-        $managerCheck = Join-Path $tempDir "TaskMessageManager"
-        $workerCheck = Join-Path $tempDir "TaskMessageWorker"
+        $managerCheck = Join-Path $tempDir "tm-manager"
+        $workerCheck = Join-Path $tempDir "tm-worker"
         
         if (Test-Path $managerCheck) {
             $sourceDir = $managerCheck
@@ -491,7 +491,7 @@ function Main {
             $sourceDir = $workerCheck
             $Component = "worker"
         } else {
-            Exit-WithError "Unexpected archive structure. Expected TaskMessageManager or TaskMessageWorker directory."
+            Exit-WithError "Unexpected archive structure. Expected tm-manager or tm-worker directory."
         }
         
         # Update install directory based on detected component if not specified
@@ -500,15 +500,15 @@ function Main {
         }
         
         # Detect component from extracted files
-        $managerPath = Join-Path $sourceDir "bin\manager.exe"
-        $workerPath = Join-Path $sourceDir "bin\worker.exe"
+        $managerPath = Join-Path $sourceDir "bin\tm-manager.exe"
+        $workerPath = Join-Path $sourceDir "bin\tm-worker.exe"
         
         if (Test-Path $managerPath) {
             $Component = "manager"
         } elseif (Test-Path $workerPath) {
             $Component = "worker"
         } else {
-            Exit-WithError "Could not detect component. No manager.exe or worker.exe found."
+            Exit-WithError "Could not detect component. No tm-manager.exe or tm-worker.exe found."
         }
         
         Write-Info "Detected component: $Component"

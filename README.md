@@ -126,13 +126,13 @@ Task Messenger provides distribution packages for both manager and worker compon
 ### Windows Installation Paths
 
 **Binaries** (in `%LOCALAPPDATA%`):
-- Manager: `%LOCALAPPDATA%\TaskMessageManager\manager.exe`
-- Worker: `%LOCALAPPDATA%\TaskMessageWorker\worker.exe`
+- Manager: `%LOCALAPPDATA%\TaskMessenger\tm-manager\tm-manager.exe`
+- Worker: `%LOCALAPPDATA%\TaskMessenger\tm-worker\tm-worker.exe`
 
 **Configuration and Identity** (in `%APPDATA%` - roaming):
-- Manager config: `%APPDATA%\TaskMessageManager\config-manager.json`
-- Manager identity: `%APPDATA%\TaskMessageManager\vn-manager-identity\`
-- Worker config: `%APPDATA%\TaskMessageWorker\config-worker.json`
+- Manager config: `%APPDATA%\TaskMessenger\tm-manager\config-manager.json`
+- Manager identity: `%APPDATA%\TaskMessenger\tm-manager\vn-manager-identity\`
+- Worker config: `%APPDATA%\TaskMessenger\tm-worker\config-worker.json`
 
 **Installation:**
 ```powershell
@@ -140,7 +140,7 @@ Task Messenger provides distribution packages for both manager and worker compon
 .\extras\scripts\install_windows.ps1
 
 # Or specify archive manually:
-.\extras\scripts\install_windows.ps1 -Archive task-messenger-manager-v1.0.0-windows-x64.zip
+.\extras\scripts\install_windows.ps1 -Archive tm-manager-v1.0.0-windows-x64.zip
 ```
 
 **Uninstallation:**
@@ -155,13 +155,13 @@ Task Messenger provides distribution packages for both manager and worker compon
 ### Linux Installation Paths
 
 **Binaries** (in `~/.local/share`):
-- Manager: `~/.local/share/TaskMessageManager/bin/manager`
-- Worker: `~/.local/share/TaskMessageWorker/bin/worker`
+- Manager: `~/.local/share/task-messenger/tm-manager/bin/tm-manager`
+- Worker: `~/.local/share/task-messenger/tm-worker/bin/tm-worker`
 
 **Configuration and Identity** (in `~/.config` - XDG standard):
-- Manager config: `~/.config/task-messenger/config-manager.json`
-- Manager identity: `~/.config/task-messenger/vn-manager-identity/`
-- Worker config: `~/.config/task-messenger/config-worker.json`
+- Manager config: `~/.config/task-messenger/tm-manager/config-manager.json`
+- Manager identity: `~/.config/task-messenger/tm-manager/vn-manager-identity/`
+- Worker config: `~/.config/task-messenger/tm-worker/config-worker.json`
 
 **Installation:**
 ```bash
@@ -169,7 +169,7 @@ Task Messenger provides distribution packages for both manager and worker compon
 ./extras/scripts/install_linux.sh
 
 # Or specify archive manually:
-./extras/scripts/install_linux.sh --archive task-messenger-manager-v1.0.0-linux-x64.tar.gz
+./extras/scripts/install_linux.sh --archive tm-manager-v1.0.0-linux-x64.tar.gz
 ```
 
 **Uninstallation:**

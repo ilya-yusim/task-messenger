@@ -82,14 +82,14 @@ cd task-messenger-manager-*/
 ```
 
 **Installation paths (user install):**
-- Binaries: `~/.local/share/task-messenger-manager/bin/manager`
-- Libraries: `~/.local/share/task-messenger-manager/lib/libzt.so`
-- Config: `~/.config/task-message-manager/config-manager.json`
-- Identity: `~/.config/task-message-manager/vn-manager-identity/`
+- Binaries: `~/.local/share/task-messenger/tm-manager/bin/tm-manager`
+- Libraries: `~/.local/share/task-messenger/tm-manager/lib/libzt.so`
+- Config: `~/.config/task-messenger/tm-manager/config-manager.json`
+- Identity: `~/.config/task-messenger/tm-manager/vn-manager-identity/`
 
 **Configure ZeroTier network:**
 
-Edit `~/.config/task-message-manager/config-manager.json`:
+Edit `~/.config/task-messenger/tm-manager/config-manager.json`:
 ```json
 {
   "transport_server": {
@@ -112,13 +112,13 @@ Copy your existing manager identity to the VM:
 
 ```bash
 # On local machine
-gcloud compute scp --recurse config/vn-manager-identity/ your-vm-name:~/.config/task-message-manager/ --zone=us-west1-a
+gcloud compute scp --recurse config/vn-manager-identity/ your-vm-name:~/.config/task-messenger/tm-manager/ --zone=us-west1-a
 ```
 
 **Option B: Generate new identity**
 
 The manager will auto-generate identity files on first run at:
-`~/.config/task-message-manager/vn-manager-identity/`
+`~/.config/task-messenger/tm-manager/vn-manager-identity/`
 
 **Authorize in ZeroTier Central:**
 1. Start manager (generates node ID)
@@ -148,9 +148,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/.local/share/task-messenger-manager
-Environment="LD_LIBRARY_PATH=%h/.local/share/task-messenger-manager/lib"
-ExecStart=%h/.local/share/task-messenger-manager/bin/manager -c %h/.config/task-message-manager/config-manager.json
+WorkingDirectory=%h/.local/share/task-messenger/tm-manager
+Environment="LD_LIBRARY_PATH=%h/.local/share/task-messenger/tm-manager/lib"
+ExecStart=%h/.local/share/task-messenger/tm-manager/bin/tm-manager -c %h/.config/task-messenger/tm-manager/config-manager.json
 Restart=always
 RestartSec=10
 StandardOutput=journal
