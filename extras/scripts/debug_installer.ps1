@@ -240,8 +240,6 @@ function Create-SelfExtractingInstaller {
     $ExtractAndInstallBat = Join-Path $IExpressTemp "extract_and_install.bat"
     $ExtractScript = @"
 @echo off
-set LOGFILE=%TEMP%\\tm_install_debug.log
-echo Starting installer > %LOGFILE%
 title TaskMessenger $Comp Installer v$Version
 echo ================================================
 echo TaskMessenger $Comp Installer v$Version
@@ -258,7 +256,6 @@ if errorlevel 1 (
     exit /b 1
 )
 echo.
-echo Extracted archive >> %LOGFILE%
 echo Starting installation...
 echo.
 cd /d "%TEMP%\TaskMessengerInstall\$ComponentName"
@@ -282,7 +279,6 @@ if %INSTALL_EXIT_CODE% equ 0 (
     echo Installation failed. Please check the errors above.
 )
 echo.
-echo  installation finished >> %LOGFILE%
 echo Press any key to close this window...
 pause >nul
 exit /b %INSTALL_EXIT_CODE%
@@ -332,7 +328,7 @@ SourceFiles=SourceFiles
 [Strings]
 InstallPrompt=$InstallPromptText
 DisplayLicense=
-FinishMessage=
+FinishMessage=$FinishMessageText
 TargetName=$InstallerPath
 FriendlyName=$FriendlyNameText
 AppLaunched=cmd.exe /c "extract_and_install.bat"
