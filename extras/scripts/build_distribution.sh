@@ -249,7 +249,7 @@ EOF
     
     # Create tar.gz from temporary directory
     cd "$temp_archive_dir"
-    tar -czf "$archive_path" "task-message-$comp/"
+    tar -czf "$archive_path" "tm-$comp/"
     cd "$PROJECT_ROOT"
     
     # Note: Don't clean up temp_archive_dir yet - needed for makeself
