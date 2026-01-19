@@ -99,6 +99,16 @@ function Get-ConfigDir {
     }
 }
 
+function Get-ComponentName {
+    param([string]$Component)
+    
+    if ($Component -eq "manager") {
+        return "TMManager"
+    } else {
+        return "TMWorker"
+    }
+}
+
 function Test-Installation {
     param([string]$Component)
     

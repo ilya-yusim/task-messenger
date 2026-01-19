@@ -562,7 +562,7 @@ function Main {
     Write-Success "=========================================="
     Write-Success "Installation completed successfully!"
     Write-Success "=========================================="
-    Write-Info "You can now run: $Component"
+    Write-Info "You can now run: tm-$Component"
     Write-Info "Or find it in the Start Menu under TaskMessenger"
     Write-Host ""
 }

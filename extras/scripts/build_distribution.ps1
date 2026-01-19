@@ -240,10 +240,11 @@ echo.
 cd /d "%TEMP%\TaskMessengerInstall\$ComponentName"
 powershell -NoProfile -ExecutionPolicy Bypass -File "scripts\install_windows.ps1"
 set INSTALL_EXIT_CODE=%errorlevel%
-echo.
-if %INSTALL_EXIT_CODE% neq 0 (
-    echo [ERROR] Installation encountered errors (Exit code: %INSTALL_EXIT_CODE%)
+if "%INSTALL_EXIT_CODE%" neq "0" (
+    echo [ERROR] Installation encountered errors - Exit code: %INSTALL_EXIT_CODE%
     echo.
+    echo Press any key to close this window...
+    pause >nul
 ) else (
     echo [SUCCESS] Installation completed successfully!
     echo.
@@ -251,15 +252,6 @@ if %INSTALL_EXIT_CODE% neq 0 (
 echo Cleaning up temporary files...
 cd /d "%TEMP%"
 rd /s /q "%TEMP%\TaskMessengerInstall" 2>nul
-echo.
-if %INSTALL_EXIT_CODE% equ 0 (
-    echo Installation was successful!
-) else (
-    echo Installation failed. Please check the errors above.
-)
-echo.
-echo Press any key to close this window...
-pause >nul
 exit /b %INSTALL_EXIT_CODE%
 "@
     Set-Content -Path $ExtractAndInstallBat -Value $ExtractScript -Encoding ASCII
@@ -271,7 +263,8 @@ exit /b %INSTALL_EXIT_CODE%
     # Build strings with explicit variable expansion to avoid here-string issues
     $InstallPromptText = "Install TaskMessenger $Comp v${Version}?"
     $FriendlyNameText = "TaskMessenger $Comp v${Version} Installer"
-    $FinishMessageText = "TaskMessenger $Comp v${Version} has been successfully installed! You can now run it from the Start Menu or by typing 'tm-$Comp' in a terminal."
+    $ShortcutName = if ($Comp -eq "manager") { "TMManager" } else { "TMWorker" }
+    $FinishMessageText = "Installed! You can now run it from the Start Menu under $ShortcutName or by typing 'tm-$Comp' in a terminal."
     
     $SedContent = @"
 [Version]
@@ -279,7 +272,7 @@ Class=IEXPRESS
 SEDVersion=3
 [Options]
 PackagePurpose=InstallApp
-ShowInstallProgramWindow=1
+ShowInstallProgramWindow=0
 HideExtractAnimation=0
 UseLongFileName=1
 InsideCompressed=0
@@ -302,7 +295,7 @@ DisplayLicense=
 FinishMessage=$FinishMessageText
 TargetName=$InstallerPath
 FriendlyName=$FriendlyNameText
-AppLaunched=cmd.exe /k "extract_and_install.bat & exit"
+AppLaunched=cmd.exe /c "extract_and_install.bat"
 PostInstallCmd=<None>
 AdminQuietInstCmd=
 UserQuietInstCmd=
