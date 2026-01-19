@@ -268,7 +268,7 @@ create_makeself_archive() {
         return 0
     fi
     
-    local run_name="task-message-${comp}-v${VERSION}-${PLATFORM}-${ARCH}.run"
+    local run_name="tm-${comp}-v${VERSION}-${PLATFORM}-${ARCH}.run"
     local run_path="$OUTPUT_DIR/$run_name"
     
     echo ""
@@ -276,7 +276,7 @@ create_makeself_archive() {
     
     # Use the same staging directory that was created for tar.gz
     local temp_archive_dir="$STAGING_DIR/archive-$comp"
-    local staging_archive_dir="$temp_archive_dir/task-message-$comp"
+    local staging_archive_dir="$temp_archive_dir/tm-$comp"
     
     # Recreate the archive directory if it doesn't exist
     if [[ ! -d "$staging_archive_dir" ]]; then
