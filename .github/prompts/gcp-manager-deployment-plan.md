@@ -4,21 +4,69 @@ Deploy the task-messenger manager as a continuously-running service on a GCP e2-
 
 ## Deployment Steps
 
-### 1. Modify Manager for Production Mode
+### 1. Modify Manager for Production Mode ✅ COMPLETED
 
-Replace the interactive loop in [managerMain.cpp](../../manager/managerMain.cpp) (lines 41-56) with:
+**Implementation Summary:**
+- ✅ Replaced interactive loop with autonomous monitoring thread (1-second polling interval)
+- ✅ Auto-refill logic: generates 100 tasks when pool size < 10
+- ✅ Signal handlers: SIGTERM/SIGINT set atomic flag for graceful shutdown
+- ✅ Initial startup: generates 100 tasks immediately
+- ✅ Minimal logging: Info level for refill events, errors, and connection state only
+- ✅ Thread-safe: uses atomic boolean flag and thread-safe `get_task_pool_stats()` API
 
-- **Monitoring thread** that polls `server.get_task_pool_stats()` every 1-2 seconds
-- **Auto-refill logic**: Generate 100 tasks via `DefaultTaskGenerator::make_tasks(100)` when pool size < 10
-- **Logging**: Log refill events (e.g., "Pool low (7 tasks), generating 100 more")
-- **Signal handlers**: Add SIGTERM/SIGINT handlers to stop the monitoring thread and call `server.stop()` for clean shutdown
+**Files Modified:**
+- [managerMain.cpp](../../manager/managerMain.cpp): Production mode implementation (167 → 114 lines)
+- [AsyncTransportServer.hpp](../../manager/transport/AsyncTransportServer.hpp): Added `get_task_pool_stats()` method
+- [AsyncTransportServer.cpp](../../manager/transport/AsyncTransportServer.cpp): Implemented stats delegation
 
-**Requirements:**
-- Keep logging minimal: errors, refill events, worker connect/disconnect only
-- Initial startup: Generate 100 tasks immediately (acceptable baseline after restart)
-- Thread-safe shutdown flag checked by monitoring loop
+**Build Status:** ✅ Compiled successfully with no errors
 
-### 2. Set Up GCP e2-micro VM
+### 2. GCP Project Setup ✅ COMPLETED
+
+**Prerequisites:**
+- Google Account (Gmail or Google Workspace)
+- Credit/debit card for billing verification (free tier won't charge if within limits)
+- gcloud CLI installed locally (optional but recommended)
+
+**Steps:**
+
+1. **Create or select a GCP project:**
+   - Console: [console.cloud.google.com/projectcreate](https://console.cloud.google.com/projectcreate)
+   - CLI: `gcloud projects create task-messenger-prod --name="Task Messenger Production"`
+
+2. **Link billing account:**
+   - Console: [console.cloud.google.com/billing](https://console.cloud.google.com/billing)
+   - Select project → Link a billing account
+   - Required even for free tier (no charges if within limits)
+
+3. **Set active project:**
+   ```bash
+   gcloud config set project task-messenger-prod
+   ```
+
+4. **Enable required APIs:**
+   ```bash
+   gcloud services enable compute.googleapis.com
+   gcloud services enable logging.googleapis.com
+   ```
+
+5. **Verify free tier eligibility:**
+   - Check project is in a free-tier eligible region: us-west1, us-central1, or us-east1
+   - Confirm billing account has free tier credits available
+   - Review limits: [cloud.google.com/free](https://cloud.google.com/free)
+
+**Completion Status:**
+- ✅ Project created: `task-messenger-prod`
+- ✅ Project set as active
+- ✅ Compute Engine API enabled
+- ✅ Cloud Logging API enabled
+
+**Notes:**
+- No organization required for individual/small deployments
+- Organization only needed for corporate multi-project management
+- Free tier includes: 1 e2-micro VM, 30GB storage, 50GB logs/month
+
+### 3. Create GCP e2-micro VM Instance ✅ COMPLETED
 
 **Instance Configuration:**
 - **Machine type**: e2-micro (2 vCPUs shared, 1 GB RAM)
@@ -31,61 +79,114 @@ Replace the interactive loop in [managerMain.cpp](../../manager/managerMain.cpp)
 - Outbound UDP 9993: Allow - for ZeroTier traffic
 - Inbound port 8080: NOT needed (manager listens on ZeroTier network only)
 
-### 3. Install Cloud Logging Agent
-
-On the VM, install Google Cloud Logging agent to forward journald logs to GCP:
+**Create VM Instance:**
 
 ```bash
-curl -sSO https://dl.google.com/cloudagents/add-logging-agent-repo.sh
-sudo bash add-logging-agent-repo.sh --also-install
-sudo systemctl enable --now google-fluentd
+# Set variables
+PROJECT_ID="task-messenger-prod"
+VM_NAME="tm-manager-prod"
+ZONE="us-west1-a"  # or us-central1-a, us-east1-b
+
+# Create e2-micro instance
+gcloud compute instances create $VM_NAME \
+  --project=$PROJECT_ID \
+  --zone=$ZONE \
+  --machine-type=e2-micro \
+  --image-family=ubuntu-2404-lts-amd64 \
+  --image-project=ubuntu-os-cloud \
+  --boot-disk-size=30GB \
+  --boot-disk-type=pd-standard
+```
+
+**Configure SSH Access:**
+
+```bash
+# SSH to instance
+gcloud compute ssh $VM_NAME --zone=$ZONE
+
+# Or add SSH key for direct access
+gcloud compute os-login ssh-keys add \
+  --key-file=~/.ssh/id_rsa.pub
+```
+
+**Completion Status:**
+- ✅ VM instance created: `tm-manager-prod`
+- ✅ Zone: `us-west1-a` (free tier eligible)
+- ✅ Internal IP: `10.138.0.2`
+- ✅ External IP: `34.83.119.164`
+- ✅ Status: `RUNNING`
+
+**Notes:**
+- No network tags needed - default VPC firewall allows all egress (HTTPS and UDP 9993)
+- No ZeroTier system package required - manager uses libzt (ZeroTier SDK) bundled in distribution
+- Manager listens only on ZeroTier network, not public internet (no inbound firewall rules needed)
+
+### 4. Install Google Cloud Ops Agent ✅ COMPLETED
+
+On the VM, install Google Cloud Ops Agent to forward journald logs to GCP:
+
+```bash
+curl -sSO https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh
+sudo bash add-google-cloud-ops-agent-repo.sh --also-install
 ```
 
 **Access logs:**
 - Web: `console.cloud.google.com/logs`
-- Query filter: `resource.type="gce_instance" AND jsonPayload.SYSLOG_IDENTIFIER="manager"`
+- Query filter: `resource.type="gce_instance" AND jsonPayload.SYSLOG_IDENTIFIER="tm-manager"`
 - Local: `journalctl --user -u task-messenger-manager -f` (still works via SSH)
 
-**Free tier:** 50 GB logs/month
+**Completion Status:**
+- ✅ Ops Agent installed successfully
+- ✅ Logging and monitoring agents enabled
+- ✅ Logs forwarding to Cloud Logging
 
-### 4. Build Manager Distribution
+**Notes:**
+- Ops Agent replaces the legacy Cloud Logging agent
+- Supports Ubuntu 24.04 (noble)
+- Includes both logging and monitoring capabilities
+- Free tier: 50 GB logs/month
 
-On local development machine:
+### 5. Download and Install Manager ✅ COMPLETED
+
+**Download release from GitHub (on the VM):**
 
 ```bash
+# Download the pre-built installer
+wget https://github.com/ilya-yusim/task-messenger/releases/download/vtest/tm-manager-vtest-linux-x86_64.run
+
+# Make it executable
+chmod +x tm-manager-vtest-linux-x86_64.run
+
+# Run the installer
+./tm-manager-vtest-linux-x86_64.run
+```
+
+**Alternative: Build locally and upload**
+
+If you prefer to build from source:
+
+```bash
+# On local development machine
 cd ~/projects/task-messenger
-./extras/scripts/build_distribution.sh
+./extras/scripts/build_distribution.sh manager
+
+# Upload to VM
+gcloud compute scp task-messenger-manager-*.run tm-manager-prod:~/ --zone=us-west1-a
 ```
 
-**Output:**
-- `task-messenger-manager-v{VERSION}-linux-x86_64.tar.gz`
-- `task-messenger-manager-v{VERSION}-linux-x86_64.run` (self-extracting)
-
-**Upload to VM:**
-```bash
-gcloud compute scp task-messenger-manager-*.run your-vm-name:~/ --zone=us-west1-a
-```
-
-### 5. Install and Configure Manager
-
-On the VM:
-
-```bash
-# Run self-extracting installer (or use install_linux.sh)
-chmod +x task-messenger-manager-*.run
-./task-messenger-manager-*.run
-
-# Or extract and install manually
-tar -xzf task-messenger-manager-*.tar.gz
-cd task-messenger-manager-*/
-./scripts/install_linux.sh
-```
+**Completion Status:**
+- ✅ Manager installer downloaded from GitHub
+- ✅ Installation completed successfully
+- ✅ Binaries installed to `~/.local/share/task-messenger/tm-manager/`
+- ✅ Configuration created at `~/.config/task-messenger/tm-manager/`
 
 **Installation paths (user install):**
 - Binaries: `~/.local/share/task-messenger/tm-manager/bin/tm-manager`
 - Libraries: `~/.local/share/task-messenger/tm-manager/lib/libzt.so`
 - Config: `~/.config/task-messenger/tm-manager/config-manager.json`
 - Identity: `~/.config/task-messenger/tm-manager/vn-manager-identity/`
+
+### 6. Configure Manager ✅ COMPLETED
 
 **Configure ZeroTier network:**
 
@@ -104,7 +205,11 @@ Edit `~/.config/task-messenger/tm-manager/config-manager.json`:
 }
 ```
 
-### 6. Join ZeroTier Network
+**Completion Status:**
+- ✅ Configuration file updated with ZeroTier network ID
+- ✅ Manager ready for ZeroTier connectivity
+
+### 7. Join ZeroTier Network ✅ COMPLETED
 
 **Option A: Use existing identity (recommended)**
 
@@ -130,7 +235,12 @@ The manager will auto-generate identity files on first run at:
 
 Workers will connect to this ZeroTier IP on port 8080.
 
-### 7. Create Systemd User Service
+**Completion Status:**
+- ✅ ZeroTier identity configured
+- ✅ Manager authorized in ZeroTier Central
+- ✅ ZeroTier IP assigned
+
+### 8. Create Systemd User Service
 
 Since this is a user install, create a systemd user service:
 

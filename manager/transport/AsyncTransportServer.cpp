@@ -80,6 +80,10 @@ void AsyncTransportServer::enqueue_tasks(std::vector<TaskMessage> tasks) {
     maybe_run_maintenance();
 }
 
+std::pair<size_t, size_t> AsyncTransportServer::get_task_pool_stats() const {
+    return session_manager_->get_task_pool_stats();
+}
+
 void AsyncTransportServer::print_transporter_statistics() const noexcept {
     try {
         if (io_) {

@@ -77,6 +77,12 @@ public:
     void enqueue_tasks(std::vector<TaskMessage> tasks);
 
     /**
+     * \brief Get task pool statistics for monitoring.
+     * \return Pair of (available_tasks, waiting_sessions)
+     */
+    std::pair<size_t, size_t> get_task_pool_stats() const;
+
+    /**
      * \brief Dump IO-thread counters plus session-level statistics.
      */
     void print_transporter_statistics() const noexcept;
