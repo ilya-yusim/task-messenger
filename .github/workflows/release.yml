@@ -19,6 +19,9 @@ on:
           - ''
           - 'windows-latest'
           - 'ubuntu-latest'
+          - 'macos-13'
+          - 'macos-14'
+          - 'macos-latest'
       component:
         description: 'Component to build (leave empty for all)'
         required: false
@@ -38,7 +41,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.os != '') && fromJSON(format('["{0}"]', github.event.inputs.os)) || fromJSON('["windows-latest", "ubuntu-latest"]') }}
+        os: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.os != '') && fromJSON(format('[" {0}"]', github.event.inputs.os)) || fromJSON('["windows-latest", "ubuntu-latest", "macos-13", "macos-14"]') }}
         component: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.component != '') && fromJSON(format('["{0}"]', github.event.inputs.component)) || fromJSON('["manager", "worker"]') }}
     
     steps:
@@ -74,6 +77,13 @@ jobs:
           version="${{ steps.version.outputs.version }}"
           sed -i "s/version:\s*'[^']*'/version: '$version'/" meson.build
       
+      - name: Update meson.build version (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          version="${{ steps.version.outputs.version }}"
+          sed -i '' "s/version:[[:space:]]*'[^']*'/version: '$version'/" meson.build
+      
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -95,6 +105,12 @@ jobs:
         run: |
           choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
           refreshenv
+      
+      - name: Install macOS build dependencies
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install cmake pkg-config
       
       - name: Cache Meson subprojects
         uses: actions/cache@v4
@@ -197,6 +213,48 @@ jobs:
             builddir-*/subprojects/ftxui*/CMakeFiles/CMakeError.log
           if-no-files-found: ignore
       
+      - name: Build distribution (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          chmod +x ./extras/scripts/build_distribution_macos.sh
+          ./extras/scripts/build_distribution_macos.sh ${{ matrix.component }}
+      
+      - name: Diagnose FTXUI build (macOS worker)
+        if: runner.os == 'macOS' && matrix.component == 'worker'
+        shell: bash
+        run: |
+          echo "=== FTXUI Diagnostic Information (macOS) ==="
+          echo ""
+          echo "Checking builddir-worker-dist for ftxui..."
+          if [ -d "builddir-worker-dist/subprojects" ]; then
+            ls -la builddir-worker-dist/subprojects/
+          fi
+          echo ""
+          echo "Checking for ftxui in meson-info..."
+          if [ -f "builddir-worker-dist/meson-info/intro-dependencies.json" ]; then
+            cat builddir-worker-dist/meson-info/intro-dependencies.json | grep -i ftxui || echo "No ftxui dependencies found"
+          fi
+          echo ""
+          echo "Checking staged files for FTXUI libraries..."
+          if [ -d "dist-staging/worker" ]; then
+            find dist-staging/worker -name "*.dylib" -o -name "*.a"
+          fi
+      
+      - name: Upload build logs (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ matrix.component }}-macos-${{ runner.arch }}
+          path: |
+            builddir-${{ matrix.component }}-dist/meson-logs/
+            builddir-*/meson-logs/
+            builddir-*/subprojects/ftxui*/meson-log.txt
+            builddir-*/subprojects/ftxui*/CMakeFiles/CMakeOutput.log
+            builddir-*/subprojects/ftxui*/CMakeFiles/CMakeError.log
+            subprojects/libzt-wrapper/libzt/build.log
+          if-no-files-found: ignore
+      
       - name: Upload artifacts (Windows)
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
@@ -211,6 +269,16 @@ jobs:
         with:
           name: ${{ matrix.component }}-${{ runner.os }}
           path: dist/*.run
+          if-no-files-found: error
+      
+      - name: Upload artifacts (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.component }}-${{ runner.os }}-${{ runner.arch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
           if-no-files-found: error
 
   release:

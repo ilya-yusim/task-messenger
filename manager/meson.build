@@ -60,4 +60,12 @@ elif host_machine.system() == 'linux'
     build_by_default: true,
     install: false,
   )
+elif host_machine.system() == 'darwin'
+  # macOS: Copy libzt.dylib
+  custom_target('copy-zt-dylib-manager',
+    output: 'libzt.dylib',
+    command: ['cp', libzt_dylib_file, '@OUTPUT@'],
+    build_by_default: true,
+    install: false,
+  )
 endif

@@ -174,10 +174,13 @@ if host_machine.system() == 'windows'
   extra_deps = [ws2_32, iphlpapi, shlwapi]
 endif
 
-# Configure RPATH for runtime library discovery on Linux
+# Configure RPATH for runtime library discovery on Linux/macOS
 if host_machine.system() == 'linux'
   # Use $ORIGIN to allow executables to find the library relative to their location
   link_args += ['-Wl,-rpath,$ORIGIN/../lib']
+elif host_machine.system() == 'darwin'
+  # Use @executable_path for macOS
+  link_args += ['-Wl,-rpath,@executable_path/../lib']
 endif
 
 libzt_dep = declare_dependency(
@@ -203,8 +206,13 @@ if host_machine.system() == 'windows'
   set_variable('libzt_lib_path', libzt_lib_path)
 else
   # Linux/macOS: Install shared library to lib directory (relative to prefix)
-  so_file = join_paths(libzt_lib_path, 'libzt.so')
-  install_data(so_file, install_dir: join_paths(get_option('prefix'), 'lib'))
+  if host_machine.system() == 'darwin'
+    dylib_file = join_paths(libzt_lib_path, 'libzt.dylib')
+    install_data(dylib_file, install_dir: join_paths(get_option('prefix'), 'lib'))
+  else
+    so_file = join_paths(libzt_lib_path, 'libzt.so')
+    install_data(so_file, install_dir: join_paths(get_option('prefix'), 'lib'))
+  endif
   
   # Export lib_path for parent project to construct SO path (for development builds)
   set_variable('libzt_lib_path', libzt_lib_path)

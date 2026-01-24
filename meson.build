@@ -74,6 +74,9 @@ if host_machine.system() == 'windows'
 elif host_machine.system() == 'linux'
   libzt_lib_path = libzt_sp.get_variable('libzt_lib_path')
   libzt_so_file = join_paths(libzt_lib_path, 'libzt.so')
+elif host_machine.system() == 'darwin'
+  libzt_lib_path = libzt_sp.get_variable('libzt_lib_path')
+  libzt_dylib_file = join_paths(libzt_lib_path, 'libzt.dylib')
 endif
 
 # Local shared utilities (logger, protocol definitions, etc.)
