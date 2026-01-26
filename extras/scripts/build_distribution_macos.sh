@@ -21,7 +21,7 @@ if [[ ! "$COMPONENT" =~ ^(manager|worker|all)$ ]]; then
 fi
 
 # Extract version from meson.build
-VERSION=$(grep "project('task-messenger'" meson.build | grep -oP "version:\s*'\K[^']+")
+VERSION=$(grep "project('task-messenger'" meson.build | sed -n "s/.*version:[[:space:]]*'\([^']*\)'.*/\1/p")
 if [ -z "$VERSION" ]; then
     echo "❌ Error: Could not extract version from meson.build"
     exit 1
