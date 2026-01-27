@@ -157,6 +157,11 @@ jobs:
           brew update
           brew install cmake pkg-config
       
+      - name: Set up PATH for self-hosted macOS runner
+        if: steps.should_build.outputs.should_run == 'true' && runner.os == 'macOS' && contains(matrix.os, 'self-hosted')
+        run: |
+          echo "$HOME/Library/Python/3.14/bin" >> $GITHUB_PATH
+      
       - name: Cache Meson subprojects
         if: steps.should_build.outputs.should_run == 'true'
         uses: actions/cache@v4
