@@ -152,7 +152,7 @@ jobs:
           refreshenv
       
       - name: Install macOS build dependencies
-        if: steps.should_build.outputs.should_run == 'true' && runner.os == 'macOS'
+        if: steps.should_build.outputs.should_run == 'true' && runner.os == 'macOS' && !contains(matrix.os, 'self-hosted')
         run: |
           brew update
           brew install cmake pkg-config
