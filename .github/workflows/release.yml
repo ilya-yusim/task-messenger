@@ -46,19 +46,19 @@ jobs:
         run: |
           matrix='{"include":['
           
-          # Define all possible configurations
+          # Define all possible configurations (os|os_json|os_name|os_filter|component)
           configs=(
-            "windows-latest:Windows:windows-latest:manager"
-            "windows-latest:Windows:windows-latest:worker"
-            "ubuntu-latest:Linux:ubuntu-latest:manager"
-            "ubuntu-latest:Linux:ubuntu-latest:worker"
-            "[self-hosted, macOS, ARM64]:macOS-ARM64:self-hosted-macos:manager"
-            "[self-hosted, macOS, ARM64]:macOS-ARM64:self-hosted-macos:worker"
+            "windows-latest|\"windows-latest\"|Windows|windows-latest|manager"
+            "windows-latest|\"windows-latest\"|Windows|windows-latest|worker"
+            "ubuntu-latest|\"ubuntu-latest\"|Linux|ubuntu-latest|manager"
+            "ubuntu-latest|\"ubuntu-latest\"|Linux|ubuntu-latest|worker"
+            "[self-hosted, macOS, ARM64]|[\"self-hosted\",\"macOS\",\"ARM64\"]|macOS-ARM64|self-hosted-macos|manager"
+            "[self-hosted, macOS, ARM64]|[\"self-hosted\",\"macOS\",\"ARM64\"]|macOS-ARM64|self-hosted-macos|worker"
           )
           
           first=true
           for config in "${configs[@]}"; do
-            IFS=':' read -r os os_name os_filter component <<< "$config"
+            IFS='|' read -r os os_json os_name os_filter component <<< "$config"
             
             # Check if this config should be included
             include=true
@@ -76,7 +76,7 @@ jobs:
                 matrix+=","
               fi
               first=false
-              matrix+="{\"os\":$os,\"os_name\":\"$os_name\",\"os_filter\":\"$os_filter\",\"component\":\"$component\"}"
+              matrix+="{\"os\":$os_json,\"os_name\":\"$os_name\",\"os_filter\":\"$os_filter\",\"component\":\"$component\"}"
             fi
           done
           
