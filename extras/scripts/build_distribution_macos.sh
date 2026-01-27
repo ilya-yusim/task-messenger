@@ -176,24 +176,25 @@ create_archive() {
         cp "$PROJECT_ROOT/LICENSE" "$archive_root/"
     fi
     
-    # Copy installation scripts (placeholder for now)
+    # Copy installation scripts
     echo "   Copying installation scripts..."
     mkdir -p "$archive_root/scripts"
     
-    # Create placeholder install script
-    cat > "$archive_root/scripts/install_macos.sh" << 'EOF'
-#!/bin/bash
-echo "macOS installation script - Coming soon"
-echo "For now, manually copy files to desired location"
-EOF
-    chmod +x "$archive_root/scripts/install_macos.sh"
+    # Copy install script
+    if [ -f "$PROJECT_ROOT/extras/scripts/install_macos.sh" ]; then
+        cp "$PROJECT_ROOT/extras/scripts/install_macos.sh" "$archive_root/scripts/"
+        chmod +x "$archive_root/scripts/install_macos.sh"
+    else
+        echo "⚠️  Warning: install_macos.sh not found"
+    fi
     
-    # Create placeholder uninstall script
-    cat > "$archive_root/scripts/uninstall_macos.sh" << 'EOF'
-#!/bin/bash
-echo "macOS uninstallation script - Coming soon"
-EOF
-    chmod +x "$archive_root/scripts/uninstall_macos.sh"
+    # Copy uninstall script
+    if [ -f "$PROJECT_ROOT/extras/scripts/uninstall_macos.sh" ]; then
+        cp "$PROJECT_ROOT/extras/scripts/uninstall_macos.sh" "$archive_root/scripts/"
+        chmod +x "$archive_root/scripts/uninstall_macos.sh"
+    else
+        echo "⚠️  Warning: uninstall_macos.sh not found"
+    fi
     
     # Copy launcher scripts if they exist
     echo "   Copying launcher scripts..."
