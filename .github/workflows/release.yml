@@ -134,13 +134,13 @@ jobs:
           sed -i '' "s/version:[[:space:]]*'[^']*'/version: '$version'/" meson.build
       
       - name: Set up Python
-        if: ${{ !contains(matrix.os_name, 'self-hosted') }}
+        if: matrix.os_filter != 'self-hosted-macos'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       
       - name: Install Python dependencies
-        if: ${{ !contains(matrix.os_name, 'self-hosted') }}
+        if: matrix.os_filter != 'self-hosted-macos'
         run: |
           python -m pip install --upgrade pip
           pip install meson==1.9.2 ninja
@@ -158,13 +158,13 @@ jobs:
           refreshenv
       
       - name: Install macOS build dependencies
-        if: runner.os == 'macOS' && !contains(matrix.os_name, 'self-hosted')
+        if: runner.os == 'macOS' && matrix.os_filter != 'self-hosted-macos'
         run: |
           brew update
           brew install cmake pkg-config
       
       - name: Set up PATH for self-hosted macOS runner
-        if: runner.os == 'macOS' && contains(matrix.os_name, 'self-hosted')
+        if: runner.os == 'macOS' && matrix.os_filter == 'self-hosted-macos'
         run: |
           echo "$HOME/Library/Python/3.14/bin" >> $GITHUB_PATH
       
