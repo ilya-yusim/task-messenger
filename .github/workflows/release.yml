@@ -19,9 +19,7 @@ on:
           - ''
           - 'windows-latest'
           - 'ubuntu-latest'
-          - 'macos-13'
-          - 'macos-14'
-          - 'macos-latest'
+          - 'self-hosted-macos'
       component:
         description: 'Component to build (leave empty for all)'
         required: false
@@ -36,13 +34,45 @@ permissions:
 
 jobs:
   build:
-    name: Build ${{ matrix.component }} on ${{ matrix.os }}
-    if: ${{ !inputs.skip_build }}
+    name: Build ${{ matrix.component }} on ${{ matrix.os_name }}
+    if: |
+      !inputs.skip_build &&
+      (github.event_name != 'workflow_dispatch' ||
+       (inputs.os == '' || inputs.os == matrix.os_filter) &&
+       (inputs.component == '' || inputs.component == matrix.component))
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.os != '') && fromJSON(format('[" {0}"]', github.event.inputs.os)) || fromJSON('["windows-latest", "ubuntu-latest", "macos-13", "macos-14"]') }}
-        component: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.component != '') && fromJSON(format('["{0}"]', github.event.inputs.component)) || fromJSON('["manager", "worker"]') }}
+        include:
+          # Windows builds
+          - os: windows-latest
+            os_name: Windows
+            os_filter: windows-latest
+            component: manager
+          - os: windows-latest
+            os_name: Windows
+            os_filter: windows-latest
+            component: worker
+          # Linux builds
+          - os: ubuntu-latest
+            os_name: Linux
+            os_filter: ubuntu-latest
+            component: manager
+          - os: ubuntu-latest
+            os_name: Linux
+            os_filter: ubuntu-latest
+            component: worker
+          # macOS ARM64 builds (self-hosted)
+          - os: [self-hosted, macOS, ARM64]
+            os_name: macOS-ARM64
+            os_filter: self-hosted-macos
+            component: manager
+          - os: [self-hosted, macOS, ARM64]
+            os_name: macOS-ARM64
+            os_filter: self-hosted-macos
+            component: worker
+      # Allow manual filtering by os/component via workflow_dispatch
+      fail-fast: false
     
     steps:
       - name: Checkout repository
@@ -245,7 +275,7 @@ jobs:
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs-${{ matrix.component }}-macos-${{ runner.arch }}
+          name: build-logs-${{ matrix.component }}-${{ matrix.os_name }}
           path: |
             builddir-${{ matrix.component }}-dist/meson-logs/
             builddir-*/meson-logs/
@@ -259,7 +289,7 @@ jobs:
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.component }}-${{ runner.os }}
+          name: ${{ matrix.component }}-${{ matrix.os_name }}
           path: dist/*.exe
           if-no-files-found: error
       
@@ -267,7 +297,7 @@ jobs:
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.component }}-${{ runner.os }}
+          name: ${{ matrix.component }}-${{ matrix.os_name }}
           path: dist/*.run
           if-no-files-found: error
       
@@ -275,7 +305,7 @@ jobs:
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.component }}-${{ runner.os }}-${{ runner.arch }}
+          name: ${{ matrix.component }}-${{ matrix.os_name }}
           path: |
             dist/*.tar.gz
             dist/*.sha256
