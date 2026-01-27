@@ -33,67 +33,73 @@ permissions:
   contents: write
 
 jobs:
+  setup:
+    name: Setup build matrix
+    runs-on: ubuntu-latest
+    if: ${{ !inputs.skip_build }}
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Set up build matrix
+        id: set-matrix
+        shell: bash
+        run: |
+          matrix='{"include":['
+          
+          # Define all possible configurations
+          configs=(
+            "windows-latest:Windows:windows-latest:manager"
+            "windows-latest:Windows:windows-latest:worker"
+            "ubuntu-latest:Linux:ubuntu-latest:manager"
+            "ubuntu-latest:Linux:ubuntu-latest:worker"
+            "[self-hosted, macOS, ARM64]:macOS-ARM64:self-hosted-macos:manager"
+            "[self-hosted, macOS, ARM64]:macOS-ARM64:self-hosted-macos:worker"
+          )
+          
+          first=true
+          for config in "${configs[@]}"; do
+            IFS=':' read -r os os_name os_filter component <<< "$config"
+            
+            # Check if this config should be included
+            include=true
+            if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+              if [[ -n "${{ inputs.os }}" ]] && [[ "${{ inputs.os }}" != "$os_filter" ]]; then
+                include=false
+              fi
+              if [[ -n "${{ inputs.component }}" ]] && [[ "${{ inputs.component }}" != "$component" ]]; then
+                include=false
+              fi
+            fi
+            
+            if [[ "$include" == "true" ]]; then
+              if [[ "$first" == "false" ]]; then
+                matrix+=","
+              fi
+              first=false
+              matrix+="{\"os\":$os,\"os_name\":\"$os_name\",\"os_filter\":\"$os_filter\",\"component\":\"$component\"}"
+            fi
+          done
+          
+          matrix+=']}'
+          echo "matrix=$matrix" >> $GITHUB_OUTPUT
+          echo "Generated matrix: $matrix"
+
   build:
     name: Build ${{ matrix.component }} on ${{ matrix.os_name }}
+    needs: setup
     if: ${{ !inputs.skip_build }}
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ fromJson(matrix.os) }}
     strategy:
-      matrix:
-        include:
-          # Windows builds
-          - os: windows-latest
-            os_name: Windows
-            os_filter: windows-latest
-            component: manager
-          - os: windows-latest
-            os_name: Windows
-            os_filter: windows-latest
-            component: worker
-          # Linux builds
-          - os: ubuntu-latest
-            os_name: Linux
-            os_filter: ubuntu-latest
-            component: manager
-          - os: ubuntu-latest
-            os_name: Linux
-            os_filter: ubuntu-latest
-            component: worker
-          # macOS ARM64 builds (self-hosted)
-          - os: [self-hosted, macOS, ARM64]
-            os_name: macOS-ARM64
-            os_filter: self-hosted-macos
-            component: manager
-          - os: [self-hosted, macOS, ARM64]
-            os_name: macOS-ARM64
-            os_filter: self-hosted-macos
-            component: worker
-      # Allow manual filtering by os/component via workflow_dispatch
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
       fail-fast: false
     
     steps:
-      - name: Check if build should run
-        id: should_build
-        shell: bash
-        run: |
-          should_run="true"
-          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            if [[ -n "${{ inputs.os }}" ]] && [[ "${{ inputs.os }}" != "${{ matrix.os_filter }}" ]]; then
-              should_run="false"
-            fi
-            if [[ -n "${{ inputs.component }}" ]] && [[ "${{ inputs.component }}" != "${{ matrix.component }}" ]]; then
-              should_run="false"
-            fi
-          fi
-          echo "should_run=$should_run" >> $GITHUB_OUTPUT
-      
       - name: Checkout repository
-        if: steps.should_build.outputs.should_run == 'true'
         uses: actions/checkout@v4
         with:
           submodules: recursive
       
       - name: Extract version from tag
-        if: steps.should_build.outputs.should_run == 'true'
         id: version
         shell: bash
         run: |
@@ -105,7 +111,7 @@ jobs:
           fi
       
       - name: Update meson.build version (Windows)
-        if: steps.should_build.outputs.should_run == 'true' && runner.os == 'Windows'
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           $version = "${{ steps.version.outputs.version }}"
@@ -114,56 +120,55 @@ jobs:
           Set-Content -Path meson.build -Value $content
       
       - name: Update meson.build version (Linux)
-        if: steps.should_build.outputs.should_run == 'true' && runner.os == 'Linux'
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           version="${{ steps.version.outputs.version }}"
           sed -i "s/version:\s*'[^']*'/version: '$version'/" meson.build
       
       - name: Update meson.build version (macOS)
-        if: steps.should_build.outputs.should_run == 'true' && runner.os == 'macOS'
+        if: runner.os == 'macOS'
         shell: bash
         run: |
           version="${{ steps.version.outputs.version }}"
           sed -i '' "s/version:[[:space:]]*'[^']*'/version: '$version'/" meson.build
       
       - name: Set up Python
-        if: steps.should_build.outputs.should_run == 'true' && !contains(matrix.os, 'self-hosted')
+        if: ${{ !contains(matrix.os_name, 'self-hosted') }}
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       
       - name: Install Python dependencies
-        if: steps.should_build.outputs.should_run == 'true' && !contains(matrix.os, 'self-hosted')
+        if: ${{ !contains(matrix.os_name, 'self-hosted') }}
         run: |
           python -m pip install --upgrade pip
           pip install meson==1.9.2 ninja
       
       - name: Install Linux build dependencies
-        if: steps.should_build.outputs.should_run == 'true' && runner.os == 'Linux'
+        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake build-essential
       
       - name: Install CMake (Windows)
-        if: steps.should_build.outputs.should_run == 'true' && runner.os == 'Windows'
+        if: runner.os == 'Windows'
         run: |
           choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System' -y
           refreshenv
       
       - name: Install macOS build dependencies
-        if: steps.should_build.outputs.should_run == 'true' && runner.os == 'macOS' && !contains(matrix.os, 'self-hosted')
+        if: runner.os == 'macOS' && !contains(matrix.os_name, 'self-hosted')
         run: |
           brew update
           brew install cmake pkg-config
       
       - name: Set up PATH for self-hosted macOS runner
-        if: steps.should_build.outputs.should_run == 'true' && runner.os == 'macOS' && contains(matrix.os, 'self-hosted')
+        if: runner.os == 'macOS' && contains(matrix.os_name, 'self-hosted')
         run: |
           echo "$HOME/Library/Python/3.14/bin" >> $GITHUB_PATH
       
       - name: Cache Meson subprojects
-        if: steps.should_build.outputs.should_run == 'true'
         uses: actions/cache@v4
         with:
           path: subprojects/packagecache
@@ -172,17 +177,17 @@ jobs:
             ${{ runner.os }}-meson-
       
       - name: Set up MSVC environment (Windows)
-        if: steps.should_build.outputs.should_run == 'true' && runner.os == 'Windows'
+        if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
       
       - name: Build distribution (Windows)
-        if: steps.should_build.outputs.should_run == 'true' && runner.os == 'Windows'
+        if: runner.os == 'Windows'
         shell: pwsh
         run: |
           .\extras\scripts\build_distribution.ps1 -Component ${{ matrix.component }}
       
       - name: Diagnose FTXUI build (Windows worker)
-        if: steps.should_build.outputs.should_run == 'true' && runner.os == 'Windows' && matrix.component == 'worker'
+        if: runner.os == 'Windows' && matrix.component == 'worker'
         shell: pwsh
         run: |
           Write-Host "=== FTXUI Diagnostic Information ==="
@@ -210,7 +215,7 @@ jobs:
           }
       
       - name: Upload build logs on failure (Windows)
-        if: steps.should_build.outputs.should_run == 'true' && failure() && runner.os == 'Windows'
+        if: failure() && runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: build-logs-${{ matrix.component }}-windows
@@ -224,14 +229,14 @@ jobs:
           if-no-files-found: ignore
       
       - name: Build distribution (Linux)
-        if: steps.should_build.outputs.should_run == 'true' && runner.os == 'Linux'
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           chmod +x ./extras/scripts/build_distribution.sh
           ./extras/scripts/build_distribution.sh ${{ matrix.component }}
       
       - name: Diagnose FTXUI build (Linux worker)
-        if: steps.should_build.outputs.should_run == 'true' && runner.os == 'Linux' && matrix.component == 'worker'
+        if: runner.os == 'Linux' && matrix.component == 'worker'
         shell: bash
         run: |
           echo "=== FTXUI Diagnostic Information ==="
@@ -252,7 +257,7 @@ jobs:
           fi
       
       - name: Upload build logs on failure (Linux)
-        if: steps.should_build.outputs.should_run == 'true' && failure() && runner.os == 'Linux'
+        if: failure() && runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: build-logs-${{ matrix.component }}-linux
@@ -265,14 +270,14 @@ jobs:
           if-no-files-found: ignore
       
       - name: Build distribution (macOS)
-        if: steps.should_build.outputs.should_run == 'true' && runner.os == 'macOS'
+        if: runner.os == 'macOS'
         shell: bash
         run: |
           chmod +x ./extras/scripts/build_distribution_macos.sh
           ./extras/scripts/build_distribution_macos.sh ${{ matrix.component }}
       
       - name: Diagnose FTXUI build (macOS worker)
-        if: steps.should_build.outputs.should_run == 'true' && runner.os == 'macOS' && matrix.component == 'worker'
+        if: runner.os == 'macOS' && matrix.component == 'worker'
         shell: bash
         run: |
           echo "=== FTXUI Diagnostic Information (macOS) ==="
@@ -293,7 +298,7 @@ jobs:
           fi
       
       - name: Upload build logs (macOS)
-        if: steps.should_build.outputs.should_run == 'true' && runner.os == 'macOS'
+        if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
           name: build-logs-${{ matrix.component }}-${{ matrix.os_name }}
@@ -307,7 +312,7 @@ jobs:
           if-no-files-found: ignore
       
       - name: Upload artifacts (Windows)
-        if: steps.should_build.outputs.should_run == 'true' && runner.os == 'Windows'
+        if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.component }}-${{ matrix.os_name }}
@@ -315,7 +320,7 @@ jobs:
           if-no-files-found: error
       
       - name: Upload artifacts (Linux)
-        if: steps.should_build.outputs.should_run == 'true' && runner.os == 'Linux'
+        if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.component }}-${{ matrix.os_name }}
@@ -323,7 +328,7 @@ jobs:
           if-no-files-found: error
       
       - name: Upload artifacts (macOS)
-        if: steps.should_build.outputs.should_run == 'true' && runner.os == 'macOS'
+        if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.component }}-${{ matrix.os_name }}
