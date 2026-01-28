@@ -1,15 +1,15 @@
 class TmWorker < Formula
   desc "TaskMessenger Worker - Distributed task processing and execution"
-  homepage "https://github.com/GITHUB_REPOSITORY"
-  version "1.0.0"
+  homepage "https://github.com/ilya-yusim/task-messenger"
+  version "Test"
   license "MIT"
 
   on_macos do
     if Hardware::CPU.arm?
-      url "https://github.com/GITHUB_REPOSITORY/releases/download/v1.0.0/tm-worker-v1.0.0-macos-arm64.tar.gz"
-      sha256 "PLACEHOLDER_ARM64_SHA256"
+      url "https://github.com/ilya-yusim/task-messenger/releases/download/vTest/tm-worker-vTest-macos-arm64.tar.gz"
+      sha256 ""
     else
-      url "https://github.com/GITHUB_REPOSITORY/releases/download/v1.0.0/tm-worker-v1.0.0-macos-x86_64.tar.gz"
+      url "https://github.com/ilya-yusim/task-messenger/releases/download/vTest/tm-worker-vTest-macos-x86_64.tar.gz"
       sha256 "PLACEHOLDER_X86_64_SHA256"
     end
   end
