@@ -333,6 +333,7 @@ jobs:
         with:
           name: ${{ matrix.component }}-${{ matrix.os_name }}
           path: |
+            dist/*.command
             dist/*.tar.gz
             dist/*.sha256
           if-no-files-found: error
@@ -496,6 +497,52 @@ jobs:
             echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${CURRENT_TAG}" >> changelog.md
           fi
           
+          # Add artifacts section
+          VERSION="${CURRENT_TAG#v}"
+          cat >> changelog.md << EOF
+          
+          ---
+          
+          ## 📦 Installation
+          
+          ### Windows
+          
+          **Manager:**
+          - \`tm-manager-v${VERSION}-windows-x64.exe\` - Self-extracting installer
+          
+          **Worker:**
+          - \`tm-worker-v${VERSION}-windows-x64.exe\` - Self-extracting installer
+          
+          ### Linux
+          
+          **Manager:**
+          - \`tm-manager-v${VERSION}-linux-x64.run\` - Self-extracting installer
+          
+          **Worker:**
+          - \`tm-worker-v${VERSION}-linux-x64.run\` - Self-extracting installer
+          
+          ### macOS
+          
+          **Manager (Apple Silicon):**
+          - \`tm-manager-v${VERSION}-macos-arm64.command\` - Double-click installer (GUI)
+          - \`tm-manager-v${VERSION}-macos-arm64.tar.gz\` - Manual archive (Homebrew)
+          - \`tm-manager-v${VERSION}-macos-arm64.tar.gz.sha256\` - Checksum
+          
+          **Worker (Apple Silicon):**
+          - \`tm-worker-v${VERSION}-macos-arm64.command\` - Double-click installer (GUI)
+          - \`tm-worker-v${VERSION}-macos-arm64.tar.gz\` - Manual archive (Homebrew)
+          - \`tm-worker-v${VERSION}-macos-arm64.tar.gz.sha256\` - Checksum
+          
+          ### Installation Methods
+          
+          - **Windows/Linux**: Double-click the \`.exe\` or \`.run\` file
+          - **macOS GUI**: Double-click the \`.command\` file
+          - **macOS Homebrew**: \`brew tap ${{ github.repository_owner }}/task-messenger && brew install tm-manager tm-worker\`
+          - **Manual**: Extract \`.tar.gz\` archives
+          
+          See [Installation Guide](docs/INSTALLATION.md) for detailed instructions.
+          EOF
+          
           # Output for use in release
           cat changelog.md
           echo "changelog_file=changelog.md" >> $GITHUB_OUTPUT
@@ -518,3 +565,52 @@ jobs:
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Update Homebrew Formulas
+        if: ${{ !inputs.skip_build && steps.test_check.outputs.is_test != 'true' }}
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          REPO="${{ github.repository }}"
+          echo "Updating formulas for version: $VERSION"
+          echo "Repository: $REPO"
+          
+          # Get SHA256 checksums for manager
+          MANAGER_ARM64_SHA=$(cat artifacts/manager-macOS-ARM64/tm-manager-v${VERSION}-macos-arm64.tar.gz.sha256 | cut -d' ' -f1)
+          MANAGER_X86_64_SHA=$(cat artifacts/manager-macOS-x86_64/tm-manager-v${VERSION}-macos-x86_64.tar.gz.sha256 2>/dev/null | cut -d' ' -f1 || echo "PLACEHOLDER_X86_64_SHA256")
+          
+          # Get SHA256 checksums for worker
+          WORKER_ARM64_SHA=$(cat artifacts/worker-macOS-ARM64/tm-worker-v${VERSION}-macos-arm64.tar.gz.sha256 | cut -d' ' -f1)
+          WORKER_X86_64_SHA=$(cat artifacts/worker-macOS-x86_64/tm-worker-v${VERSION}-macos-x86_64.tar.gz.sha256 2>/dev/null | cut -d' ' -f1 || echo "PLACEHOLDER_X86_64_SHA256")
+          
+          echo "Manager ARM64 SHA: $MANAGER_ARM64_SHA"
+          echo "Manager x86_64 SHA: $MANAGER_X86_64_SHA"
+          echo "Worker ARM64 SHA: $WORKER_ARM64_SHA"
+          echo "Worker x86_64 SHA: $WORKER_X86_64_SHA"
+          
+          # Update manager formula
+          sed -i "s|github.com/GITHUB_REPOSITORY|github.com/${REPO}|g" homebrew/Formula/tm-manager.rb
+          sed -i "s/version \".*\"/version \"${VERSION}\"/" homebrew/Formula/tm-manager.rb
+          sed -i "s|download/v[0-9.]\+/tm-manager-v[0-9.]\+-macos-arm64|download/v${VERSION}/tm-manager-v${VERSION}-macos-arm64|" homebrew/Formula/tm-manager.rb
+          sed -i "s|download/v[0-9.]\+/tm-manager-v[0-9.]\+-macos-x86_64|download/v${VERSION}/tm-manager-v${VERSION}-macos-x86_64|" homebrew/Formula/tm-manager.rb
+          sed -i "0,/sha256 \".*\"/s//sha256 \"${MANAGER_ARM64_SHA}\"/" homebrew/Formula/tm-manager.rb
+          sed -i "0,/sha256 \".*\"/s//sha256 \"${MANAGER_X86_64_SHA}\"/" homebrew/Formula/tm-manager.rb
+          
+          # Update worker formula
+          sed -i "s|github.com/GITHUB_REPOSITORY|github.com/${REPO}|g" homebrew/Formula/tm-worker.rb
+          sed -i "s/version \".*\"/version \"${VERSION}\"/" homebrew/Formula/tm-worker.rb
+          sed -i "s|download/v[0-9.]\+/tm-worker-v[0-9.]\+-macos-arm64|download/v${VERSION}/tm-worker-v${VERSION}-macos-arm64|" homebrew/Formula/tm-worker.rb
+          sed -i "s|download/v[0-9.]\+/tm-worker-v[0-9.]\+-macos-x86_64|download/v${VERSION}/tm-worker-v${VERSION}-macos-x86_64|" homebrew/Formula/tm-worker.rb
+          sed -i "0,/sha256 \".*\"/s//sha256 \"${WORKER_ARM64_SHA}\"/" homebrew/Formula/tm-worker.rb
+          sed -i "0,/sha256 \".*\"/s//sha256 \"${WORKER_X86_64_SHA}\"/" homebrew/Formula/tm-worker.rb
+          
+          echo "✅ Formulas updated successfully"
+      
+      - name: Commit and Push Formula Updates
+        if: ${{ !inputs.skip_build && steps.test_check.outputs.is_test != 'true' }}
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update Homebrew formulas for v${{ github.ref_name }}"
+          file_pattern: homebrew/Formula/*.rb
+          commit_user_name: github-actions[bot]
+          commit_user_email: github-actions[bot]@users.noreply.github.com
+          commit_author: github-actions[bot] <github-actions[bot]@users.noreply.github.com>

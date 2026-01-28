@@ -438,6 +438,31 @@ EOF
     print_info "You can drag it to your Dock or Applications folder"
 }
 
+create_uninstaller_command() {
+    local component=$1
+    local install_dir=$2
+    
+    # Capitalize first letter (bash 3.2 compatible)
+    local component_cap="$(echo "${component:0:1}" | tr '[:lower:]' '[:upper:]')${component:1}"
+    local uninstaller_name="Uninstall TaskMessenger ${component_cap}.command"
+    local uninstaller_path="$HOME/Desktop/${uninstaller_name}"
+    
+    print_info "Creating desktop uninstaller..."
+    
+    cat > "$uninstaller_path" << EOF
+#!/bin/bash
+# TaskMessenger Uninstaller
+# Double-click to uninstall TaskMessenger $component
+
+# Run the uninstall script
+exec "$install_dir/scripts/uninstall_macos.sh" $component "\$@"
+EOF
+    
+    chmod +x "$uninstaller_path"
+    print_success "Created desktop uninstaller: $uninstaller_path"
+    print_info "Double-click to uninstall TaskMessenger $component"
+}
+
 check_path() {
     if [[ ":$PATH:" == *":$BIN_SYMLINK_DIR:"* ]]; then
         print_success "$BIN_SYMLINK_DIR is already in PATH"
@@ -578,6 +603,9 @@ main() {
     
     # Create application bundle
     create_app_bundle "$COMPONENT" "$INSTALL_DIR" "$CONFIG_DIR" "$VERSION"
+    
+    # Create desktop uninstaller
+    create_uninstaller_command "$COMPONENT" "$INSTALL_DIR"
     
     # Check PATH
     check_path

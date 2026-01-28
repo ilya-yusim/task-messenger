@@ -130,6 +130,14 @@ remove_component() {
         rm -rf "$app_path"
         print_success "Removed application bundle: $app_path"
     fi
+    
+    # Remove desktop uninstaller
+    local uninstaller_name="Uninstall TaskMessenger ${component_cap}.command"
+    local uninstaller_path="$HOME/Desktop/${uninstaller_name}"
+    if [ -f "$uninstaller_path" ]; then
+        rm -f "$uninstaller_path"
+        print_success "Removed desktop uninstaller: $uninstaller_path"
+    fi
 }
 
 remove_config() {
