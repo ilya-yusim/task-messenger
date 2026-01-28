@@ -605,12 +605,21 @@ jobs:
           
           echo "✅ Formulas updated successfully"
       
+      - name: Get default branch
+        if: ${{ !inputs.skip_build && steps.test_check.outputs.is_test != 'true' }}
+        id: default_branch
+        run: |
+          BRANCH=$(git remote show origin | grep 'HEAD branch' | cut -d' ' -f5)
+          echo "branch=${BRANCH}" >> $GITHUB_OUTPUT
+          echo "Default branch: ${BRANCH}"
+      
       - name: Commit and Push Formula Updates
         if: ${{ !inputs.skip_build && steps.test_check.outputs.is_test != 'true' }}
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          commit_message: "chore: update Homebrew formulas for v${{ github.ref_name }}"
+          commit_message: "chore: update Homebrew formulas for ${{ github.ref_name }}"
           file_pattern: homebrew/Formula/*.rb
+          branch: ${{ steps.default_branch.outputs.branch }}
           commit_user_name: github-actions[bot]
           commit_user_email: github-actions[bot]@users.noreply.github.com
           commit_author: github-actions[bot] <github-actions[bot]@users.noreply.github.com>
