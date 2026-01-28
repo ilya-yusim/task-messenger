@@ -297,8 +297,8 @@ jobs:
             find dist-staging/worker -name "*.dylib" -o -name "*.a"
           fi
       
-      - name: Upload build logs (macOS)
-        if: runner.os == 'macOS'
+      - name: Upload build logs on failure (macOS)
+        if: failure() && runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
           name: build-logs-${{ matrix.component }}-${{ matrix.os_name }}
