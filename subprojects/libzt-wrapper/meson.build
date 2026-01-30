@@ -153,15 +153,22 @@ if host_machine.system() == 'windows'
 else
   # Linux/macOS: dist/{linux|macos}-{arch}-host-{debug|release}
   # libzt uses 'x64' for x86_64, 'arm64' for aarch64
+  # Note: libzt build script uses 'macos' but meson host_machine.system() returns 'darwin'
   arch_name = host_machine.cpu_family()
   if arch_name == 'x86_64'
     arch_name = 'x64'
   elif arch_name == 'aarch64'
     arch_name = 'arm64'
   endif
-  libzt_dist_dir = host_machine.system() + '-' + arch_name + '-host-' + libzt_buildtype
+  
+  platform_name = host_machine.system()
+  if platform_name == 'darwin'
+    platform_name = 'macos'
+  endif
+  
+  libzt_dist_dir = platform_name + '-' + arch_name + '-host-' + libzt_buildtype
   libzt_lib_path = join_paths(libzt_dir, 'dist', libzt_dist_dir, 'lib')
-  # On Linux, use shared library (libzt.so - Meson searches as 'zt')
+  # On Linux/macOS, use shared library (libzt.so/libzt.dylib - Meson searches as 'zt')
   zt_lib = cc.find_library('zt', dirs: [libzt_lib_path], required: true, static: false)
 endif
 

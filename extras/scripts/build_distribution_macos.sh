@@ -21,7 +21,7 @@ if [[ ! "$COMPONENT" =~ ^(manager|worker|all)$ ]]; then
 fi
 
 # Extract version from meson.build
-VERSION=$(grep "project('task-messenger'" meson.build | grep -oP "version:\s*'\K[^']+")
+VERSION=$(grep "project('task-messenger'" meson.build | sed -n "s/.*version:[[:space:]]*'\([^']*\)'.*/\1/p")
 if [ -z "$VERSION" ]; then
     echo "❌ Error: Could not extract version from meson.build"
     exit 1
@@ -176,24 +176,25 @@ create_archive() {
         cp "$PROJECT_ROOT/LICENSE" "$archive_root/"
     fi
     
-    # Copy installation scripts (placeholder for now)
+    # Copy installation scripts
     echo "   Copying installation scripts..."
     mkdir -p "$archive_root/scripts"
     
-    # Create placeholder install script
-    cat > "$archive_root/scripts/install_macos.sh" << 'EOF'
-#!/bin/bash
-echo "macOS installation script - Coming soon"
-echo "For now, manually copy files to desired location"
-EOF
-    chmod +x "$archive_root/scripts/install_macos.sh"
+    # Copy install script
+    if [ -f "$PROJECT_ROOT/extras/scripts/install_macos.sh" ]; then
+        cp "$PROJECT_ROOT/extras/scripts/install_macos.sh" "$archive_root/scripts/"
+        chmod +x "$archive_root/scripts/install_macos.sh"
+    else
+        echo "⚠️  Warning: install_macos.sh not found"
+    fi
     
-    # Create placeholder uninstall script
-    cat > "$archive_root/scripts/uninstall_macos.sh" << 'EOF'
-#!/bin/bash
-echo "macOS uninstallation script - Coming soon"
-EOF
-    chmod +x "$archive_root/scripts/uninstall_macos.sh"
+    # Copy uninstall script
+    if [ -f "$PROJECT_ROOT/extras/scripts/uninstall_macos.sh" ]; then
+        cp "$PROJECT_ROOT/extras/scripts/uninstall_macos.sh" "$archive_root/scripts/"
+        chmod +x "$archive_root/scripts/uninstall_macos.sh"
+    else
+        echo "⚠️  Warning: uninstall_macos.sh not found"
+    fi
     
     # Copy launcher scripts if they exist
     echo "   Copying launcher scripts..."
@@ -234,27 +235,119 @@ After installation, add ~/.local/bin to your PATH if not already present:
 For more information, see: doc/INSTALLATION.md
 EOF
     
-    # Create tar.gz archive
+    # Create tar.gz archive (temporary)
     echo "   Creating tar.gz archive..."
+    local temp_tar="$temp_archive_dir/archive.tar.gz"
     cd "$temp_archive_dir"
-    tar -czf "$archive_path" "tm-$comp/" || {
+    tar -czf "$temp_tar" "tm-$comp/" || {
         echo "❌ Failed to create tar.gz archive"
         cd "$PROJECT_ROOT"
         return 1
     }
     cd "$PROJECT_ROOT"
     
-    echo "✅ Created: $archive_path"
+    # Create self-extracting installer (.command for macOS double-click support)
+    echo "   Creating self-extracting installer..."
+    local installer_name="tm-${comp}-v${VERSION}-${PLATFORM}-${ARCH}.command"
+    local installer_path="$OUTPUT_DIR/$installer_name"
+    
+    # Create the installer script
+    cat > "$installer_path" << 'INSTALLER_SCRIPT_EOF'
+#!/bin/bash
+# TaskMessenger Self-Extracting Installer for macOS
+# This file contains a compressed archive appended to this script.
+
+set -e
+
+# Color codes
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+print_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
+print_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
+print_error() { echo -e "${RED}[ERROR]${NC} $1"; }
+
+# Detect if running with GUI (double-clicked) or terminal
+if [ -t 1 ]; then
+    INTERACTIVE=true
+else
+    INTERACTIVE=false
+fi
+
+# Get the line number where the archive starts
+ARCHIVE_LINE=$(awk '/^__ARCHIVE_BELOW__/ {print NR + 1; exit 0; }' "$0")
+
+print_info "TaskMessenger Installer for macOS"
+print_info "Version: __VERSION__"
+echo ""
+
+# Create temporary directory
+TEMP_DIR=$(mktemp -d)
+trap "rm -rf '$TEMP_DIR'" EXIT
+
+# Extract archive
+print_info "Extracting files..."
+tail -n +"$ARCHIVE_LINE" "$0" | tar -xzf - -C "$TEMP_DIR" || {
+    print_error "Failed to extract archive"
+    exit 1
+}
+
+# Find extracted directory
+EXTRACTED_DIR=$(find "$TEMP_DIR" -maxdepth 1 -type d \( -name "tm-manager" -o -name "tm-worker" \) | head -n 1)
+
+if [ -z "$EXTRACTED_DIR" ]; then
+    print_error "Could not find extracted files"
+    exit 1
+fi
+
+# Run the installer
+print_info "Running installer..."
+cd "$EXTRACTED_DIR"
+
+if [ -f "scripts/install_macos.sh" ]; then
+    chmod +x scripts/install_macos.sh
+    ./scripts/install_macos.sh "$@"
+else
+    print_error "Installer script not found"
+    exit 1
+fi
+
+exit 0
+__ARCHIVE_BELOW__
+INSTALLER_SCRIPT_EOF
+
+    # Replace version placeholder
+    sed -i '' "s/__VERSION__/$VERSION/g" "$installer_path"
+    
+    # Append the compressed archive
+    cat "$temp_tar" >> "$installer_path"
+    
+    # Make executable
+    chmod +x "$installer_path"
+    
+    echo "✅ Created: $installer_path"
     
     # Generate SHA-256 checksum
     echo "   Generating checksum..."
     cd "$OUTPUT_DIR"
-    shasum -a 256 "$archive_name" > "${archive_name}.sha256"
+    shasum -a 256 "$installer_name" > "${installer_name}.sha256"
     cd "$PROJECT_ROOT"
     
-    echo "✅ Created: ${archive_path}.sha256"
+    echo "✅ Created: ${installer_path}.sha256"
     
     # Track generated files
+    GENERATED_FILES+=("$installer_path")
+    GENERATED_FILES+=("${installer_path}.sha256")
+    
+    # Also keep the tar.gz for those who prefer it
+    echo "   Creating standalone tar.gz..."
+    cp "$temp_tar" "$archive_path"
+    cd "$OUTPUT_DIR"
+    shasum -a 256 "$archive_name" > "${archive_name}.sha256"
+    cd "$PROJECT_ROOT"
     GENERATED_FILES+=("$archive_path")
     GENERATED_FILES+=("${archive_path}.sha256")
     

@@ -95,29 +95,36 @@ std::filesystem::path ProcessUtils::get_executable_path_impl() {
 #include <mach/mach.h>
 #include <sys/resource.h>
 #include <sys/time.h>
+#include <sys/sysctl.h>
 #include <mach-o/dyld.h>
 #include <limits.h>
+#include <unistd.h>
 
 ProcessUsage ProcessUtils::get_process_usage() {
-    static uint64_t last_total_time = 0, last_proc_time = 0;
+    static uint64_t last_wall_time = 0, last_proc_time = 0;
 
+    // Get process CPU time (in microseconds)
     struct rusage usage;
     getrusage(RUSAGE_SELF, &usage);
-    uint64_t proc_time = usage.ru_utime.tv_sec * 1000000 + usage.ru_utime.tv_usec +
-                         usage.ru_stime.tv_sec * 1000000 + usage.ru_stime.tv_usec;
+    uint64_t proc_time = usage.ru_utime.tv_sec * 1000000ULL + usage.ru_utime.tv_usec +
+                         usage.ru_stime.tv_sec * 1000000ULL + usage.ru_stime.tv_usec;
 
-    host_cpu_load_info_data_t cpuinfo;
-    mach_msg_type_number_t count = HOST_CPU_LOAD_INFO_COUNT;
-    host_statistics(mach_host_self(), HOST_CPU_LOAD_INFO, (host_info_t)&cpuinfo, &count);
-    uint64_t total_time = 0;
-    for (int i = 0; i < CPU_STATE_MAX; ++i)
-        total_time += cpuinfo.cpu_ticks[i];
+    // Get wall clock time (in microseconds)
+    struct timeval tv;
+    gettimeofday(&tv, nullptr);
+    uint64_t wall_time = tv.tv_sec * 1000000ULL + tv.tv_usec;
 
     double cpu_percent = 0.0;
-    if (last_total_time != 0) {
-        cpu_percent = double(proc_time - last_proc_time) / double(total_time - last_total_time) * 100.0;
+    if (last_wall_time != 0) {
+        // Calculate CPU usage as: (delta_cpu_time / delta_wall_time) * 100
+        // This gives the percentage of one CPU core used
+        uint64_t delta_proc = proc_time - last_proc_time;
+        uint64_t delta_wall = wall_time - last_wall_time;
+        if (delta_wall > 0) {
+            cpu_percent = (double(delta_proc) / double(delta_wall)) * 100.0;
+        }
     }
-    last_total_time = total_time;
+    last_wall_time = wall_time;
     last_proc_time = proc_time;
 
     struct task_basic_info t_info;

@@ -19,9 +19,7 @@ on:
           - ''
           - 'windows-latest'
           - 'ubuntu-latest'
-          - 'macos-13'
-          - 'macos-14'
-          - 'macos-latest'
+          - 'self-hosted-macos'
       component:
         description: 'Component to build (leave empty for all)'
         required: false
@@ -35,14 +33,65 @@ permissions:
   contents: write
 
 jobs:
+  setup:
+    name: Setup build matrix
+    runs-on: ubuntu-latest
+    if: ${{ !inputs.skip_build }}
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Set up build matrix
+        id: set-matrix
+        shell: bash
+        run: |
+          matrix='{"include":['
+          
+          # Define all possible configurations (os|os_json|os_name|os_filter|component)
+          configs=(
+            "windows-latest|\"windows-latest\"|Windows|windows-latest|manager"
+            "windows-latest|\"windows-latest\"|Windows|windows-latest|worker"
+            "ubuntu-latest|\"ubuntu-latest\"|Linux|ubuntu-latest|manager"
+            "ubuntu-latest|\"ubuntu-latest\"|Linux|ubuntu-latest|worker"
+            "[self-hosted, macOS, ARM64]|[\"self-hosted\",\"macOS\",\"ARM64\"]|macOS-ARM64|self-hosted-macos|manager"
+            "[self-hosted, macOS, ARM64]|[\"self-hosted\",\"macOS\",\"ARM64\"]|macOS-ARM64|self-hosted-macos|worker"
+          )
+          
+          first=true
+          for config in "${configs[@]}"; do
+            IFS='|' read -r os os_json os_name os_filter component <<< "$config"
+            
+            # Check if this config should be included
+            include=true
+            if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+              if [[ -n "${{ inputs.os }}" ]] && [[ "${{ inputs.os }}" != "$os_filter" ]]; then
+                include=false
+              fi
+              if [[ -n "${{ inputs.component }}" ]] && [[ "${{ inputs.component }}" != "$component" ]]; then
+                include=false
+              fi
+            fi
+            
+            if [[ "$include" == "true" ]]; then
+              if [[ "$first" == "false" ]]; then
+                matrix+=","
+              fi
+              first=false
+              matrix+="{\"os\":$os_json,\"os_name\":\"$os_name\",\"os_filter\":\"$os_filter\",\"component\":\"$component\"}"
+            fi
+          done
+          
+          matrix+=']}'
+          echo "matrix=$matrix" >> $GITHUB_OUTPUT
+          echo "Generated matrix: $matrix"
+
   build:
-    name: Build ${{ matrix.component }} on ${{ matrix.os }}
+    name: Build ${{ matrix.component }} on ${{ matrix.os_name }}
+    needs: setup
     if: ${{ !inputs.skip_build }}
     runs-on: ${{ matrix.os }}
     strategy:
-      matrix:
-        os: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.os != '') && fromJSON(format('[" {0}"]', github.event.inputs.os)) || fromJSON('["windows-latest", "ubuntu-latest", "macos-13", "macos-14"]') }}
-        component: ${{ (github.event_name == 'workflow_dispatch' && github.event.inputs.component != '') && fromJSON(format('["{0}"]', github.event.inputs.component)) || fromJSON('["manager", "worker"]') }}
+      matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
+      fail-fast: false
     
     steps:
       - name: Checkout repository
@@ -85,11 +134,13 @@ jobs:
           sed -i '' "s/version:[[:space:]]*'[^']*'/version: '$version'/" meson.build
       
       - name: Set up Python
+        if: matrix.os_filter != 'self-hosted-macos'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       
       - name: Install Python dependencies
+        if: matrix.os_filter != 'self-hosted-macos'
         run: |
           python -m pip install --upgrade pip
           pip install meson==1.9.2 ninja
@@ -107,10 +158,15 @@ jobs:
           refreshenv
       
       - name: Install macOS build dependencies
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && matrix.os_filter != 'self-hosted-macos'
         run: |
           brew update
           brew install cmake pkg-config
+      
+      - name: Set up PATH for self-hosted macOS runner
+        if: runner.os == 'macOS' && matrix.os_filter == 'self-hosted-macos'
+        run: |
+          echo "$HOME/Library/Python/3.14/bin" >> $GITHUB_PATH
       
       - name: Cache Meson subprojects
         uses: actions/cache@v4
@@ -241,11 +297,11 @@ jobs:
             find dist-staging/worker -name "*.dylib" -o -name "*.a"
           fi
       
-      - name: Upload build logs (macOS)
-        if: runner.os == 'macOS'
+      - name: Upload build logs on failure (macOS)
+        if: failure() && runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: build-logs-${{ matrix.component }}-macos-${{ runner.arch }}
+          name: build-logs-${{ matrix.component }}-${{ matrix.os_name }}
           path: |
             builddir-${{ matrix.component }}-dist/meson-logs/
             builddir-*/meson-logs/
@@ -259,7 +315,7 @@ jobs:
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.component }}-${{ runner.os }}
+          name: ${{ matrix.component }}-${{ matrix.os_name }}
           path: dist/*.exe
           if-no-files-found: error
       
@@ -267,7 +323,7 @@ jobs:
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.component }}-${{ runner.os }}
+          name: ${{ matrix.component }}-${{ matrix.os_name }}
           path: dist/*.run
           if-no-files-found: error
       
@@ -275,8 +331,9 @@ jobs:
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.component }}-${{ runner.os }}-${{ runner.arch }}
+          name: ${{ matrix.component }}-${{ matrix.os_name }}
           path: |
+            dist/*.command
             dist/*.tar.gz
             dist/*.sha256
           if-no-files-found: error
@@ -284,7 +341,7 @@ jobs:
   release:
     name: Create Release
     needs: build
-    if: ${{ !failure() && !cancelled() && (startsWith(github.ref, 'refs/tags/') || inputs.skip_build) }}
+    if: ${{ !failure() && !cancelled() && startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     
     steps:
@@ -465,6 +522,52 @@ jobs:
             echo "**[📋 View Full Changelog](https://github.com/${{ github.repository }}/commits/${CURRENT_TAG})**" >> changelog.md
           fi
           
+          # Add artifacts section
+          VERSION="${CURRENT_TAG#v}"
+          cat >> changelog.md << EOF
+          
+          ---
+          
+          ## 📦 Installation
+          
+          ### Windows
+          
+          **Manager:**
+          - \`tm-manager-v${VERSION}-windows-x64.exe\` - Self-extracting installer
+          
+          **Worker:**
+          - \`tm-worker-v${VERSION}-windows-x64.exe\` - Self-extracting installer
+          
+          ### Linux
+          
+          **Manager:**
+          - \`tm-manager-v${VERSION}-linux-x64.run\` - Self-extracting installer
+          
+          **Worker:**
+          - \`tm-worker-v${VERSION}-linux-x64.run\` - Self-extracting installer
+          
+          ### macOS
+          
+          **Manager (Apple Silicon):**
+          - \`tm-manager-v${VERSION}-macos-arm64.command\` - Double-click installer (GUI)
+          - \`tm-manager-v${VERSION}-macos-arm64.tar.gz\` - Manual archive (Homebrew)
+          - \`tm-manager-v${VERSION}-macos-arm64.tar.gz.sha256\` - Checksum
+          
+          **Worker (Apple Silicon):**
+          - \`tm-worker-v${VERSION}-macos-arm64.command\` - Double-click installer (GUI)
+          - \`tm-worker-v${VERSION}-macos-arm64.tar.gz\` - Manual archive (Homebrew)
+          - \`tm-worker-v${VERSION}-macos-arm64.tar.gz.sha256\` - Checksum
+          
+          ### Installation Methods
+          
+          - **Windows/Linux**: Double-click the \`.exe\` or \`.run\` file
+          - **macOS GUI**: Double-click the \`.command\` file
+          - **macOS Homebrew**: \`brew tap ${{ github.repository_owner }}/task-messenger && brew install tm-manager tm-worker\`
+          - **Manual**: Extract \`.tar.gz\` archives
+          
+          See [Installation Guide](docs/INSTALLATION.md) for detailed instructions.
+          EOF
+          
           # Output for use in release
           cat changelog.md
           echo "changelog_file=changelog.md" >> $GITHUB_OUTPUT
@@ -487,3 +590,61 @@ jobs:
           fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Update Homebrew Formulas
+        if: ${{ !inputs.skip_build && steps.test_check.outputs.is_test != 'true' }}
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/v}"
+          REPO="${{ github.repository }}"
+          echo "Updating formulas for version: $VERSION"
+          echo "Repository: $REPO"
+          
+          # Get SHA256 checksums for manager
+          MANAGER_ARM64_SHA=$(cat artifacts/manager-macOS-ARM64/tm-manager-v${VERSION}-macos-arm64.tar.gz.sha256 | cut -d' ' -f1)
+          MANAGER_X86_64_SHA=$(cat artifacts/manager-macOS-x86_64/tm-manager-v${VERSION}-macos-x86_64.tar.gz.sha256 2>/dev/null | cut -d' ' -f1 || echo "PLACEHOLDER_X86_64_SHA256")
+          
+          # Get SHA256 checksums for worker
+          WORKER_ARM64_SHA=$(cat artifacts/worker-macOS-ARM64/tm-worker-v${VERSION}-macos-arm64.tar.gz.sha256 | cut -d' ' -f1)
+          WORKER_X86_64_SHA=$(cat artifacts/worker-macOS-x86_64/tm-worker-v${VERSION}-macos-x86_64.tar.gz.sha256 2>/dev/null | cut -d' ' -f1 || echo "PLACEHOLDER_X86_64_SHA256")
+          
+          echo "Manager ARM64 SHA: $MANAGER_ARM64_SHA"
+          echo "Manager x86_64 SHA: $MANAGER_X86_64_SHA"
+          echo "Worker ARM64 SHA: $WORKER_ARM64_SHA"
+          echo "Worker x86_64 SHA: $WORKER_X86_64_SHA"
+          
+          # Update manager formula
+          sed -i "s|github.com/GITHUB_REPOSITORY|github.com/${REPO}|g" homebrew/Formula/tm-manager.rb
+          sed -i "s/version \".*\"/version \"${VERSION}\"/" homebrew/Formula/tm-manager.rb
+          sed -i "s|download/v[0-9.]\+/tm-manager-v[0-9.]\+-macos-arm64|download/v${VERSION}/tm-manager-v${VERSION}-macos-arm64|" homebrew/Formula/tm-manager.rb
+          sed -i "s|download/v[0-9.]\+/tm-manager-v[0-9.]\+-macos-x86_64|download/v${VERSION}/tm-manager-v${VERSION}-macos-x86_64|" homebrew/Formula/tm-manager.rb
+          sed -i "0,/sha256 \".*\"/s//sha256 \"${MANAGER_ARM64_SHA}\"/" homebrew/Formula/tm-manager.rb
+          sed -i "0,/sha256 \".*\"/s//sha256 \"${MANAGER_X86_64_SHA}\"/" homebrew/Formula/tm-manager.rb
+          
+          # Update worker formula
+          sed -i "s|github.com/GITHUB_REPOSITORY|github.com/${REPO}|g" homebrew/Formula/tm-worker.rb
+          sed -i "s/version \".*\"/version \"${VERSION}\"/" homebrew/Formula/tm-worker.rb
+          sed -i "s|download/v[0-9.]\+/tm-worker-v[0-9.]\+-macos-arm64|download/v${VERSION}/tm-worker-v${VERSION}-macos-arm64|" homebrew/Formula/tm-worker.rb
+          sed -i "s|download/v[0-9.]\+/tm-worker-v[0-9.]\+-macos-x86_64|download/v${VERSION}/tm-worker-v${VERSION}-macos-x86_64|" homebrew/Formula/tm-worker.rb
+          sed -i "0,/sha256 \".*\"/s//sha256 \"${WORKER_ARM64_SHA}\"/" homebrew/Formula/tm-worker.rb
+          sed -i "0,/sha256 \".*\"/s//sha256 \"${WORKER_X86_64_SHA}\"/" homebrew/Formula/tm-worker.rb
+          
+          echo "✅ Formulas updated successfully"
+      
+      - name: Get default branch
+        if: ${{ !inputs.skip_build && steps.test_check.outputs.is_test != 'true' }}
+        id: default_branch
+        run: |
+          BRANCH=$(git remote show origin | grep 'HEAD branch' | cut -d' ' -f5)
+          echo "branch=${BRANCH}" >> $GITHUB_OUTPUT
+          echo "Default branch: ${BRANCH}"
+      
+      - name: Commit and Push Formula Updates
+        if: ${{ !inputs.skip_build && steps.test_check.outputs.is_test != 'true' }}
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update Homebrew formulas for ${{ github.ref_name }}"
+          file_pattern: homebrew/Formula/*.rb
+          branch: ${{ steps.default_branch.outputs.branch }}
+          commit_user_name: github-actions[bot]
+          commit_user_email: github-actions[bot]@users.noreply.github.com
+          commit_author: github-actions[bot] <github-actions[bot]@users.noreply.github.com>

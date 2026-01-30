@@ -51,7 +51,7 @@ Create `extras/scripts/build_distribution_macos.sh` based on `build_distribution
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"ƒ
 cd "$PROJECT_ROOT"
 
 # Parse arguments
