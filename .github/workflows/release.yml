@@ -360,84 +360,109 @@ jobs:
           CURRENT_TAG="${GITHUB_REF#refs/tags/}"
           PREV_TAG="${{ steps.prev_tag.outputs.previous_tag }}"
           
+          # Start with Downloads section
+          cat > changelog.md << 'EOF'
+          ## 📦 Downloads
+          
+          Choose the appropriate installer for your platform:
+          
+          ### Manager Component
+          - **Windows**: `manager-Windows.exe` - Self-extracting installer
+          - **Linux**: `manager-Linux.run` - Self-extracting installer
+          - **macOS (Intel)**: `manager-macOS-X64.tar.gz` - Compressed archive
+          - **macOS (Apple Silicon)**: `manager-macOS-ARM64.tar.gz` - Compressed archive
+          
+          ### Worker Component
+          - **Windows**: `worker-Windows.exe` - Self-extracting installer
+          - **Linux**: `worker-Linux.run` - Self-extracting installer
+          - **macOS (Intel)**: `worker-macOS-X64.tar.gz` - Compressed archive
+          - **macOS (Apple Silicon)**: `worker-macOS-ARM64.tar.gz` - Compressed archive
+          
+          See the [installation guide](https://github.com/${{ github.repository }}/blob/main/docs/INSTALLATION.md) for detailed setup instructions.
+          
+          ---
+          
+          EOF
+          
           if [[ -z "$PREV_TAG" ]]; then
             # First release - use placeholder
-            cat > changelog.md << 'EOF'
+            cat >> changelog.md << 'EOF'
           ## 🎉 Initial Release
           
-          This is the first release of task-messenger.
+          This is the first release of task-messenger with cross-platform support for Windows, Linux, and macOS.
           
-          ### Features
+          **Key Features:**
           - Manager component for task distribution
           - Worker component for task processing
           - ZeroTier-based peer-to-peer networking
-          - Cross-platform support (Windows and Linux)
+          - Interactive terminal UI for workers
           
-          See the [documentation](README.md) for installation and usage instructions.
           EOF
           else
-            # Generate changelog from commits
-            echo "## What's Changed" > changelog.md
+            # Generate brief changelog summary
+            echo "## 📝 What's Changed" >> changelog.md
             echo "" >> changelog.md
             
             # Get commits between tags
             COMMITS=$(git log ${PREV_TAG}..${CURRENT_TAG} --pretty=format:"%s|||%h" --no-merges)
             
-            # Parse conventional commits
-            declare -A sections
-            sections["feat"]="### ✨ Features"
-            sections["fix"]="### 🐛 Bug Fixes"
-            sections["breaking"]="### ⚠️ Breaking Changes"
-            sections["perf"]="### ⚡ Performance"
-            sections["docs"]="### 📚 Documentation"
-            sections["refactor"]="### ♻️ Refactoring"
-            sections["test"]="### ✅ Tests"
-            sections["chore"]="### 🔧 Chores"
-            sections["ci"]="### 👷 CI/CD"
-            sections["other"]="### 🔀 Other Changes"
-            
-            declare -A changes
+            # Count changes by type
+            declare -A counts
+            counts["feat"]=0
+            counts["fix"]=0
+            counts["breaking"]=0
+            counts["perf"]=0
+            counts["docs"]=0
+            counts["refactor"]=0
+            counts["test"]=0
+            counts["chore"]=0
+            counts["ci"]=0
+            counts["other"]=0
             
             while IFS='|||' read -r message hash; do
-              # Check for breaking change
               if [[ "$message" == *"BREAKING CHANGE"* ]] || [[ "$message" == *"!"* ]]; then
-                changes["breaking"]+="- $message (\`$hash\`)\n"
-              # Check conventional commit types (use .* for optional scope to avoid bash regex issues)
+                ((counts["breaking"]++))
               elif [[ "$message" =~ ^feat(\(.*\))?:[[:space:]](.+)$ ]]; then
-                changes["feat"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
+                ((counts["feat"]++))
               elif [[ "$message" =~ ^fix(\(.*\))?:[[:space:]](.+)$ ]]; then
-                changes["fix"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
+                ((counts["fix"]++))
               elif [[ "$message" =~ ^perf(\(.*\))?:[[:space:]](.+)$ ]]; then
-                changes["perf"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
+                ((counts["perf"]++))
               elif [[ "$message" =~ ^docs(\(.*\))?:[[:space:]](.+)$ ]]; then
-                changes["docs"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
+                ((counts["docs"]++))
               elif [[ "$message" =~ ^refactor(\(.*\))?:[[:space:]](.+)$ ]]; then
-                changes["refactor"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
+                ((counts["refactor"]++))
               elif [[ "$message" =~ ^test(\(.*\))?:[[:space:]](.+)$ ]]; then
-                changes["test"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
+                ((counts["test"]++))
               elif [[ "$message" =~ ^chore(\(.*\))?:[[:space:]](.+)$ ]]; then
-                changes["chore"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
+                ((counts["chore"]++))
               elif [[ "$message" =~ ^ci(\(.*\))?:[[:space:]](.+)$ ]]; then
-                changes["ci"]+="- ${BASH_REMATCH[2]} (\`$hash\`)\n"
+                ((counts["ci"]++))
               else
-                changes["other"]+="- $message (\`$hash\`)\n"
+                ((counts["other"]++))
               fi
             done <<< "$COMMITS"
             
-            # Output sections in order
-            for type in breaking feat fix perf docs refactor test chore ci other; do
-              if [[ -n "${changes[$type]}" ]]; then
-                echo "" >> changelog.md
-                echo "${sections[$type]}" >> changelog.md
-                echo -e "${changes[$type]}" >> changelog.md
-              fi
-            done
+            # Output brief summary
+            [[ ${counts["breaking"]} -gt 0 ]] && echo "- ⚠️ **${counts["breaking"]} breaking change(s)**" >> changelog.md
+            [[ ${counts["feat"]} -gt 0 ]] && echo "- ✨ ${counts["feat"]} new feature(s)" >> changelog.md
+            [[ ${counts["fix"]} -gt 0 ]] && echo "- 🐛 ${counts["fix"]} bug fix(es)" >> changelog.md
+            [[ ${counts["perf"]} -gt 0 ]] && echo "- ⚡ ${counts["perf"]} performance improvement(s)" >> changelog.md
+            [[ ${counts["docs"]} -gt 0 ]] && echo "- 📚 ${counts["docs"]} documentation update(s)" >> changelog.md
+            [[ ${counts["refactor"]} -gt 0 ]] && echo "- ♻️ ${counts["refactor"]} refactoring(s)" >> changelog.md
+            [[ ${counts["test"]} -gt 0 ]] && echo "- ✅ ${counts["test"]} test update(s)" >> changelog.md
+            [[ ${counts["chore"]} -gt 0 ]] && echo "- 🔧 ${counts["chore"]} chore(s)" >> changelog.md
+            [[ ${counts["ci"]} -gt 0 ]] && echo "- 👷 ${counts["ci"]} CI/CD update(s)" >> changelog.md
+            [[ ${counts["other"]} -gt 0 ]] && echo "- 🔀 ${counts["other"]} other change(s)" >> changelog.md
             
-            # Add comparison link
             echo "" >> changelog.md
-            echo "---" >> changelog.md
-            echo "" >> changelog.md
-            echo "**Full Changelog**: https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${CURRENT_TAG}" >> changelog.md
+          fi
+          
+          # Add full changelog link
+          if [[ -n "$PREV_TAG" ]]; then
+            echo "**[📋 View Full Changelog](https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${CURRENT_TAG})**" >> changelog.md
+          else
+            echo "**[📋 View Full Changelog](https://github.com/${{ github.repository }}/commits/${CURRENT_TAG})**" >> changelog.md
           fi
           
           # Output for use in release
