@@ -414,6 +414,8 @@ jobs:
       - name: Generate changelog
         id: changelog
         run: |
+          set +e  # Don't exit on error immediately
+          
           # Determine current reference
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             CURRENT_TAG="HEAD"
@@ -469,56 +471,61 @@ jobs:
             echo "" >> changelog.md
             
             # Get commits between tags
-            COMMITS=$(git log ${PREV_TAG}..${CURRENT_TAG} --pretty=format:"%s|||%h" --no-merges)
+            COMMITS=$(git log ${PREV_TAG}..${CURRENT_TAG} --pretty=format:"%s|||%h" --no-merges 2>/dev/null || echo "")
             
-            # Count changes by type
-            declare -A counts
-            counts["feat"]=0
-            counts["fix"]=0
-            counts["breaking"]=0
-            counts["perf"]=0
-            counts["docs"]=0
-            counts["refactor"]=0
-            counts["test"]=0
-            counts["chore"]=0
-            counts["ci"]=0
-            counts["other"]=0
-            
-            while IFS='|||' read -r message hash; do
-              if [[ "$message" == *"BREAKING CHANGE"* ]] || [[ "$message" == *"!"* ]]; then
-                ((counts["breaking"]++))
-              elif [[ "$message" =~ ^feat(\(.*\))?:[[:space:]](.+)$ ]]; then
-                ((counts["feat"]++))
-              elif [[ "$message" =~ ^fix(\(.*\))?:[[:space:]](.+)$ ]]; then
-                ((counts["fix"]++))
-              elif [[ "$message" =~ ^perf(\(.*\))?:[[:space:]](.+)$ ]]; then
-                ((counts["perf"]++))
-              elif [[ "$message" =~ ^docs(\(.*\))?:[[:space:]](.+)$ ]]; then
-                ((counts["docs"]++))
-              elif [[ "$message" =~ ^refactor(\(.*\))?:[[:space:]](.+)$ ]]; then
-                ((counts["refactor"]++))
-              elif [[ "$message" =~ ^test(\(.*\))?:[[:space:]](.+)$ ]]; then
-                ((counts["test"]++))
-              elif [[ "$message" =~ ^chore(\(.*\))?:[[:space:]](.+)$ ]]; then
-                ((counts["chore"]++))
-              elif [[ "$message" =~ ^ci(\(.*\))?:[[:space:]](.+)$ ]]; then
-                ((counts["ci"]++))
-              else
-                ((counts["other"]++))
-              fi
-            done <<< "$COMMITS"
-            
-            # Output brief summary
-            [[ ${counts["breaking"]} -gt 0 ]] && echo "- ⚠️ **${counts["breaking"]} breaking change(s)**" >> changelog.md
-            [[ ${counts["feat"]} -gt 0 ]] && echo "- ✨ ${counts["feat"]} new feature(s)" >> changelog.md
-            [[ ${counts["fix"]} -gt 0 ]] && echo "- 🐛 ${counts["fix"]} bug fix(es)" >> changelog.md
-            [[ ${counts["perf"]} -gt 0 ]] && echo "- ⚡ ${counts["perf"]} performance improvement(s)" >> changelog.md
-            [[ ${counts["docs"]} -gt 0 ]] && echo "- 📚 ${counts["docs"]} documentation update(s)" >> changelog.md
-            [[ ${counts["refactor"]} -gt 0 ]] && echo "- ♻️ ${counts["refactor"]} refactoring(s)" >> changelog.md
-            [[ ${counts["test"]} -gt 0 ]] && echo "- ✅ ${counts["test"]} test update(s)" >> changelog.md
-            [[ ${counts["chore"]} -gt 0 ]] && echo "- 🔧 ${counts["chore"]} chore(s)" >> changelog.md
-            [[ ${counts["ci"]} -gt 0 ]] && echo "- 👷 ${counts["ci"]} CI/CD update(s)" >> changelog.md
-            [[ ${counts["other"]} -gt 0 ]] && echo "- 🔀 ${counts["other"]} other change(s)" >> changelog.md
+            if [[ -n "$COMMITS" ]]; then
+              # Count changes by type
+              declare -A counts
+              counts["feat"]=0
+              counts["fix"]=0
+              counts["breaking"]=0
+              counts["perf"]=0
+              counts["docs"]=0
+              counts["refactor"]=0
+              counts["test"]=0
+              counts["chore"]=0
+              counts["ci"]=0
+              counts["other"]=0
+              
+              while IFS='|||' read -r message hash; do
+                [[ -z "$message" ]] && continue
+                if [[ "$message" == *"BREAKING CHANGE"* ]] || [[ "$message" == *"!"* ]]; then
+                  ((counts["breaking"]++))
+                elif [[ "$message" =~ ^feat(\(.*\))?:[[:space:]](.+)$ ]]; then
+                  ((counts["feat"]++))
+                elif [[ "$message" =~ ^fix(\(.*\))?:[[:space:]](.+)$ ]]; then
+                  ((counts["fix"]++))
+                elif [[ "$message" =~ ^perf(\(.*\))?:[[:space:]](.+)$ ]]; then
+                  ((counts["perf"]++))
+                elif [[ "$message" =~ ^docs(\(.*\))?:[[:space:]](.+)$ ]]; then
+                  ((counts["docs"]++))
+                elif [[ "$message" =~ ^refactor(\(.*\))?:[[:space:]](.+)$ ]]; then
+                  ((counts["refactor"]++))
+                elif [[ "$message" =~ ^test(\(.*\))?:[[:space:]](.+)$ ]]; then
+                  ((counts["test"]++))
+                elif [[ "$message" =~ ^chore(\(.*\))?:[[:space:]](.+)$ ]]; then
+                  ((counts["chore"]++))
+                elif [[ "$message" =~ ^ci(\(.*\))?:[[:space:]](.+)$ ]]; then
+                  ((counts["ci"]++))
+                else
+                  ((counts["other"]++))
+                fi
+              done <<< "$COMMITS"
+              
+              # Output brief summary
+              [[ ${counts["breaking"]} -gt 0 ]] && echo "- ⚠️ **${counts["breaking"]} breaking change(s)**" >> changelog.md
+              [[ ${counts["feat"]} -gt 0 ]] && echo "- ✨ ${counts["feat"]} new feature(s)" >> changelog.md
+              [[ ${counts["fix"]} -gt 0 ]] && echo "- 🐛 ${counts["fix"]} bug fix(es)" >> changelog.md
+              [[ ${counts["perf"]} -gt 0 ]] && echo "- ⚡ ${counts["perf"]} performance improvement(s)" >> changelog.md
+              [[ ${counts["docs"]} -gt 0 ]] && echo "- 📚 ${counts["docs"]} documentation update(s)" >> changelog.md
+              [[ ${counts["refactor"]} -gt 0 ]] && echo "- ♻️ ${counts["refactor"]} refactoring(s)" >> changelog.md
+              [[ ${counts["test"]} -gt 0 ]] && echo "- ✅ ${counts["test"]} test update(s)" >> changelog.md
+              [[ ${counts["chore"]} -gt 0 ]] && echo "- 🔧 ${counts["chore"]} chore(s)" >> changelog.md
+              [[ ${counts["ci"]} -gt 0 ]] && echo "- 👷 ${counts["ci"]} CI/CD update(s)" >> changelog.md
+              [[ ${counts["other"]} -gt 0 ]] && echo "- 🔀 ${counts["other"]} other change(s)" >> changelog.md
+            else
+              echo "No commits found between ${PREV_TAG} and ${CURRENT_TAG}" >> changelog.md
+            fi
             
             echo "" >> changelog.md
           fi
