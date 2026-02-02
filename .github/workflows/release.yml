@@ -340,8 +340,7 @@ jobs:
 
   release:
     name: Create Release
-    needs: build
-    if: ${{ always() && !cancelled() && startsWith(github.ref, 'refs/tags/') && (github.ref == 'refs/tags/vReleasePage' || !failure()) }}
+    if: ${{ startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     
     steps:
@@ -587,6 +586,67 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: artifacts
+      
+      - name: Wait for build completion
+        if: ${{ steps.test_check.outputs.is_release_page_only != 'true' }}
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const workflow_run_id = context.runId;
+            const { owner, repo } = context.repo;
+            
+            // Wait for all build jobs to complete
+            let allComplete = false;
+            let attempts = 0;
+            const maxAttempts = 60; // 10 minutes max
+            
+            while (!allComplete && attempts < maxAttempts) {
+              const { data: workflowRun } = await github.rest.actions.getWorkflowRun({
+                owner,
+                repo,
+                run_id: workflow_run_id
+              });
+              
+              const { data: jobs } = await github.rest.actions.listJobsForWorkflowRun({
+                owner,
+                repo,
+                run_id: workflow_run_id
+              });
+              
+              const buildJobs = jobs.jobs.filter(job => job.name.startsWith('Build '));
+              
+              if (buildJobs.length === 0) {
+                console.log('No build jobs found - this should not happen for non-vReleasePage tags');
+                process.exit(1);
+              }
+              
+              const allDone = buildJobs.every(job => 
+                job.status === 'completed' && job.conclusion !== 'failure'
+              );
+              
+              if (allDone) {
+                allComplete = true;
+                console.log('All build jobs completed successfully');
+              } else {
+                const anyFailed = buildJobs.some(job => 
+                  job.status === 'completed' && job.conclusion === 'failure'
+                );
+                
+                if (anyFailed) {
+                  console.log('Some build jobs failed');
+                  process.exit(1);
+                }
+                
+                console.log(`Waiting for builds... Attempt ${attempts + 1}/${maxAttempts}`);
+                await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
+                attempts++;
+              }
+            }
+            
+            if (!allComplete) {
+              console.log('Timeout waiting for builds');
+              process.exit(1);
+            }
       
       - name: Create Release
         uses: softprops/action-gh-release@v1
