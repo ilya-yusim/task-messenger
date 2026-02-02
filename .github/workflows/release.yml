@@ -36,7 +36,7 @@ jobs:
   setup:
     name: Setup build matrix
     runs-on: ubuntu-latest
-    if: ${{ !inputs.skip_build && github.ref != 'refs/tags/vReleasePage' }}
+    if: ${{ !inputs.skip_build }}
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
     steps:
@@ -87,7 +87,7 @@ jobs:
   build:
     name: Build ${{ matrix.component }} on ${{ matrix.os_name }}
     needs: setup
-    if: ${{ !inputs.skip_build && github.ref != 'refs/tags/vReleasePage' }}
+    if: ${{ !inputs.skip_build }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix: ${{ fromJson(needs.setup.outputs.matrix) }}
@@ -340,7 +340,8 @@ jobs:
 
   release:
     name: Create Release
-    if: ${{ startsWith(github.ref, 'refs/tags/') }}
+    needs: build
+    if: ${{ !failure() && !cancelled() && startsWith(github.ref, 'refs/tags/') }}
     runs-on: ubuntu-latest
     
     steps:
@@ -355,13 +356,8 @@ jobs:
           TAG_NAME="${GITHUB_REF#refs/tags/}"
           if [[ "$TAG_NAME" == "vtest" ]]; then
             echo "is_test=true" >> $GITHUB_OUTPUT
-            echo "is_release_page_only=false" >> $GITHUB_OUTPUT
-          elif [[ "$TAG_NAME" == "vReleasePage" ]]; then
-            echo "is_test=false" >> $GITHUB_OUTPUT
-            echo "is_release_page_only=true" >> $GITHUB_OUTPUT
           else
             echo "is_test=false" >> $GITHUB_OUTPUT
-            echo "is_release_page_only=false" >> $GITHUB_OUTPUT
           fi
       
       - name: Delete existing test release
@@ -465,61 +461,56 @@ jobs:
             echo "" >> changelog.md
             
             # Get commits between tags
-            COMMITS=$(git log ${PREV_TAG}..${CURRENT_TAG} --pretty=format:"%s|||%h" --no-merges 2>/dev/null || echo "")
+            COMMITS=$(git log ${PREV_TAG}..${CURRENT_TAG} --pretty=format:"%s|||%h" --no-merges)
             
-            if [[ -z "$COMMITS" ]]; then
-              echo "- No changes detected" >> changelog.md
-            else
-              # Count changes by type
-              declare -A counts
-              counts["feat"]=0
-              counts["fix"]=0
-              counts["breaking"]=0
-              counts["perf"]=0
-              counts["docs"]=0
-              counts["refactor"]=0
-              counts["test"]=0
-              counts["chore"]=0
-              counts["ci"]=0
-              counts["other"]=0
-              
-              while IFS='|||' read -r message hash; do
-                [[ -z "$message" ]] && continue
-                if [[ "$message" == *"BREAKING CHANGE"* ]] || [[ "$message" == *"!"* ]]; then
-                  counts["breaking"]=$((counts["breaking"] + 1))
-                elif [[ "$message" =~ ^feat(\(.*\))?:[[:space:]](.+)$ ]]; then
-                  counts["feat"]=$((counts["feat"] + 1))
-                elif [[ "$message" =~ ^fix(\(.*\))?:[[:space:]](.+)$ ]]; then
-                  counts["fix"]=$((counts["fix"] + 1))
-                elif [[ "$message" =~ ^perf(\(.*\))?:[[:space:]](.+)$ ]]; then
-                  counts["perf"]=$((counts["perf"] + 1))
-                elif [[ "$message" =~ ^docs(\(.*\))?:[[:space:]](.+)$ ]]; then
-                  counts["docs"]=$((counts["docs"] + 1))
-                elif [[ "$message" =~ ^refactor(\(.*\))?:[[:space:]](.+)$ ]]; then
-                  counts["refactor"]=$((counts["refactor"] + 1))
-                elif [[ "$message" =~ ^test(\(.*\))?:[[:space:]](.+)$ ]]; then
-                  counts["test"]=$((counts["test"] + 1))
-                elif [[ "$message" =~ ^chore(\(.*\))?:[[:space:]](.+)$ ]]; then
-                  counts["chore"]=$((counts["chore"] + 1))
-                elif [[ "$message" =~ ^ci(\(.*\))?:[[:space:]](.+)$ ]]; then
-                  counts["ci"]=$((counts["ci"] + 1))
-                else
-                  counts["other"]=$((counts["other"] + 1))
-                fi
-              done <<< "$COMMITS"
-              
-              # Output brief summary
-              [[ ${counts["breaking"]} -gt 0 ]] && echo "- ⚠️ **${counts["breaking"]} breaking change(s)**" >> changelog.md
-              [[ ${counts["feat"]} -gt 0 ]] && echo "- ✨ ${counts["feat"]} new feature(s)" >> changelog.md
-              [[ ${counts["fix"]} -gt 0 ]] && echo "- 🐛 ${counts["fix"]} bug fix(es)" >> changelog.md
-              [[ ${counts["perf"]} -gt 0 ]] && echo "- ⚡ ${counts["perf"]} performance improvement(s)" >> changelog.md
-              [[ ${counts["docs"]} -gt 0 ]] && echo "- 📚 ${counts["docs"]} documentation update(s)" >> changelog.md
-              [[ ${counts["refactor"]} -gt 0 ]] && echo "- ♻️ ${counts["refactor"]} refactoring(s)" >> changelog.md
-              [[ ${counts["test"]} -gt 0 ]] && echo "- ✅ ${counts["test"]} test update(s)" >> changelog.md
-              [[ ${counts["chore"]} -gt 0 ]] && echo "- 🔧 ${counts["chore"]} chore(s)" >> changelog.md
-              [[ ${counts["ci"]} -gt 0 ]] && echo "- 👷 ${counts["ci"]} CI/CD update(s)" >> changelog.md
-              [[ ${counts["other"]} -gt 0 ]] && echo "- 🔀 ${counts["other"]} other change(s)" >> changelog.md
-            fi
+            # Count changes by type
+            declare -A counts
+            counts["feat"]=0
+            counts["fix"]=0
+            counts["breaking"]=0
+            counts["perf"]=0
+            counts["docs"]=0
+            counts["refactor"]=0
+            counts["test"]=0
+            counts["chore"]=0
+            counts["ci"]=0
+            counts["other"]=0
+            
+            while IFS='|||' read -r message hash; do
+              if [[ "$message" == *"BREAKING CHANGE"* ]] || [[ "$message" == *"!"* ]]; then
+                ((counts["breaking"]++))
+              elif [[ "$message" =~ ^feat(\(.*\))?:[[:space:]](.+)$ ]]; then
+                ((counts["feat"]++))
+              elif [[ "$message" =~ ^fix(\(.*\))?:[[:space:]](.+)$ ]]; then
+                ((counts["fix"]++))
+              elif [[ "$message" =~ ^perf(\(.*\))?:[[:space:]](.+)$ ]]; then
+                ((counts["perf"]++))
+              elif [[ "$message" =~ ^docs(\(.*\))?:[[:space:]](.+)$ ]]; then
+                ((counts["docs"]++))
+              elif [[ "$message" =~ ^refactor(\(.*\))?:[[:space:]](.+)$ ]]; then
+                ((counts["refactor"]++))
+              elif [[ "$message" =~ ^test(\(.*\))?:[[:space:]](.+)$ ]]; then
+                ((counts["test"]++))
+              elif [[ "$message" =~ ^chore(\(.*\))?:[[:space:]](.+)$ ]]; then
+                ((counts["chore"]++))
+              elif [[ "$message" =~ ^ci(\(.*\))?:[[:space:]](.+)$ ]]; then
+                ((counts["ci"]++))
+              else
+                ((counts["other"]++))
+              fi
+            done <<< "$COMMITS"
+            
+            # Output brief summary
+            [[ ${counts["breaking"]} -gt 0 ]] && echo "- ⚠️ **${counts["breaking"]} breaking change(s)**" >> changelog.md
+            [[ ${counts["feat"]} -gt 0 ]] && echo "- ✨ ${counts["feat"]} new feature(s)" >> changelog.md
+            [[ ${counts["fix"]} -gt 0 ]] && echo "- 🐛 ${counts["fix"]} bug fix(es)" >> changelog.md
+            [[ ${counts["perf"]} -gt 0 ]] && echo "- ⚡ ${counts["perf"]} performance improvement(s)" >> changelog.md
+            [[ ${counts["docs"]} -gt 0 ]] && echo "- 📚 ${counts["docs"]} documentation update(s)" >> changelog.md
+            [[ ${counts["refactor"]} -gt 0 ]] && echo "- ♻️ ${counts["refactor"]} refactoring(s)" >> changelog.md
+            [[ ${counts["test"]} -gt 0 ]] && echo "- ✅ ${counts["test"]} test update(s)" >> changelog.md
+            [[ ${counts["chore"]} -gt 0 ]] && echo "- 🔧 ${counts["chore"]} chore(s)" >> changelog.md
+            [[ ${counts["ci"]} -gt 0 ]] && echo "- 👷 ${counts["ci"]} CI/CD update(s)" >> changelog.md
+            [[ ${counts["other"]} -gt 0 ]] && echo "- 🔀 ${counts["other"]} other change(s)" >> changelog.md
             
             echo "" >> changelog.md
           fi
@@ -582,81 +573,21 @@ jobs:
           echo "changelog_file=changelog.md" >> $GITHUB_OUTPUT
       
       - name: Download all artifacts
-        if: ${{ !inputs.skip_build && steps.test_check.outputs.is_release_page_only != 'true' }}
+        if: ${{ !inputs.skip_build }}
         uses: actions/download-artifact@v4
         with:
           path: artifacts
       
-      - name: Wait for build completion
-        if: ${{ steps.test_check.outputs.is_release_page_only != 'true' }}
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const workflow_run_id = context.runId;
-            const { owner, repo } = context.repo;
-            
-            // Wait for all build jobs to complete
-            let allComplete = false;
-            let attempts = 0;
-            const maxAttempts = 60; // 10 minutes max
-            
-            while (!allComplete && attempts < maxAttempts) {
-              const { data: workflowRun } = await github.rest.actions.getWorkflowRun({
-                owner,
-                repo,
-                run_id: workflow_run_id
-              });
-              
-              const { data: jobs } = await github.rest.actions.listJobsForWorkflowRun({
-                owner,
-                repo,
-                run_id: workflow_run_id
-              });
-              
-              const buildJobs = jobs.jobs.filter(job => job.name.startsWith('Build '));
-              
-              if (buildJobs.length === 0) {
-                console.log('No build jobs found - this should not happen for non-vReleasePage tags');
-                process.exit(1);
-              }
-              
-              const allDone = buildJobs.every(job => 
-                job.status === 'completed' && job.conclusion !== 'failure'
-              );
-              
-              if (allDone) {
-                allComplete = true;
-                console.log('All build jobs completed successfully');
-              } else {
-                const anyFailed = buildJobs.some(job => 
-                  job.status === 'completed' && job.conclusion === 'failure'
-                );
-                
-                if (anyFailed) {
-                  console.log('Some build jobs failed');
-                  process.exit(1);
-                }
-                
-                console.log(`Waiting for builds... Attempt ${attempts + 1}/${maxAttempts}`);
-                await new Promise(resolve => setTimeout(resolve, 10000)); // Wait 10 seconds
-                attempts++;
-              }
-            }
-            
-            if (!allComplete) {
-              console.log('Timeout waiting for builds');
-              process.exit(1);
-            }
-      
       - name: Create Release
+        if: ${{ !inputs.skip_build }}
         uses: softprops/action-gh-release@v1
         with:
           body_path: changelog.md
           files: |
             artifacts/**/*
           draft: false
-          prerelease: ${{ steps.test_check.outputs.is_test == 'true' || steps.test_check.outputs.is_release_page_only == 'true' }}
-          fail_on_unmatched_files: ${{ steps.test_check.outputs.is_release_page_only != 'true' }}
+          prerelease: ${{ steps.test_check.outputs.is_test == 'true' }}
+          fail_on_unmatched_files: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
@@ -700,7 +631,7 @@ jobs:
           echo "✅ Formulas updated successfully"
       
       - name: Get default branch
-        if: ${{ !inputs.skip_build && steps.test_check.outputs.is_test != 'true' && steps.test_check.outputs.is_release_page_only != 'true' }}
+        if: ${{ !inputs.skip_build && steps.test_check.outputs.is_test != 'true' }}
         id: default_branch
         run: |
           BRANCH=$(git remote show origin | grep 'HEAD branch' | cut -d' ' -f5)
@@ -708,7 +639,7 @@ jobs:
           echo "Default branch: ${BRANCH}"
       
       - name: Commit and Push Formula Updates
-        if: ${{ !inputs.skip_build && steps.test_check.outputs.is_test != 'true' && steps.test_check.outputs.is_release_page_only != 'true' }}
+        if: ${{ !inputs.skip_build && steps.test_check.outputs.is_test != 'true' }}
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "chore: update Homebrew formulas for ${{ github.ref_name }}"
