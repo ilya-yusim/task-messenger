@@ -414,7 +414,15 @@ jobs:
       - name: Generate changelog
         id: changelog
         run: |
-          CURRENT_TAG="${GITHUB_REF#refs/tags/}"
+          # Determine current reference
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            CURRENT_TAG="HEAD"
+            CURRENT_VERSION="manual-dispatch"
+          else
+            CURRENT_TAG="${GITHUB_REF#refs/tags/}"
+            CURRENT_VERSION="${CURRENT_TAG#v}"
+          fi
+          
           PREV_TAG="${{ steps.prev_tag.outputs.previous_tag }}"
           
           # Start with Downloads section
@@ -517,13 +525,21 @@ jobs:
           
           # Add full changelog link
           if [[ -n "$PREV_TAG" ]]; then
-            echo "**[📋 View Full Changelog](https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${CURRENT_TAG})**" >> changelog.md
+            if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+              echo "**[📋 View Full Changelog](https://github.com/${{ github.repository }}/compare/${PREV_TAG}...HEAD)**" >> changelog.md
+            else
+              echo "**[📋 View Full Changelog](https://github.com/${{ github.repository }}/compare/${PREV_TAG}...${CURRENT_TAG})**" >> changelog.md
+            fi
           else
-            echo "**[📋 View Full Changelog](https://github.com/${{ github.repository }}/commits/${CURRENT_TAG})**" >> changelog.md
+            if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+              echo "**[📋 View Full Changelog](https://github.com/${{ github.repository }}/commits/HEAD)**" >> changelog.md
+            else
+              echo "**[📋 View Full Changelog](https://github.com/${{ github.repository }}/commits/${CURRENT_TAG})**" >> changelog.md
+            fi
           fi
           
           # Add artifacts section
-          VERSION="${CURRENT_TAG#v}"
+          VERSION="${CURRENT_VERSION}"
           cat >> changelog.md << EOF
           
           ---
