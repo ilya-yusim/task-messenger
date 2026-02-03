@@ -427,25 +427,49 @@ jobs:
           
           PREV_TAG="${{ steps.prev_tag.outputs.previous_tag }}"
           
-          # Start with Downloads section
-          cat > changelog.md << 'EOF'
-          ## 📦 Downloads
+          # Get version for artifact names
+          VERSION="${CURRENT_VERSION}"
           
-          Choose the appropriate installer for your platform:
+          # Start with combined Downloads/Installation section
+          cat > changelog.md << EOF
+          ## 📦 Downloads & Installation
           
-          ### Manager Component
-          - **Windows**: `manager-Windows.exe` - Self-extracting installer
-          - **Linux**: `manager-Linux.run` - Self-extracting installer
-          - **macOS (Intel)**: `manager-macOS-X64.tar.gz` - Compressed archive
-          - **macOS (Apple Silicon)**: `manager-macOS-ARM64.tar.gz` - Compressed archive
+          ### Windows
           
-          ### Worker Component
-          - **Windows**: `worker-Windows.exe` - Self-extracting installer
-          - **Linux**: `worker-Linux.run` - Self-extracting installer
-          - **macOS (Intel)**: `worker-macOS-X64.tar.gz` - Compressed archive
-          - **macOS (Apple Silicon)**: `worker-macOS-ARM64.tar.gz` - Compressed archive
+          **Manager:**
+          - [\`tm-manager-v${VERSION}-windows-x64.exe\`](https://github.com/${{ github.repository }}/releases/download/${CURRENT_TAG}/tm-manager-v${VERSION}-windows-x64.exe) - Self-extracting installer (double-click to install)
           
-          See the [installation guide](https://github.com/${{ github.repository }}/blob/main/docs/INSTALLATION.md) for detailed setup instructions.
+          **Worker:**
+          - [\`tm-worker-v${VERSION}-windows-x64.exe\`](https://github.com/${{ github.repository }}/releases/download/${CURRENT_TAG}/tm-worker-v${VERSION}-windows-x64.exe) - Self-extracting installer (double-click to install)
+          
+          ### Linux
+          
+          **Manager:**
+          - [\`tm-manager-v${VERSION}-linux-x64.run\`](https://github.com/${{ github.repository }}/releases/download/${CURRENT_TAG}/tm-manager-v${VERSION}-linux-x64.run) - Self-extracting installer (double-click or run in terminal)
+          
+          **Worker:**
+          - [\`tm-worker-v${VERSION}-linux-x64.run\`](https://github.com/${{ github.repository }}/releases/download/${CURRENT_TAG}/tm-worker-v${VERSION}-linux-x64.run) - Self-extracting installer (double-click or run in terminal)
+          
+          ### macOS (Apple Silicon)
+          
+          **Manager:**
+          - [\`tm-manager-v${VERSION}-macos-arm64.command\`](https://github.com/${{ github.repository }}/releases/download/${CURRENT_TAG}/tm-manager-v${VERSION}-macos-arm64.command) - Double-click GUI installer
+          - [\`tm-manager-v${VERSION}-macos-arm64.tar.gz\`](https://github.com/${{ github.repository }}/releases/download/${CURRENT_TAG}/tm-manager-v${VERSION}-macos-arm64.tar.gz) - Manual archive (Homebrew)
+          - [\`tm-manager-v${VERSION}-macos-arm64.tar.gz.sha256\`](https://github.com/${{ github.repository }}/releases/download/${CURRENT_TAG}/tm-manager-v${VERSION}-macos-arm64.tar.gz.sha256) - Checksum
+          
+          **Worker:**
+          - [\`tm-worker-v${VERSION}-macos-arm64.command\`](https://github.com/${{ github.repository }}/releases/download/${CURRENT_TAG}/tm-worker-v${VERSION}-macos-arm64.command) - Double-click GUI installer
+          - [\`tm-worker-v${VERSION}-macos-arm64.tar.gz\`](https://github.com/${{ github.repository }}/releases/download/${CURRENT_TAG}/tm-worker-v${VERSION}-macos-arm64.tar.gz) - Manual archive (Homebrew)
+          - [\`tm-worker-v${VERSION}-macos-arm64.tar.gz.sha256\`](https://github.com/${{ github.repository }}/releases/download/${CURRENT_TAG}/tm-worker-v${VERSION}-macos-arm64.tar.gz.sha256) - Checksum
+          
+          ### Installation Methods
+          
+          - **Windows/Linux**: Double-click the \`.exe\` or \`.run\` file
+          - **macOS GUI**: Double-click the \`.command\` file
+          - **macOS Homebrew**: \`brew tap ${{ github.repository_owner }}/task-messenger && brew install tm-manager tm-worker\`
+          - **Manual**: Extract \`.tar.gz\` archives
+          
+          📖 **[Full Installation Guide](https://github.com/${{ github.repository }}/blob/main/docs/INSTALLATION.md)**
           
           ---
           
@@ -545,51 +569,7 @@ jobs:
             fi
           fi
           
-          # Add artifacts section
-          VERSION="${CURRENT_VERSION}"
-          cat >> changelog.md << EOF
-          
-          ---
-          
-          ## 📦 Installation
-          
-          ### Windows
-          
-          **Manager:**
-          - \`tm-manager-v${VERSION}-windows-x64.exe\` - Self-extracting installer
-          
-          **Worker:**
-          - \`tm-worker-v${VERSION}-windows-x64.exe\` - Self-extracting installer
-          
-          ### Linux
-          
-          **Manager:**
-          - \`tm-manager-v${VERSION}-linux-x64.run\` - Self-extracting installer
-          
-          **Worker:**
-          - \`tm-worker-v${VERSION}-linux-x64.run\` - Self-extracting installer
-          
-          ### macOS
-          
-          **Manager (Apple Silicon):**
-          - \`tm-manager-v${VERSION}-macos-arm64.command\` - Double-click installer (GUI)
-          - \`tm-manager-v${VERSION}-macos-arm64.tar.gz\` - Manual archive (Homebrew)
-          - \`tm-manager-v${VERSION}-macos-arm64.tar.gz.sha256\` - Checksum
-          
-          **Worker (Apple Silicon):**
-          - \`tm-worker-v${VERSION}-macos-arm64.command\` - Double-click installer (GUI)
-          - \`tm-worker-v${VERSION}-macos-arm64.tar.gz\` - Manual archive (Homebrew)
-          - \`tm-worker-v${VERSION}-macos-arm64.tar.gz.sha256\` - Checksum
-          
-          ### Installation Methods
-          
-          - **Windows/Linux**: Double-click the \`.exe\` or \`.run\` file
-          - **macOS GUI**: Double-click the \`.command\` file
-          - **macOS Homebrew**: \`brew tap ${{ github.repository_owner }}/task-messenger && brew install tm-manager tm-worker\`
-          - **Manual**: Extract \`.tar.gz\` archives
-          
-          See [Installation Guide](docs/INSTALLATION.md) for detailed instructions.
-          EOF
+          echo "" >> changelog.md
           
           # Output for use in release
           cat changelog.md
