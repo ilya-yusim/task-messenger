@@ -1,14 +1,17 @@
 # TaskMessenger Installation Guide
 
-This document provides detailed instructions for installing TaskMessenger on Linux and Windows systems as a user application.
+This document provides instructions for installing TaskMessenger on Windows, Linux, and macOS systems.
 
 ## Table of Contents
 
 - [Overview](#overview)
 - [Prerequisites](#prerequisites)
-- [Linux Installation](#linux-installation)
-- [Windows Installation](#windows-installation)
+- [Installation](#installation)
+  - [Windows Installation](#windows-installation)
+  - [Linux Installation](#linux-installation)
+  - [macOS Installation](#macos-installation)
 - [Configuration](#configuration)
+- [Running TaskMessenger](#running-taskmessenger)
 - [Upgrading](#upgrading)
 - [Uninstallation](#uninstallation)
 - [Troubleshooting](#troubleshooting)
@@ -16,12 +19,17 @@ This document provides detailed instructions for installing TaskMessenger on Lin
 ## Overview
 
 TaskMessenger consists of two components:
-- **Manager**: The task distribution server that coordinates task assignment
 - **Worker**: The task processing client that executes assigned tasks
+- **Manager**: The task distribution server that coordinates task assignment
 
 Each component can be installed independently based on your needs. Both components are installed as user applications (not system services) and run on-demand.
 
 ### Installation Locations
+
+**Windows:**
+- Binaries: `%LOCALAPPDATA%\TaskMessenger\{component}\`
+- Configuration: `%APPDATA%\task-messenger\`
+- Start Menu: `Start Menu\Programs\TaskMessenger\`
 
 **Linux:**
 - Binaries: `~/.local/share/task-messenger/{component}/`
@@ -29,111 +37,114 @@ Each component can be installed independently based on your needs. Both componen
 - Symlinks: `~/.local/bin/{component}`
 - Desktop entries: `~/.local/share/applications/`
 
-**Windows:**
-- Binaries: `%LOCALAPPDATA%\TaskMessenger\{component}\`
-- Configuration: `%APPDATA%\task-messenger\`
-- Start Menu: `Start Menu\Programs\TaskMessenger\`
-- PATH: Automatically added to user PATH
+**macOS:**
+- Binaries: `~/Library/Application Support/TaskMessenger/{component}/`
+- Configuration: `~/Library/Application Support/TaskMessenger/config/`
+- Symlinks: `~/.local/bin/{component}`
 
 ## Prerequisites
 
-### Linux
+**Windows:**
+- Windows 10 or later (64-bit)
+- Network connectivity for ZeroTier
 
+**Linux:**
 - A 64-bit Linux distribution (tested on Ubuntu 24.04 LTS)
 - Bash shell
-- tar and gzip utilities (usually pre-installed)
 - Network connectivity for ZeroTier
 
-### Windows
-
-- Windows 10 or later (64-bit)
-- PowerShell 5.1 or later (included with Windows)
+**macOS:**
+- macOS 11 (Big Sur) or later
+- Apple Silicon (ARM64) or Intel (x86_64)
 - Network connectivity for ZeroTier
 
-## Linux Installation
+## Installation
 
-TaskMessenger provides two installation formats for Linux:
-- **`.run` files**: Self-extracting installers (recommended - simplest)
-- **`.tar.gz` files**: Traditional compressed archives
+### Windows Installation
 
-### Option A: Self-Extracting Installer (.run) - Recommended
-
-This is the simplest installation method, similar to Windows installers.
+TaskMessenger provides self-extracting `.exe` installers for Windows.
 
 #### Step 1: Download the Installer
 
-Download the appropriate `.run` file for your component:
-- `tm-manager-v1.0.0-linux-x86_64.run`
-- `tm-worker-v1.0.0-linux-x86_64.run`
+Download the appropriate installer for your component:
+- `tm-worker-v1.0.0-windows-x64-installer.exe`
+- `tm-manager-v1.0.0-windows-x64-installer.exe`
+
+#### Step 2: Run the Installer
+
+1. Double-click the downloaded `.exe` file
+2. If Windows SmartScreen appears, click "More info" then "Run anyway"
+3. The installer will automatically extract and install the application
+4. Follow any on-screen prompts
+
+The installer will:
+- Install the component to `%LOCALAPPDATA%\TaskMessenger\{component}\`
+- Add the installation directory to your user PATH
+- Create a Start Menu shortcut
+- Create a configuration template at `%APPDATA%\task-messenger\config-{component}.json`
+
+#### Step 3: Configure the Application
+
+Edit the configuration file using Notepad or your preferred text editor:
+
+```powershell
+notepad %APPDATA%\task-messenger\config-worker.json
+# or
+notepad %APPDATA%\task-messenger\config-manager.json
+```
+
+See [Configuration](#configuration) section for details.
+
+### Linux Installation
+
+TaskMessenger provides self-extracting `.run` installers for Linux.
+
+#### Step 1: Download the Installer
+
+Download the appropriate installer for your component:
+- `tm-worker-v1.0.0-linux-x64-installer.run`
+- `tm-manager-v1.0.0-linux-x64-installer.run`
 
 #### Step 2: Make Executable and Run
 
 ```bash
-chmod +x tm-manager-v1.0.0-linux-x86_64.run
-./tm-manager-v1.0.0-linux-x86_64.run
+chmod +x tm-worker-v1.0.0-linux-x64-installer.run
+./tm-worker-v1.0.0-linux-x64-installer.run
 ```
 
-Or for worker:
+Or for manager:
 ```bash
-chmod +x tm-worker-v1.0.0-linux-x86_64.run
-./tm-worker-v1.0.0-linux-x86_64.run
+chmod +x tm-manager-v1.0.0-linux-x64-installer.run
+./tm-manager-v1.0.0-linux-x64-installer.run
 ```
 
-The installer will automatically extract and run the installation script.
+The installer will automatically extract and install the application.
 
 **Advanced options:**
 ```bash
 # Extract to a custom temporary location
-./tm-manager-v1.0.0-linux-x86_64.run --target /tmp/custom
+./tm-worker-v1.0.0-linux-x64-installer.run --target /tmp/custom
 
 # Keep extracted files for inspection (don't auto-delete)
-./tm-manager-v1.0.0-linux-x86_64.run --keep
+./tm-worker-v1.0.0-linux-x64-installer.run --keep
 
 # Extract only, don't run installer
-./tm-manager-v1.0.0-linux-x86_64.run --noexec
+./tm-worker-v1.0.0-linux-x64-installer.run --noexec
 
 # See all available options
-./tm-manager-v1.0.0-linux-x86_64.run --help
+./tm-worker-v1.0.0-linux-x64-installer.run --help
 ```
 
-### Option B: Traditional tar.gz Archive
+#### What the Installer Does
 
-#### Step 1: Download the Archive
-
-Download the appropriate archive for your component:
-- `tm-manager-v1.0.0-linux-x86_64.tar.gz`
-- `tm-worker-v1.0.0-linux-x86_64.tar.gz`
-
-#### Step 2: Extract the Archive
-
-```bash
-tar -xzf tm-manager-v1.0.0-linux-x86_64.tar.gz
-# or
-tar -xzf tm-worker-v1.0.0-linux-x86_64.tar.gz
-```
-
-#### Step 3: Run the Installation Script
-
-```bash
-cd tm-manager
-./scripts/install_linux.sh
-# or
-cd tm-worker
-./scripts/install_linux.sh
-```
-
-### What the Installer Does
-
-### What the Installer Does
-
-The script will:
+The installer will:
 1. Check for existing installations and offer to upgrade
-2. Install the component to `~/.local/share/task-messenger/tm-{component}/`
+2. Install the component to `~/.local/share/task-messenger/{component}/`
 3. Create a symlink in `~/.local/bin/`
 4. Install a desktop entry
-5. Create a configuration template at `~/.config/task-messenger/tm-{component}/config-{component}.json`
+5. Create a configuration template at `~/.config/task-messenger/config-{component}.json`
 
-### Step 4: Configure PATH (if needed)
+#### Step 3: Configure PATH (if needed)
 
 If `~/.local/bin` is not in your PATH, add it to your shell configuration:
 
@@ -152,85 +163,76 @@ Then reload your shell:
 source ~/.bashrc  # or source ~/.zshrc
 ```
 
-### Step 5: Configure the Application
+#### Step 4: Configure the Application
 
 Edit the configuration file:
 ```bash
-nano ~/.config/task-messenger/tm-manager/config-manager.json
+nano ~/.config/task-messenger/config-worker.json
 # or
-nano ~/.config/task-messenger/tm-worker/config-worker.json
+nano ~/.config/task-messenger/config-manager.json
 ```
 
 See [Configuration](#configuration) section for details.
 
-### Custom Installation Directory
+### macOS Installation
 
-To install to a custom location:
+TaskMessenger provides `.command` installers for macOS that can be run by double-clicking.
 
+#### Step 1: Download the Installer
+
+Download the appropriate installer for your component and architecture:
+- `tm-worker-v1.0.0-macos-arm64.command` (Apple Silicon)
+- `tm-manager-v1.0.0-macos-arm64.command` (Apple Silicon)
+
+#### Step 2: Run the Installer
+
+**Option A: Double-click (Recommended)**
+1. Double-click the downloaded `.command` file
+2. If prompted about security, go to System Settings → Privacy & Security and click "Open Anyway"
+3. The installer will open a Terminal window and run automatically
+4. Follow any on-screen prompts
+
+**Option B: Terminal**
 ```bash
-./scripts/install_linux.sh manager --install-dir /custom/path
+chmod +x tm-worker-v1.0.0-macos-arm64.command
+./tm-worker-v1.0.0-macos-arm64.command
 ```
 
-Note: Custom installations won't create desktop entries automatically.
-
-## Windows Installation
-
-### Step 1: Download the Distribution Package
-
-Download the appropriate archive for your component:
-- `tm-manager-v1.0.0-windows-x64.zip`
-- `tm-worker-v1.0.0-windows-x64.zip`
-
-### Step 2: Extract the Archive
-
-Right-click the ZIP file and select "Extract All..." or use PowerShell:
-
-```powershell
-Expand-Archive -Path tm-manager-v1.0.0-windows-x64.zip -DestinationPath .
-```
-
-### Step 3: Run the Installation Script
-
-Open PowerShell as a **regular user** (not Administrator) and navigate to the extracted directory:
-
-```powershell
-cd TaskMessenger
-.\scripts\install_windows.ps1 manager
-# or
-.\scripts\install_windows.ps1 worker
-```
-
-**Note:** If you get an execution policy error, run:
-```powershell
-Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
-```
-
-The script will:
+The installer will:
 1. Check for existing installations and offer to upgrade
-2. Install the component to `%LOCALAPPDATA%\TaskMessenger\{component}\`
-3. Add the installation directory to your user PATH
-4. Create a Start Menu shortcut
-5. Create a configuration template at `%APPDATA%\task-messenger\config-{component}.json`
+2. Install the component to `~/Library/Application Support/TaskMessenger/{component}/`
+3. Create a symlink in `~/.local/bin/`
+4. Create a configuration template
 
-### Step 4: Configure the Application
+#### Step 3: Configure PATH (if needed)
 
-Edit the configuration file using Notepad or your preferred text editor:
+If `~/.local/bin` is not in your PATH, add it to your shell configuration:
 
-```powershell
-notepad $env:APPDATA\task-messenger\tm-manager\config-manager.json
+**For Zsh** (`~/.zshrc` - default on modern macOS):
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+**For Bash** (`~/.bash_profile` or `~/.bashrc`):
+```bash
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Then reload your shell:
+```bash
+source ~/.zshrc  # or source ~/.bash_profile
+```
+
+#### Step 4: Configure the Application
+
+Edit the configuration file:
+```bash
+nano ~/Library/Application\ Support/TaskMessenger/config/config-worker.json
 # or
-notepad $env:APPDATA\task-messenger\tm-worker\config-worker.json
+nano ~/Library/Application\ Support/TaskMessenger/config/config-manager.json
 ```
 
 See [Configuration](#configuration) section for details.
-
-### Custom Installation Directory
-
-To install to a custom location:
-
-```powershell
-.\scripts\install_windows.ps1 manager -InstallDir "C:\Custom\Path"
-```
 
 ## Configuration
 
@@ -288,338 +290,188 @@ Both manager and worker require configuration before first use. The installation
 
 ## Upgrading
 
-### Automatic Upgrade Detection
-
-When you run the installation script and an existing installation is detected, you'll be prompted:
-
-```
-Found existing installation of manager (version 1.0.0)
-Do you want to upgrade? This will replace the existing installation. [y/N]
-```
+When you run the installer and an existing installation is detected, you'll be prompted to upgrade.
 
 ### Upgrade Process
 
-1. **Configuration Backup**: Your existing configuration will be automatically backed up with a timestamp:
-   - Linux: `~/.config/task-messenger/config-{component}.json.backup.YYYYMMDD-HHMMSS`
-   - Windows: `%APPDATA%\task-messenger\config-{component}.json.backup.YYYYMMDD-HHMMSS`
-
+1. **Configuration Backup**: Your existing configuration will be automatically backed up with a timestamp
 2. **Installation**: The new version will be installed, overwriting the old binaries
-
 3. **Configuration**: Your existing configuration file is preserved
 
-### Manual Upgrade Steps
-
-If you prefer to upgrade manually:
-
-**Linux:**
-```bash
-# Extract new version
-tar -xzf tm-manager-v1.1.0-linux-x86_64.tar.gz
-cd opt/task-messenger
-
-# Run installation (will prompt for upgrade)
-./scripts/install_linux.sh manager
-```
-
-**Windows:**
-```powershell
-# Extract new version
-Expand-Archive -Path tm-manager-v1.1.0-windows-x64.zip -DestinationPath .
-cd TaskMessenger
-
-# Run installation (will prompt for upgrade)
-.\scripts\install_windows.ps1 manager
-```
-
-### Downgrading
-
-To downgrade to a previous version, run the installation script for the older version. The process is identical to upgrading.
+To upgrade, simply download and run the new installer - it will handle the upgrade automatically.
 
 ## Uninstallation
 
-### Linux
-
-To uninstall a component:
-
-```bash
-# Navigate to installation or use the script from the distribution package
-./scripts/uninstall_linux.sh manager
-# or
-./scripts/uninstall_linux.sh worker
-```
-
-To remove configuration files as well:
-
-```bash
-./scripts/uninstall_linux.sh manager --remove-config
-```
-
-To uninstall both components:
-
-```bash
-./scripts/uninstall_linux.sh all
-```
-
 ### Windows
 
-Open PowerShell and run:
+Run the uninstaller from the Start Menu:
+- Start → TaskMessenger → Uninstall Worker (or Uninstall Manager)
 
-```powershell
-# Navigate to installation or use the script from the distribution package
-.\scripts\uninstall_windows.ps1 manager
+Or use the uninstall script if available in your installation directory.
+
+### Linux
+
+Run the uninstall script from your installation:
+
+```bash
+~/.local/share/task-messenger/worker/scripts/uninstall_linux.sh
 # or
-.\scripts\uninstall_windows.ps1 worker
+~/.local/share/task-messenger/manager/scripts/uninstall_linux.sh
 ```
 
-To remove configuration files as well:
+### macOS
 
-```powershell
-.\scripts\uninstall_windows.ps1 manager -RemoveConfig
-```
+Run the uninstall script from your installation:
 
-To uninstall both components:
-
-```powershell
-.\scripts\uninstall_windows.ps1 all
+```bash
+~/Library/Application\ Support/TaskMessenger/worker/scripts/uninstall_macos.sh
+# or
+~/Library/Application\ Support/TaskMessenger/manager/scripts/uninstall_macos.sh
 ```
 
 ### What Gets Removed
 
-The uninstallation script removes:
+The uninstallation removes:
 - Binary files and libraries
-- Symlinks (Linux) or PATH entries (Windows)
-- Desktop entries (Linux) or Start Menu shortcuts (Windows)
-- Installation directories (if empty)
+- Symlinks or PATH entries
+- Desktop entries or shortcuts
+- Installation directories
 
-Configuration files are preserved by default unless you use the `--remove-config` (Linux) or `-RemoveConfig` (Windows) option.
+Configuration files are typically preserved unless you explicitly remove them.
 
 ## Troubleshooting
 
-### Linux Issues
+### Common Issues
 
 #### "Command not found" after installation
 
-**Problem**: The `manager` or `worker` command is not found after installation.
+**Windows:**
+1. Restart your terminal/PowerShell to reload PATH
+2. Alternatively, use the Start Menu shortcut
 
-**Solution**: 
+**Linux/macOS:**
 1. Verify `~/.local/bin` is in your PATH:
    ```bash
    echo $PATH | grep -q "$HOME/.local/bin" && echo "In PATH" || echo "Not in PATH"
    ```
+2. Add to PATH if needed (see installation instructions above)
+3. Restart your terminal
 
-2. If not in PATH, add it to your shell configuration:
-   ```bash
-   echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.bashrc
-   source ~/.bashrc
-   ```
+#### Permission or security errors
 
-3. Alternatively, use the full path:
-   ```bash
-   ~/.local/share/task-messenger/manager/manager
-   ```
+**Windows:**
+- If SmartScreen blocks the installer, click "More info" → "Run anyway"
 
-#### "Permission denied" error
+**macOS:**
+- If blocked by Gatekeeper, go to System Settings → Privacy & Security → click "Open Anyway"
 
-**Problem**: Installation script fails with permission denied.
+**Linux:**
+- Ensure the `.run` file is executable: `chmod +x installer-name.run`
 
-**Solution**:
-1. Make the script executable:
-   ```bash
-   chmod +x scripts/install_linux.sh
-   ```
+#### Installer fails to run
 
-2. Ensure you're not running with sudo (user installation only)
+1. Verify the downloaded file is complete and not corrupted
+2. Re-download the installer if needed
+3. Check that you have sufficient disk space
+4. Ensure you're not running as root/Administrator (user installation only)
 
-#### Shared library not found
+#### Configuration file issues
 
-**Problem**: Error message like "libzt.so: cannot open shared object file"
+If the application can't find its configuration:
 
-**Solution**:
-1. Verify the library was installed:
-   ```bash
-   ls -l ~/.local/share/task-messenger/manager/lib/libzt.so
-   ```
-
-2. Check RPATH is correctly set:
-   ```bash
-   readelf -d ~/.local/share/task-messenger/manager/manager | grep RPATH
-   ```
-   Should show: `[$ORIGIN/../lib]`
-
-3. If RPATH is missing, reinstall using the installation script
-
-#### Desktop entry not appearing
-
-**Problem**: Application doesn't appear in application menu.
-
-**Solution**:
-1. Update desktop database:
-   ```bash
-   update-desktop-database ~/.local/share/applications
-   ```
-
-2. Log out and log back in
-
-3. Check the desktop file exists:
-   ```bash
-   ls ~/.local/share/applications/task-messenger-*.desktop
-   ```
-
-### Windows Issues
-
-#### Execution policy error
-
-**Problem**: PowerShell script won't run due to execution policy.
-
-**Solution**:
+**Windows:**
 ```powershell
-Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+# Verify config exists
+Test-Path "$env:APPDATA\task-messenger\config-worker.json"
 ```
 
-#### "Command not found" after installation
+**Linux:**
+```bash
+# Verify config exists
+ls -l ~/.config/task-messenger/config-worker.json
+```
 
-**Problem**: The `manager` or `worker` command is not found after installation.
+**macOS:**
+```bash
+# Verify config exists
+ls -l ~/Library/Application\ Support/TaskMessenger/config/config-worker.json
+```
 
-**Solution**:
-1. Restart your PowerShell terminal to reload PATH
+Create the configuration file using the template from the [Configuration](#configuration) section if it doesn't exist.
 
-2. If still not working, verify PATH was updated:
-   ```powershell
-   $env:Path -split ';' | Select-String TaskMessenger
-   ```
+#### Connection issues
 
-3. Manually add to PATH if needed:
-   ```powershell
-   $currentPath = [Environment]::GetEnvironmentVariable("Path", "User")
-   $newPath = "$env:LOCALAPPDATA\TaskMessenger\manager;$currentPath"
-   [Environment]::SetEnvironmentVariable("Path", $newPath, "User")
-   ```
-
-4. Alternatively, use the Start Menu shortcut or full path:
-   ```powershell
-   & "$env:LOCALAPPDATA\TaskMessenger\tm-manager\tm-manager.exe"
-   ```
-
-#### DLL not found error
-
-**Problem**: Error message about missing `zt-shared.dll`.
-
-**Solution**:
-1. Verify the DLL is in the same directory as the executable:
-   ```powershell
-   dir "$env:LOCALAPPDATA\TaskMessenger\tm-manager"
-   ```
-
-2. Reinstall if the DLL is missing
-
-#### Start Menu shortcut doesn't work
-
-**Problem**: Shortcut fails to launch the application.
-
-**Solution**:
-1. Right-click the shortcut and check "Target" path
-2. Verify the executable exists at that location
-3. Reinstall to recreate the shortcut
-
-### General Issues
-
-#### Configuration file not found warning
-
-**Problem**: Application warns about missing configuration file.
-
-**Solution**:
-1. Create the configuration file if it doesn't exist:
-   ```bash
-   # Linux
-   mkdir -p ~/.config/task-messenger
-   nano ~/.config/task-messenger/config-manager.json
-   ```
-   ```powershell
-   # Windows
-   New-Item -ItemType Directory -Force -Path "$env:APPDATA\task-messenger"
-   notepad "$env:APPDATA\task-messenger\config-manager.json"
-   ```
-
-2. Use the template from this guide or the distribution package
-
-#### Connection to ZeroTier network fails
-
-**Problem**: Application can't connect to ZeroTier network.
-
-**Solution**:
+If unable to connect to ZeroTier network:
 1. Verify your ZeroTier network ID is correct (16 hexadecimal characters)
-2. Ensure the network exists in your ZeroTier Central account
-3. Check that your device is authorized in the network
-4. Verify network connectivity to ZeroTier's servers
-5. Check firewall settings allow ZeroTier traffic
-
-#### Version mismatch after upgrade
-
-**Problem**: `--version` shows old version after upgrade.
-
-**Solution**:
-1. Verify you ran the installation script for the new version
-2. Check the VERSION file in the installation directory:
-   ```bash
-   # Linux
-   cat ~/.local/share/task-messenger/manager/VERSION
-   ```
-   ```powershell
-   # Windows
-   Get-Content "$env:LOCALAPPDATA\TaskMessenger\manager\VERSION"
-   ```
-
-3. If version is correct in VERSION file but wrong in output, report this as a bug
+2. Check network connectivity
+3. Verify the network exists in ZeroTier Central
+4. Ensure your device is authorized in the network
 
 ## Running TaskMessenger
 
-### Linux
-
-After installation, you can run the applications in several ways:
-
-1. **Direct command** (if `~/.local/bin` is in PATH):
-   ```bash
-   manager --help
-   worker --help
-   ```
-
-2. **Using launcher scripts**:
-   ```bash
-   ~/.local/share/task-messenger/launchers/start-manager.sh
-   ~/.local/share/task-messenger/launchers/start-worker.sh
-   ```
-
-3. **From desktop/application menu**: Search for "TaskMessenger Manager" or "TaskMessenger Worker"
-
 ### Windows
 
-After installation, you can run the applications in several ways:
+After installation, you can run the applications:
 
-1. **Direct command** (from any PowerShell/Command Prompt):
+1. **From Start Menu**: Start → TaskMessenger → Worker or Manager
+2. **From Command Prompt/PowerShell**: Type `tm-worker` or `tm-manager`
+3. **With configuration file**:
    ```powershell
-   manager --help
-   worker --help
+   tm-worker -c %APPDATA%\task-messenger\config-worker.json
+   tm-manager -c %APPDATA%\task-messenger\config-manager.json
+   ```
+4. **View help**: `tm-worker --help` or `tm-manager --help`
+
+### Linux
+
+After installation, you can run the applications:
+
+1. **From terminal** (if `~/.local/bin` is in PATH):
+   ```bash
+   tm-worker --help
+   tm-manager --help
    ```
 
-2. **Using launcher scripts**:
-   ```powershell
-   & "$env:LOCALAPPDATA\TaskMessenger\launchers\start-manager.bat"
-   & "$env:LOCALAPPDATA\TaskMessenger\launchers\start-worker.bat"
+2. **With configuration file**:
+   ```bash
+   tm-worker -c ~/.config/task-messenger/config-worker.json
+   tm-manager -c ~/.config/task-messenger/config-manager.json
    ```
 
-3. **From Start Menu**: Start → TaskMessenger → TaskMessenger Manager/Worker
+3. **From desktop/application menu**: Search for "TaskMessenger Worker" or "TaskMessenger Manager"
+
+### macOS
+
+After installation, you can run the applications:
+
+1. **From terminal** (if `~/.local/bin` is in PATH):
+   ```bash
+   tm-worker --help
+   tm-manager --help
+   ```
+
+2. **With configuration file**:
+   ```bash
+   tm-worker -c ~/Library/Application\ Support/TaskMessenger/config/config-worker.json
+   tm-manager -c ~/Library/Application\ Support/TaskMessenger/config/config-manager.json
+   ```
+
+3. **Direct path**:
+   ```bash
+   ~/Library/Application\ Support/TaskMessenger/worker/tm-worker --help
+   ~/Library/Application\ Support/TaskMessenger/manager/tm-manager --help
+   ```
 
 ## Getting Help
 
 For additional help:
 
-1. Run the application with `--help` flag to see available options
-2. Check the README files in the installation directory
-3. Review log files (if logging to file is enabled)
+1. Run with `--help` flag: `tm-worker --help` or `tm-manager --help`
+2. Check log files if logging is enabled
+3. Review this installation guide
 4. Contact support or file an issue on the project repository
 
-## Version Information
+---
 
-Current version covered by this guide: **1.0.0**
-
-Last updated: 2026
+**Version:** 1.0.0  
+**Last Updated:** 2026
