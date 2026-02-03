@@ -433,7 +433,42 @@ jobs:
           VERSION="${CURRENT_VERSION}"
           
           # Start with combined Downloads/Installation section
-          cat > changelog.md << EOF
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            # For workflow_dispatch, don't include direct download links (GitHub creates untagged releases)
+            cat > changelog.md << 'EOF'
+          ## 📦 Downloads & Installation
+          
+          **Artifacts are available in the Assets section below.**
+          
+          ### Windows
+          - `tm-manager-*-windows-x86_64.exe` - Manager self-extracting installer
+          - `tm-worker-*-windows-x86_64.exe` - Worker self-extracting installer
+          
+          ### Linux
+          - `tm-manager-*-linux-x86_64.run` - Manager self-extracting installer
+          - `tm-worker-*-linux-x86_64.run` - Worker self-extracting installer
+          
+          ### macOS (Apple Silicon)
+          - `tm-manager-*-macos-arm64.command` - Manager GUI installer
+          - `tm-manager-*-macos-arm64.tar.gz` - Manager archive (Homebrew)
+          - `tm-worker-*-macos-arm64.command` - Worker GUI installer
+          - `tm-worker-*-macos-arm64.tar.gz` - Worker archive (Homebrew)
+          
+          ### Installation Methods
+          
+          - **Windows/Linux**: Double-click the `.exe` or `.run` file
+          - **macOS GUI**: Double-click the `.command` file
+          - **macOS Homebrew**: `brew tap ${{ github.repository_owner }}/task-messenger && brew install tm-manager tm-worker`
+          - **Manual**: Extract `.tar.gz` archives
+          
+          📖 **[Full Installation Guide](https://github.com/${{ github.repository }}/blob/main/docs/INSTALLATION.md)**
+          
+          ---
+          
+          EOF
+          else
+            # For tag releases, include direct download links
+            cat > changelog.md << EOF
           ## 📦 Downloads & Installation
           
           ### Windows
@@ -476,6 +511,7 @@ jobs:
           ---
           
           EOF
+          fi
           
           if [[ -z "$PREV_TAG" ]]; then
             # First release - use placeholder
