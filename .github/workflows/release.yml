@@ -416,13 +416,15 @@ jobs:
         run: |
           set +e  # Don't exit on error immediately
           
-          # Determine current reference
+          # Determine current reference and version
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             CURRENT_TAG="HEAD"
-            CURRENT_VERSION="manual-dispatch"
+            CURRENT_VERSION="0.0.0-dev"
+            RELEASE_TAG="draft-${GITHUB_SHA:0:8}"
           else
             CURRENT_TAG="${GITHUB_REF#refs/tags/}"
             CURRENT_VERSION="${CURRENT_TAG#v}"
+            RELEASE_TAG="${CURRENT_TAG}"
           fi
           
           PREV_TAG="${{ steps.prev_tag.outputs.previous_tag }}"
@@ -437,30 +439,30 @@ jobs:
           ### Windows
           
           **Manager:**
-          - [\`tm-manager-v${VERSION}-windows-x64.exe\`](https://github.com/${{ github.repository }}/releases/download/${CURRENT_TAG}/tm-manager-v${VERSION}-windows-x64.exe) - Self-extracting installer (double-click to install)
+          - [\`tm-manager-v${VERSION}-windows-x86_64.exe\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-manager-v${VERSION}-windows-x86_64.exe) - Self-extracting installer (double-click to install)
           
           **Worker:**
-          - [\`tm-worker-v${VERSION}-windows-x64.exe\`](https://github.com/${{ github.repository }}/releases/download/${CURRENT_TAG}/tm-worker-v${VERSION}-windows-x64.exe) - Self-extracting installer (double-click to install)
+          - [\`tm-worker-v${VERSION}-windows-x86_64.exe\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-worker-v${VERSION}-windows-x86_64.exe) - Self-extracting installer (double-click to install)
           
           ### Linux
           
           **Manager:**
-          - [\`tm-manager-v${VERSION}-linux-x64.run\`](https://github.com/${{ github.repository }}/releases/download/${CURRENT_TAG}/tm-manager-v${VERSION}-linux-x64.run) - Self-extracting installer (double-click or run in terminal)
+          - [\`tm-manager-v${VERSION}-linux-x86_64.run\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-manager-v${VERSION}-linux-x86_64.run) - Self-extracting installer (double-click or run in terminal)
           
           **Worker:**
-          - [\`tm-worker-v${VERSION}-linux-x64.run\`](https://github.com/${{ github.repository }}/releases/download/${CURRENT_TAG}/tm-worker-v${VERSION}-linux-x64.run) - Self-extracting installer (double-click or run in terminal)
+          - [\`tm-worker-v${VERSION}-linux-x86_64.run\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-worker-v${VERSION}-linux-x86_64.run) - Self-extracting installer (double-click or run in terminal)
           
           ### macOS (Apple Silicon)
           
           **Manager:**
-          - [\`tm-manager-v${VERSION}-macos-arm64.command\`](https://github.com/${{ github.repository }}/releases/download/${CURRENT_TAG}/tm-manager-v${VERSION}-macos-arm64.command) - Double-click GUI installer
-          - [\`tm-manager-v${VERSION}-macos-arm64.tar.gz\`](https://github.com/${{ github.repository }}/releases/download/${CURRENT_TAG}/tm-manager-v${VERSION}-macos-arm64.tar.gz) - Manual archive (Homebrew)
-          - [\`tm-manager-v${VERSION}-macos-arm64.tar.gz.sha256\`](https://github.com/${{ github.repository }}/releases/download/${CURRENT_TAG}/tm-manager-v${VERSION}-macos-arm64.tar.gz.sha256) - Checksum
+          - [\`tm-manager-v${VERSION}-macos-arm64.command\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-manager-v${VERSION}-macos-arm64.command) - Double-click GUI installer
+          - [\`tm-manager-v${VERSION}-macos-arm64.tar.gz\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-manager-v${VERSION}-macos-arm64.tar.gz) - Manual archive (Homebrew)
+          - [\`tm-manager-v${VERSION}-macos-arm64.tar.gz.sha256\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-manager-v${VERSION}-macos-arm64.tar.gz.sha256) - Checksum
           
           **Worker:**
-          - [\`tm-worker-v${VERSION}-macos-arm64.command\`](https://github.com/${{ github.repository }}/releases/download/${CURRENT_TAG}/tm-worker-v${VERSION}-macos-arm64.command) - Double-click GUI installer
-          - [\`tm-worker-v${VERSION}-macos-arm64.tar.gz\`](https://github.com/${{ github.repository }}/releases/download/${CURRENT_TAG}/tm-worker-v${VERSION}-macos-arm64.tar.gz) - Manual archive (Homebrew)
-          - [\`tm-worker-v${VERSION}-macos-arm64.tar.gz.sha256\`](https://github.com/${{ github.repository }}/releases/download/${CURRENT_TAG}/tm-worker-v${VERSION}-macos-arm64.tar.gz.sha256) - Checksum
+          - [\`tm-worker-v${VERSION}-macos-arm64.command\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-worker-v${VERSION}-macos-arm64.command) - Double-click GUI installer
+          - [\`tm-worker-v${VERSION}-macos-arm64.tar.gz\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-worker-v${VERSION}-macos-arm64.tar.gz) - Manual archive (Homebrew)
+          - [\`tm-worker-v${VERSION}-macos-arm64.tar.gz.sha256\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-worker-v${VERSION}-macos-arm64.tar.gz.sha256) - Checksum
           
           ### Installation Methods
           
