@@ -107,7 +107,7 @@ jobs:
             VERSION="${GITHUB_REF#refs/tags/v}"
             echo "version=$VERSION" >> $GITHUB_OUTPUT
           else
-            echo "version=0.0.0-dev" >> $GITHUB_OUTPUT
+            echo "version=0.0.1-dev" >> $GITHUB_OUTPUT
           fi
       
       - name: Update meson.build version (Windows)
@@ -276,6 +276,15 @@ jobs:
           chmod +x ./extras/scripts/build_distribution_macos.sh
           ./extras/scripts/build_distribution_macos.sh ${{ matrix.component }}
       
+      - name: Clean up log files (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          # Remove unwanted log files from dist directory
+          find dist -name "*install-log.txt" -delete
+          find dist -name "*meson-log.txt" -delete
+          echo "Cleaned up log files from dist directory"
+      
       - name: Diagnose FTXUI build (macOS worker)
         if: runner.os == 'macOS' && matrix.component == 'worker'
         shell: bash
@@ -421,7 +430,7 @@ jobs:
           # Determine current reference and version
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             CURRENT_TAG="HEAD"
-            CURRENT_VERSION="0.0.0-dev"
+            CURRENT_VERSION="0.0.1-dev"
             RELEASE_TAG="draft-${GITHUB_SHA:0:8}"
           else
             CURRENT_TAG="${GITHUB_REF#refs/tags/}"
@@ -459,7 +468,8 @@ jobs:
           ### Installation Methods
           
           - **Windows/Linux**: Double-click the `.exe` or `.run` file
-          - **macOS GUI**: Double-click the `.command` file
+          - **macOS GUI**: Remove quarantine attribute then run: `xattr -d com.apple.quarantine installer.command && ./installer.command`
+            - **Alternative**: Double-click the `.command` file. If blocked, go to **System Settings → Privacy & Security** and click **"Open Anyway"**.
           - **macOS Homebrew**: `brew tap ${{ github.repository_owner }}/task-messenger && brew install tm-manager tm-worker`
           - **Manual**: Extract `.tar.gz` archives
           
@@ -500,7 +510,8 @@ jobs:
           ### Installation Methods
           
           - **Windows/Linux**: Double-click the \`.exe\` or \`.run\` file
-          - **macOS GUI**: Double-click the \`.command\` file
+          - **macOS GUI**: Remove quarantine attribute then run: \`xattr -d com.apple.quarantine installer.command && ./installer.command\`
+            - **Alternative**: Double-click the \`.command\` file. If blocked, go to **System Settings → Privacy & Security** and click **"Open Anyway"**.
           - **macOS Homebrew**: \`brew tap ${{ github.repository_owner }}/task-messenger && brew install tm-manager tm-worker\`
           - **Manual**: Extract \`.tar.gz\` archives
           

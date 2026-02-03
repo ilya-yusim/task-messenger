@@ -176,6 +176,42 @@ See [Configuration](#configuration) section for details.
 
 ### macOS Installation
 
+TaskMessenger provides multiple installation methods for macOS.
+
+#### Option A: Homebrew (Recommended)
+
+The easiest way to install on macOS is via Homebrew:
+
+```bash
+# Add the TaskMessenger tap
+brew tap ilya-yusim/task-messenger
+
+# Install worker
+brew install tm-worker
+
+# Install manager
+brew install tm-manager
+
+# Or install both
+brew install tm-worker tm-manager
+```
+
+Homebrew handles all dependencies, PATH configuration, and updates automatically. No need to deal with security warnings.
+
+**To upgrade:**
+```bash
+brew update
+brew upgrade tm-worker tm-manager
+```
+
+**To uninstall:**
+```bash
+brew uninstall tm-worker tm-manager
+brew untap ilya-yusim/task-messenger
+```
+
+#### Option B: Self-Extracting Installer (.command file)
+
 TaskMessenger provides `.command` installers for macOS that can be run by double-clicking.
 
 #### Step 1: Download the Installer
@@ -186,13 +222,33 @@ Download the appropriate installer for your component and architecture:
 
 #### Step 2: Run the Installer
 
-**Option A: Double-click (Recommended)**
+**Option A: Remove quarantine attribute (Recommended)**
+
+macOS marks downloaded files with a quarantine attribute. Remove it to run the installer:
+
+```bash
+xattr -d com.apple.quarantine tm-worker-v1.0.0-macos-arm64.command
+./tm-worker-v1.0.0-macos-arm64.command
+```
+
+Or for manager:
+```bash
+xattr -d com.apple.quarantine tm-manager-v1.0.0-macos-arm64.command
+./tm-manager-v1.0.0-macos-arm64.command
+```
+
+**Option B: Double-click with System Settings**
 1. Double-click the downloaded `.command` file
-2. If prompted about security, go to System Settings → Privacy & Security and click "Open Anyway"
+2. **macOS will block the installer** with a security warning: "Apple could not verify... is free of malware"
+   - Click **"Done"** or **"Cancel"** on the warning dialog
+   - Go to **System Settings → Privacy & Security**
+   - Scroll down to the Security section
+   - Click **"Open Anyway"** next to the blocked installer message
+   - Confirm by clicking **"Open"** in the confirmation dialog
 3. The installer will open a Terminal window and run automatically
 4. Follow any on-screen prompts
 
-**Option B: Terminal**
+**Option C: Make executable and run**
 ```bash
 chmod +x tm-worker-v1.0.0-macos-arm64.command
 ./tm-worker-v1.0.0-macos-arm64.command
@@ -233,6 +289,8 @@ nano ~/Library/Application\ Support/TaskMessenger/config/config-manager.json
 ```
 
 See [Configuration](#configuration) section for details.
+
+**Note:** If you installed via Homebrew, configuration files are created in the same location. The Homebrew installation also automatically configures PATH.
 
 ## Configuration
 
