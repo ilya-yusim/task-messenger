@@ -630,7 +630,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Update Homebrew Formulas
-        if: ${{ !inputs.skip_build && steps.test_check.outputs.is_test != 'true' }}
+        if: ${{ !inputs.skip_build && steps.test_check.outputs.is_test != 'true' && github.event_name != 'workflow_dispatch' }}
         run: |
           VERSION="${GITHUB_REF#refs/tags/v}"
           REPO="${{ github.repository }}"
@@ -669,7 +669,7 @@ jobs:
           echo "✅ Formulas updated successfully"
       
       - name: Get default branch
-        if: ${{ !inputs.skip_build && steps.test_check.outputs.is_test != 'true' }}
+        if: ${{ !inputs.skip_build && steps.test_check.outputs.is_test != 'true' && github.event_name != 'workflow_dispatch' }}
         id: default_branch
         run: |
           BRANCH=$(git remote show origin | grep 'HEAD branch' | cut -d' ' -f5)
@@ -677,7 +677,7 @@ jobs:
           echo "Default branch: ${BRANCH}"
       
       - name: Commit and Push Formula Updates
-        if: ${{ !inputs.skip_build && steps.test_check.outputs.is_test != 'true' }}
+        if: ${{ !inputs.skip_build && steps.test_check.outputs.is_test != 'true' && github.event_name != 'workflow_dispatch' }}
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "chore: update Homebrew formulas for ${{ github.ref_name }}"
