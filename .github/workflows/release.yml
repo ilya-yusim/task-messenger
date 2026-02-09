@@ -124,7 +124,7 @@ jobs:
         shell: bash
         run: |
           version="${{ steps.version.outputs.version }}"
-          sed -i "s/version:\s*'[^']*'/version: '$version'/" meson.build
+          sed -i "s/version:[[:space:]]*'[^']*'/version: '$version'/" meson.build
       
       - name: Update meson.build version (macOS)
         if: runner.os == 'macOS'
