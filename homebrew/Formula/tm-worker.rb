@@ -1,7 +1,7 @@
 class TmWorker < Formula
   desc "TaskMessenger Worker - Distributed task processing and execution"
   homepage "https://github.com/ilya-yusim/task-messenger"
-  version "Test"
+  version "0.0.1"
   license "MIT"
 
   on_macos do

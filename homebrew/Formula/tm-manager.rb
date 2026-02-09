@@ -1,7 +1,7 @@
 class TmManager < Formula
   desc "TaskMessenger Manager - Distributed task coordination and management"
   homepage "https://github.com/ilya-yusim/task-messenger"
-  version "Test"
+  version "0.0.1"
   license "MIT"
 
   on_macos do
