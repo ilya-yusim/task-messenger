@@ -451,19 +451,23 @@ jobs:
           
           **Artifacts are available in the Assets section below.**
           
-          ### Windows
-          - `tm-worker-*-windows-x86_64.exe` - Worker self-extracting installer
-          - `tm-manager-*-windows-x86_64.exe` - Manager self-extracting installer
+          ### Worker Component
+          - **Windows**
+            - `tm-worker-v*-windows-x64-installer.exe` - Worker self-extracting installer
+          - **Linux**
+            - `tm-worker-v*-linux-x86_64.run` - Worker self-extracting installer
+          - **macOS (Apple Silicon)**
+            - `tm-worker-v*-macos-arm64.command` - Worker GUI installer
+            - `tm-worker-v*-macos-arm64.tar.gz` - Worker archive (Homebrew)
           
-          ### Linux
-          - `tm-worker-*-linux-x86_64.run` - Worker self-extracting installer
-          - `tm-manager-*-linux-x86_64.run` - Manager self-extracting installer
-          
-          ### macOS (Apple Silicon)
-          - `tm-worker-*-macos-arm64.command` - Worker GUI installer
-          - `tm-worker-*-macos-arm64.tar.gz` - Worker archive (Homebrew)
-          - `tm-manager-*-macos-arm64.command` - Manager GUI installer
-          - `tm-manager-*-macos-arm64.tar.gz` - Manager archive (Homebrew)
+          ### Manager Component
+          - **Windows**
+            - `tm-manager-v*-windows-x64-installer.exe` - Manager self-extracting installer
+          - **Linux**
+            - `tm-manager-v*-linux-x86_64.run` - Manager self-extracting installer
+          - **macOS (Apple Silicon)**
+            - `tm-manager-v*-macos-arm64.command` - Manager GUI installer
+            - `tm-manager-v*-macos-arm64.tar.gz` - Manager archive (Homebrew)
           
           ### Installation Methods
           
@@ -484,28 +488,22 @@ jobs:
           ## 📦 Downloads & Installation
           
           ### Worker Component
-          
-          **Windows:**
-          - [\`tm-worker-v${VERSION}-windows-x64-installer.exe\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-worker-v${VERSION}-windows-x64-installer.exe) - Self-extracting installer (double-click to install)
-          
-          **Linux:**
-          - [\`tm-worker-v${VERSION}-linux-x86_64.run\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-worker-v${VERSION}-linux-x86_64.run) - Self-extracting installer (double-click or run in terminal)
-          
-          **macOS (Apple Silicon):**
-          - [\`tm-worker-v${VERSION}-macos-arm64.command\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-worker-v${VERSION}-macos-arm64.command) - Double-click GUI installer
-          - [\`tm-worker-v${VERSION}-macos-arm64.tar.gz\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-worker-v${VERSION}-macos-arm64.tar.gz) - Manual archive (Homebrew)
+          - **Windows**
+            - [\`tm-worker-v${VERSION}-windows-x64-installer.exe\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-worker-v${VERSION}-windows-x64-installer.exe) - Self-extracting installer (double-click to install)
+          - **Linux**
+            - [\`tm-worker-v${VERSION}-linux-x86_64.run\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-worker-v${VERSION}-linux-x86_64.run) - Self-extracting installer (double-click or run in terminal)
+          - **macOS (Apple Silicon)**
+            - [\`tm-worker-v${VERSION}-macos-arm64.command\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-worker-v${VERSION}-macos-arm64.command) - Double-click GUI installer
+            - [\`tm-worker-v${VERSION}-macos-arm64.tar.gz\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-worker-v${VERSION}-macos-arm64.tar.gz) - Manual archive (Homebrew)
           
           ### Manager Component
-          
-          **Windows:**
-          - [\`tm-manager-v${VERSION}-windows-x64-installer.exe\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-manager-v${VERSION}-windows-x64-installer.exe) - Self-extracting installer (double-click to install)
-          
-          **Linux:**
-          - [\`tm-manager-v${VERSION}-linux-x86_64.run\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-manager-v${VERSION}-linux-x86_64.run) - Self-extracting installer (double-click or run in terminal)
-          
-          **macOS (Apple Silicon):**
-          - [\`tm-manager-v${VERSION}-macos-arm64.command\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-manager-v${VERSION}-macos-arm64.command) - Double-click GUI installer
-          - [\`tm-manager-v${VERSION}-macos-arm64.tar.gz\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-manager-v${VERSION}-macos-arm64.tar.gz) - Manual archive (Homebrew)
+          - **Windows**
+            - [\`tm-manager-v${VERSION}-windows-x64-installer.exe\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-manager-v${VERSION}-windows-x64-installer.exe) - Self-extracting installer (double-click to install)
+          - **Linux**
+            - [\`tm-manager-v${VERSION}-linux-x86_64.run\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-manager-v${VERSION}-linux-x86_64.run) - Self-extracting installer (double-click or run in terminal)
+          - **macOS (Apple Silicon)**
+            - [\`tm-manager-v${VERSION}-macos-arm64.command\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-manager-v${VERSION}-macos-arm64.command) - Double-click GUI installer
+            - [\`tm-manager-v${VERSION}-macos-arm64.tar.gz\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-manager-v${VERSION}-macos-arm64.tar.gz) - Manual archive (Homebrew)
           
           ### Installation Methods
           
