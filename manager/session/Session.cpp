@@ -81,13 +81,16 @@ Task<void> Session::run_coroutine() {
                     ": Sending task " + std::to_string(task.task_id()) +
                     " (" + std::to_string(payload_bytes.size()) + " bytes payload)");
 
-                const auto wire_bytes = task.wire_bytes();
-
                 // Start timing just before we begin network I/O to exclude pool wait time
                 auto rt_start = std::chrono::steady_clock::now();
 
-                co_await client_socket_->async_write(wire_bytes.data(), wire_bytes.size());
-                stats_.bytes_sent += wire_bytes.size();
+                // Scatter-send: send header and payload separately (TCP_NODELAY enabled)
+                const auto [header_span, payload_span] = task.wire_bytes();
+                co_await client_socket_->async_write(header_span.data(), header_span.size());
+                if (!payload_span.empty()) {
+                    co_await client_socket_->async_write(payload_span.data(), payload_span.size());
+                }
+                stats_.bytes_sent += header_span.size() + payload_span.size();
 
                 // Receive response header from worker
                 TaskHeader response{};

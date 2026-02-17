@@ -1,0 +1,79 @@
+// Skill-based task messaging schema for FlatBuffers
+// This schema defines the serialization format for skill requests and responses.
+
+namespace TaskMessenger.Skills;
+
+// Base skill request envelope
+table SkillRequest {
+  skill_id: uint32;
+  task_id: uint32;
+  payload: [ubyte];  // Nested skill-specific data
+}
+
+// Base skill response envelope
+table SkillResponse {
+  skill_id: uint32;
+  task_id: uint32;
+  success: bool;
+  payload: [ubyte];  // Nested skill-specific result
+}
+
+// Example: String reversal skill
+table StringReversalRequest {
+  input: string;
+}
+
+table StringReversalResponse {
+  output: string;
+  original_length: uint32;
+}
+
+// Example: Math operation skill (scalar)
+enum MathOperation : byte { Add = 0, Subtract, Multiply, Divide }
+
+table MathOperationRequest {
+  operand_a: double;
+  operand_b: double;
+  operation: MathOperation;
+}
+
+table MathOperationResponse {
+  result: double;
+  overflow: bool;
+}
+
+// Example: Vector math operation skill (element-wise)
+// Demonstrates direct buffer write access with CreateUninitializedVector
+table VectorMathRequest {
+  operand_a: [double];  // First operand vector
+  operand_b: [double];  // Second operand vector
+  operation: MathOperation;
+}
+
+table VectorMathResponse {
+  result: [double];  // Result vector (same size as operands)
+}
+
+// Fused Multiply-Add: result = a + c * b
+// For buffer template pattern, scalar c is stored as [double] (single element)
+// so we can get direct pointer access just like the vectors.
+table FusedMultiplyAddRequest {
+  operand_a: [double];      // Vector a
+  operand_b: [double];      // Vector b
+  scalar_c: [double];       // Scalar c stored as single-element vector for direct access
+}
+
+table FusedMultiplyAddResponse {
+  result: [double];         // result[i] = a[i] + c * b[i]
+}
+
+// Fused Multiply-Add with TRUE scalar (requires --gen-mutable for buffer template)
+// This version uses a real scalar field instead of a single-element vector.
+// Use mutate_scalar_c() to update the value without rebuilding.
+table FusedMultiplyAddMutableRequest {
+  operand_a: [double];      // Vector a
+  operand_b: [double];      // Vector b
+  scalar_c: double;         // TRUE scalar - use mutate_scalar_c() to update
+}
+
+root_type SkillRequest;

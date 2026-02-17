@@ -96,6 +96,11 @@ if get_option('build_worker')
   subdir('worker')
 endif
 
+# Serialization tests (optional, for evaluating FlatBuffers/Cap'n Proto)
+if get_option('build_serialize_tests')
+  subdir('serialize')
+endif
+
 # =============================================================================
 # Installation
 # =============================================================================

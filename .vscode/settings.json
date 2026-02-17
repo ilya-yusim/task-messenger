@@ -116,5 +116,11 @@
         "nlohmann"
     ],
     "C_Cpp.default.compileCommands": "c:\\Users\\iyusi\\projects\\task-messenger\\builddir/compile_commands.json",
+    "chat.tools.terminal.autoApprove": {
+        "/^meson compile -C builddir$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    },
     // "cmake.sourceDirectory": "C:/Users/iyusi/repo/task-messenger/subprojects/ftxui/doc"
 }

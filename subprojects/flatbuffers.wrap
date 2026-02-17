@@ -1,0 +1,8 @@
+[wrap-git]
+url = https://github.com/google/flatbuffers.git
+revision = v24.3.25
+depth = 1
+method = cmake
+
+[provide]
+flatbuffers = flatbuffers_dep

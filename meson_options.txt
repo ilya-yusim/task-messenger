@@ -3,3 +3,4 @@ option('enable_boost_asio_handler_tracking', type: 'boolean', value: false, desc
 option('profiling_unwind', type: 'boolean', value: false, description: 'Enable profiling-friendly unwind flags (-fno-omit-frame-pointer, -fasynchronous-unwind-tables, -fno-optimize-sibling-calls)')
 option('build_manager', type: 'boolean', value: true, description: 'Build the manager component')
 option('build_worker', type: 'boolean', value: true, description: 'Build the worker component')
+option('build_serialize_tests', type: 'boolean', value: false, description: 'Build serialization library test cases')

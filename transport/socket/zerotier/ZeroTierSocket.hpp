@@ -171,6 +171,14 @@ public:
      */
     std::string socket_type() const;
 
+    /** \brief Enable or disable TCP_NODELAY (Nagle's algorithm).
+     *  \\param enable true to disable Nagle (send immediately), false to enable Nagle.
+     *  \\return true on success, false on failure.
+     *  \\note Call after connection is established. Disabling Nagle is useful for
+     *         low-latency messaging, especially with scatter-gather sends.
+     */
+    bool set_no_delay(bool enable);
+
     // === Factory helpers ===
     // Create a new client socket
     static std::shared_ptr<ZeroTierSocket> create();

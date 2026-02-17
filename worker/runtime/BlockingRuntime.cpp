@@ -52,16 +52,27 @@ bool write_response(IBlockingStream& s, uint32_t task_id, uint32_t task_type, st
                     std::error_code& ec, std::uint64_t& bytes_written) {
     ec.clear();
     TaskMessage response(task_id, task_type, std::string(payload));
-    const auto buffer = response.wire_bytes();
 
+    // Scatter-send: send header and payload separately (TCP_NODELAY enabled)
+    const auto [header_span, payload_span] = response.wire_bytes();
+    
     size_t bw = 0;
-    s.write(buffer.data(), buffer.size(), bw, ec);
+    s.write(header_span.data(), header_span.size(), bw, ec);
     if (ec) 
-        throw std::system_error(ec, "write_response: failed to write combined frame");
-    if (bw != buffer.size())
-        throw std::system_error(std::make_error_code(std::errc::protocol_error), "write_response: short combined write");
+        throw std::system_error(ec, "write_response: failed to write header");
+    if (bw != header_span.size())
+        throw std::system_error(std::make_error_code(std::errc::protocol_error), "write_response: short header write");
+    bytes_written = static_cast<std::uint64_t>(bw);
 
-    bytes_written = static_cast<std::uint64_t>(buffer.size());
+    if (!payload_span.empty()) {
+        bw = 0;
+        s.write(payload_span.data(), payload_span.size(), bw, ec);
+        if (ec) 
+            throw std::system_error(ec, "write_response: failed to write payload");
+        if (bw != payload_span.size())
+            throw std::system_error(std::make_error_code(std::errc::protocol_error), "write_response: short payload write");
+        bytes_written += static_cast<std::uint64_t>(bw);
+    }
     return true;
 }
 } // namespace

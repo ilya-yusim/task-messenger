@@ -19,10 +19,10 @@ std::string TaskProcessor::process(uint32_t task_id, uint32_t task_type, const s
     }
 
     // Add random delay between 0.1 and 1.0 seconds
-    static thread_local std::mt19937 rng(std::random_device{}());
-    std::uniform_int_distribution<int> dist(100, 1000); // milliseconds
-    int delay_ms = dist(rng);
-    std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
+    // static thread_local std::mt19937 rng(std::random_device{}());
+    // std::uniform_int_distribution<int> dist(100, 1000); // milliseconds
+    // int delay_ms = dist(rng);
+    // std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
 
     switch (task_type) {
         case 1: {
