@@ -81,7 +81,7 @@
 		{
 			"label": "Run Manager (linux)",
 			"type": "shell",
-			"command": "builddir/manager/tm-manager -c config/config-manager.json",
+			"command": "builddir/manager/tm-manager --interactive -c config/config-manager.json",
 			"group": {
 				"kind": "test",
 				"isDefault": false
@@ -122,7 +122,7 @@
 		{
 			"label": "Run Manager",
 			"type": "shell",
-			"command": "builddir/manager/tm-manager.exe -c config/config-manager.json",
+			"command": "builddir/manager/tm-manager.exe --interactive -c config/config-manager.json",
 			"group": {
 				"kind": "test",
 				"isDefault": false

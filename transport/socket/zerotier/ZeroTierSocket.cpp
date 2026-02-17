@@ -116,6 +116,28 @@ void ZeroTierSocket::setup_socket(int fd) {
         zts_bsd_setsockopt(fd, ZTS_SOL_SOCKET, ZTS_SO_RCVTIMEO, &tv, sizeof(tv));
         zts_bsd_setsockopt(fd, ZTS_SOL_SOCKET, ZTS_SO_SNDTIMEO, &tv, sizeof(tv));
     }
+    
+    // Enable TCP_NODELAY by default for low-latency scatter-send messaging
+    set_no_delay(true);
+}
+
+bool ZeroTierSocket::set_no_delay(bool enable) {
+    if (socket_fd_ < 0) {
+        return false;
+    }
+    int flag = enable ? 1 : 0;
+    int result = zts_set_no_delay(socket_fd_, flag);
+    if (result == ZTS_ERR_OK) {
+        if (logger_) {
+            logger_->debug("TCP_NODELAY " + std::string(enable ? "enabled" : "disabled") + 
+                          " on fd " + std::to_string(socket_fd_));
+        }
+        return true;
+    }
+    if (logger_) {
+        logger_->warning("Failed to set TCP_NODELAY on fd " + std::to_string(socket_fd_));
+    }
+    return false;
 }
 
 void ZeroTierSocket::set_non_blocking(bool non_blocking) {

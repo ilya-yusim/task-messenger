@@ -12,6 +12,7 @@ manager_exe = executable(
   'tm-manager', 
 sources: [
   'managerMain.cpp',
+  'ManagerOptions.cpp',
   'transport/AsyncTransportOptions.cpp',
   'transport/AsyncTransportServer.hpp',
   'transport/AsyncTransportServer.cpp',

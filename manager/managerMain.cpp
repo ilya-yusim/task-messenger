@@ -2,11 +2,14 @@
 #include "transport/AsyncTransportServer.hpp"
 #include "TaskGenerator.hpp"
 #include "options/Options.hpp"
+#include "ManagerOptions.hpp"
 
 #include <atomic>
 #include <csignal>
 #include <thread>
 #include <chrono>
+#include <iostream>
+#include <limits>
 
 // Global shutdown flag for signal handlers
 static std::atomic<bool> shutdown_requested{false};
@@ -44,6 +47,61 @@ static void monitoring_thread_func(AsyncTransportServer* server,
     logger->info("Monitoring thread received shutdown signal");
 }
 
+// Interactive mode function: prompt user for task count, wait for completion, print stats
+static void interactive_mode_func(AsyncTransportServer* server, 
+                                  DefaultTaskGenerator* generator,
+                                  std::shared_ptr<Logger> logger) {
+    constexpr auto POLL_INTERVAL = std::chrono::milliseconds(100);
+    
+    logger->info("=== Interactive Mode ===");
+    logger->info("Enter number of tasks to add to queue (or 0 to quit)");
+    
+    while (!shutdown_requested.load(std::memory_order_relaxed)) {
+        std::cout << "\nTasks> " << std::flush;
+        
+        int task_count = 0;
+        std::cin >> task_count;
+        
+        if (std::cin.fail()) {
+            std::cin.clear();
+            std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n');
+            logger->error("Invalid input. Please enter a number.");
+            continue;
+        }
+        
+        if (task_count <= 0) {
+            logger->info("Exiting interactive mode...");
+            shutdown_requested.store(true, std::memory_order_relaxed);
+            break;
+        }
+        
+        // Generate and enqueue tasks
+        logger->info("Generating " + std::to_string(task_count) + " tasks...");
+        auto tasks = generator->make_tasks(static_cast<size_t>(task_count));
+        server->enqueue_tasks(std::move(tasks));
+        logger->info("Tasks enqueued. Waiting for completion...");
+        
+        // Wait until queue is empty (all tasks consumed)
+        // Note: waiting_sessions may still be > 0 (workers idle, ready for more tasks)
+        bool all_done = false;
+        while (!all_done && !shutdown_requested.load(std::memory_order_relaxed)) {
+            auto [pool_size, waiting_sessions] = server->get_task_pool_stats();
+            
+            if (pool_size == 0) {
+                all_done = true;
+            } else {
+                std::this_thread::sleep_for(POLL_INTERVAL);
+            }
+        }
+        
+        if (all_done) {
+            logger->info("All tasks completed!");
+            logger->info("=== Manager Statistics ===");
+            server->print_transporter_statistics();
+        }
+    }
+}
+
 int main(int argc, char* argv[]) {
 
     // --- Stage 1: Build logging pipeline ---
@@ -77,7 +135,7 @@ int main(int argc, char* argv[]) {
         }
         logger->info("Async Transport Server started successfully");
 
-        // --- Stage 4: Production mode with auto-refill monitoring ---
+        // --- Stage 4: Production mode selection ---
         
         // Install signal handlers for graceful shutdown
         std::signal(SIGTERM, signal_handler);
@@ -85,17 +143,29 @@ int main(int argc, char* argv[]) {
         
         DefaultTaskGenerator generator;
         
-        // Generate initial batch of tasks
-        logger->info("Generating initial batch of 100 tasks");
-        auto initial_tasks = generator.make_tasks(100);
-        server.enqueue_tasks(std::move(initial_tasks));
-        logger->info("Initial task batch enqueued");
+        // Check if interactive mode is enabled
+        bool interactive = manager_opts::get_interactive_mode();
         
-        // Launch monitoring thread
-        std::thread monitor_thread(monitoring_thread_func, &server, &generator, logger);
-        
-        // Wait for shutdown signal
-        monitor_thread.join();
+        if (interactive) {
+            // Interactive mode: prompt user for tasks
+            logger->info("Starting in INTERACTIVE mode");
+            interactive_mode_func(&server, &generator, logger);
+        } else {
+            // Auto-refill monitoring mode
+            logger->info("Starting in AUTO-REFILL mode");
+            
+            // Generate initial batch of tasks
+            logger->info("Generating initial batch of 100 tasks");
+            auto initial_tasks = generator.make_tasks(100);
+            server.enqueue_tasks(std::move(initial_tasks));
+            logger->info("Initial task batch enqueued");
+            
+            // Launch monitoring thread
+            std::thread monitor_thread(monitoring_thread_func, &server, &generator, logger);
+            
+            // Wait for shutdown signal
+            monitor_thread.join();
+        }
         
         // Clean shutdown
         logger->info("Shutting down server...");

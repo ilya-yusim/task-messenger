@@ -177,11 +177,15 @@ Task<bool> AsyncRuntime::run_loop_coro(TaskProcessor& processor) {
         auto result = processor.process(header.task_id, header.task_type, payload);
         
         TaskMessage response(header.task_id, header.task_type, std::move(result));
-        const auto wire_bytes = response.wire_bytes();
 
         try {
-            co_await current_socket->async_write(reinterpret_cast<const char*>(wire_bytes.data()), wire_bytes.size());
-            bytes_sent_.fetch_add(static_cast<std::uint64_t>(wire_bytes.size()), std::memory_order_relaxed);
+            // Scatter-send: send header and payload separately (TCP_NODELAY enabled)
+            const auto [header_span, payload_span] = response.wire_bytes();
+            co_await current_socket->async_write(header_span.data(), header_span.size());
+            if (!payload_span.empty()) {
+                co_await current_socket->async_write(payload_span.data(), payload_span.size());
+            }
+            bytes_sent_.fetch_add(static_cast<std::uint64_t>(header_span.size() + payload_span.size()), std::memory_order_relaxed);
         } catch (const std::exception& e) {
             if (logger_) logger_->error(std::string{"async_write failed: "} + e.what());
             co_return false;
