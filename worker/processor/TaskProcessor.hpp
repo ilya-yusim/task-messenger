@@ -18,11 +18,11 @@ public:
 	/**
 	 * \brief Execute a task payload and return the textual result.
 	 * \param task_id Manager-provided identifier for correlation.
-	 * \param task_type High-level task classification.
+	 * \param skill_id Skill identifier for dispatch.
 	 * \param payload Serialized task data.
 	 * \return Result string delivered back to the manager.
 	 */
-	std::string process(uint32_t task_id, uint32_t task_type, const std::string& payload);
+	std::string process(uint32_t task_id, uint32_t skill_id, const std::string& payload);
 private:
 	std::shared_ptr<Logger> logger_; ///< Logger sink used for debug output.
 };

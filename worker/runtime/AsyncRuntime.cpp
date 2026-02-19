@@ -174,9 +174,9 @@ Task<bool> AsyncRuntime::run_loop_coro(TaskProcessor& processor) {
         }
 
         // Process task
-        auto result = processor.process(header.task_id, header.task_type, payload);
+        auto result = processor.process(header.task_id, header.skill_id, payload);
         
-        TaskMessage response(header.task_id, header.task_type, std::move(result));
+        TaskMessage response(header.task_id, header.skill_id, std::move(result));
 
         try {
             // Scatter-send: send header and payload separately (TCP_NODELAY enabled)

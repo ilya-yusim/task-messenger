@@ -24,11 +24,11 @@ std::vector<TaskMessage> DefaultTaskGenerator::make_tasks(uint32_t count) {
     out.reserve(count);
     for (uint32_t i = 0; i < count && !stopped_.load(); ++i) {
         uint32_t task_id = task_id_generator_.get_next_id();
-        uint32_t task_type = (i % 3) + 1; // Cycle through task types 1-3
-        std::string task_data = generate_task_data(task_id, task_type);
+        uint32_t skill_id = (i % 3) + 1; // Cycle through skills 1-3
+        std::string task_data = generate_task_data(task_id, skill_id);
 
         // header and payload are serialized here, through TaskMessage constructor
-        out.emplace_back(task_id, task_type, std::move(task_data));
+        out.emplace_back(task_id, skill_id, std::move(task_data));
     }
 
     return out;
@@ -40,8 +40,8 @@ void DefaultTaskGenerator::stop() {
 }
 
 /** \ingroup task_messenger_manager */
-std::string DefaultTaskGenerator::generate_task_data(uint32_t task_id, uint32_t task_type) {
-    if (task_type == 2) {
+std::string DefaultTaskGenerator::generate_task_data(uint32_t task_id, uint32_t skill_id) {
+    if (skill_id == 2) {
         return std::to_string(task_id);
     }
     return "Task data " + std::to_string(task_id);

@@ -12,10 +12,10 @@
 #include <thread>
 #include <chrono>
 
-std::string TaskProcessor::process(uint32_t task_id, uint32_t task_type, const std::string& payload) {
+std::string TaskProcessor::process(uint32_t task_id, uint32_t skill_id, const std::string& payload) {
     if (logger_) {
         logger_->debug("Processing task " + std::to_string(task_id) +
-                       " of type " + std::to_string(task_type));
+                       " with skill " + std::to_string(skill_id));
     }
 
     // Add random delay between 0.1 and 1.0 seconds
@@ -24,7 +24,7 @@ std::string TaskProcessor::process(uint32_t task_id, uint32_t task_type, const s
     // int delay_ms = dist(rng);
     // std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
 
-    switch (task_type) {
+    switch (skill_id) {
         case 1: {
             std::string result = payload;
             std::reverse(result.begin(), result.end());
@@ -48,6 +48,6 @@ std::string TaskProcessor::process(uint32_t task_id, uint32_t task_type, const s
         case 3:
             return std::string("Processed file: ") + payload + " (simulated)";
         default:
-            return std::string("Unknown task type: ") + std::to_string(task_type);
+            return std::string("Unknown skill_id: ") + std::to_string(skill_id);
     }
 }

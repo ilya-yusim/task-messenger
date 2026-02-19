@@ -1,11 +1,11 @@
 /**
  * @file test_flatbuffers.cpp
- * @brief Demonstrates FlatBuffers serialization for skill-based task messaging.
+ * @brief Demonstrates FlatBuffers serialization for skill payloads.
  *
- * This test demonstrates the "skill" concept where:
- * - Each skill has a unique ID
- * - Skills have associated request/response data structures
- * - The SkillRequest/SkillResponse envelope wraps skill-specific payloads
+ * This test demonstrates FlatBuffers skill serialization where:
+ * - Skill payloads are serialized directly (no envelope wrapper)
+ * - Routing metadata (skill_id, task_id) is provided by TaskHeader
+ * - Each skill has its own request/response data structures
  */
 
 #include "skill_task_generated.h"  // Generated from skill_task.fbs
@@ -22,101 +22,17 @@ using namespace TaskMessenger::Skills;
 namespace {
 
 /**
- * @brief Create a string reversal skill request.
+ * @brief Create a string reversal skill payload.
  *
- * This simulates the task generator creating a skill request that will be
- * sent from manager to worker.
- *
- * @param task_id Unique task identifier
  * @param input String to be reversed
- * @return Serialized request bytes ready for transmission
+ * @return Serialized StringReversalRequest bytes
  */
-std::vector<uint8_t> create_string_reversal_request(uint32_t task_id, const std::string& input) {
-    // First, build the nested StringReversalRequest
-    flatbuffers::FlatBufferBuilder inner_builder(256);
-    auto input_offset = inner_builder.CreateString(input);
-    auto inner_request = CreateStringReversalRequest(inner_builder, input_offset);
-    inner_builder.Finish(inner_request);
+std::vector<uint8_t> create_string_reversal_payload(const std::string& input) {
+    flatbuffers::FlatBufferBuilder builder(256);
+    auto input_offset = builder.CreateString(input);
+    auto request = CreateStringReversalRequest(builder, input_offset);
+    builder.Finish(request);
 
-    // Get the nested payload bytes
-    auto nested_bytes = inner_builder.GetBufferPointer();
-    auto nested_size = inner_builder.GetSize();
-
-    // Now build the outer SkillRequest envelope
-    flatbuffers::FlatBufferBuilder outer_builder(512);
-    auto payload = outer_builder.CreateVector(nested_bytes, nested_size);
-
-    auto skill_request = CreateSkillRequest(
-        outer_builder,
-        1,  // skill_id for string reversal
-        task_id,
-        payload
-    );
-    outer_builder.Finish(skill_request);
-
-    // Return as vector for transmission
-    return std::vector<uint8_t>(
-        outer_builder.GetBufferPointer(),
-        outer_builder.GetBufferPointer() + outer_builder.GetSize()
-    );
-}
-
-/**
- * @brief Process a skill request on the worker side.
- *
- * This simulates the worker receiving a skill request, processing it based
- * on the skill_id, and returning the appropriate response.
- *
- * @param request_bytes Serialized request received from manager
- * @return Serialized response bytes to send back to manager
- */
-std::vector<uint8_t> process_skill_request(const std::vector<uint8_t>& request_bytes) {
-    // Parse the envelope using the generated GetSkillRequest
-    auto skill_request = GetSkillRequest(request_bytes.data());
-
-    uint32_t skill_id = skill_request->skill_id();
-    uint32_t task_id = skill_request->task_id();
-
-    std::cout << "Processing skill_id=" << skill_id << ", task_id=" << task_id << "\n";
-
-    if (skill_id == 1) {  // String reversal
-        // Parse nested payload using flatbuffers::GetRoot<T>
-        auto payload = skill_request->payload();
-        auto inner_request = flatbuffers::GetRoot<StringReversalRequest>(payload->data());
-
-        std::string input = inner_request->input()->str();
-        std::string output(input.rbegin(), input.rend());
-
-        std::cout << "  Input: \"" << input << "\" -> Output: \"" << output << "\"\n";
-
-        // Build response - first the inner StringReversalResponse
-        flatbuffers::FlatBufferBuilder inner_builder(256);
-        auto output_offset = inner_builder.CreateString(output);
-        auto inner_response = CreateStringReversalResponse(
-            inner_builder, output_offset, static_cast<uint32_t>(input.length())
-        );
-        inner_builder.Finish(inner_response);
-
-        // Wrap in envelope
-        flatbuffers::FlatBufferBuilder outer_builder(512);
-        auto response_payload = outer_builder.CreateVector(
-            inner_builder.GetBufferPointer(), inner_builder.GetSize()
-        );
-        auto skill_response = CreateSkillResponse(
-            outer_builder, skill_id, task_id, true, response_payload
-        );
-        outer_builder.Finish(skill_response);
-
-        return std::vector<uint8_t>(
-            outer_builder.GetBufferPointer(),
-            outer_builder.GetBufferPointer() + outer_builder.GetSize()
-        );
-    }
-
-    // Unknown skill - return error response
-    flatbuffers::FlatBufferBuilder builder(128);
-    auto response = CreateSkillResponse(builder, skill_id, task_id, false, 0);
-    builder.Finish(response);
     return std::vector<uint8_t>(
         builder.GetBufferPointer(),
         builder.GetBufferPointer() + builder.GetSize()
@@ -124,12 +40,40 @@ std::vector<uint8_t> process_skill_request(const std::vector<uint8_t>& request_b
 }
 
 /**
- * @brief Test math operation skill serialization.
+ * @brief Process a string reversal skill payload.
  *
- * Demonstrates another skill type with numeric data.
+ * @param payload_bytes Serialized StringReversalRequest
+ * @return Serialized StringReversalResponse bytes
+ */
+std::vector<uint8_t> process_string_reversal(const std::vector<uint8_t>& payload_bytes) {
+    auto request = flatbuffers::GetRoot<StringReversalRequest>(payload_bytes.data());
+
+    std::string input = request->input()->str();
+    std::string output(input.rbegin(), input.rend());
+
+    std::cout << "  Input: \"" << input << "\" -> Output: \"" << output << "\"\n";
+
+    // Build response
+    flatbuffers::FlatBufferBuilder builder(256);
+    auto output_offset = builder.CreateString(output);
+    auto response = CreateStringReversalResponse(
+        builder, output_offset, static_cast<uint32_t>(input.length())
+    );
+    builder.Finish(response);
+
+    return std::vector<uint8_t>(
+        builder.GetBufferPointer(),
+        builder.GetBufferPointer() + builder.GetSize()
+    );
+}
+
+/**
+ * @brief Test math operation task serialization.
+ *
+ * Demonstrates another task type with numeric data.
  */
 void test_math_operation() {
-    std::cout << "\n=== Testing Math Operation Skill ===\n";
+    std::cout << "\n=== Testing Math Operation Task ===\n";
 
     flatbuffers::FlatBufferBuilder builder(256);
     auto math_req = CreateMathOperationRequest(builder, 42.0, 8.0, MathOperation_Multiply);
@@ -1067,23 +1011,19 @@ void benchmark_write_scalar_overhead() {
 int main() {
     std::cout << "=== FlatBuffers Skill Serialization Test ===\n\n";
 
-    // Test 1: String reversal round-trip (full skill workflow)
+    // Test 1: String reversal round-trip (direct payload - no envelope)
     std::cout << "=== Testing String Reversal Skill ===\n";
-    auto request = create_string_reversal_request(1001, "Hello, Task Messenger!");
-    std::cout << "Request size: " << request.size() << " bytes\n";
+    auto request_payload = create_string_reversal_payload("Hello, Task Messenger!");
+    std::cout << "Request payload size: " << request_payload.size() << " bytes\n";
 
-    auto response = process_skill_request(request);
-    std::cout << "Response size: " << response.size() << " bytes\n";
+    auto response_payload = process_string_reversal(request_payload);
+    std::cout << "Response payload size: " << response_payload.size() << " bytes\n";
 
-    // Parse and verify response using flatbuffers::GetRoot<T>
-    auto skill_response = flatbuffers::GetRoot<SkillResponse>(response.data());
-    assert(skill_response->success());
-    assert(skill_response->task_id() == 1001);
-
-    auto response_payload = skill_response->payload();
-    auto inner_response = flatbuffers::GetRoot<StringReversalResponse>(response_payload->data());
-    std::cout << "Verified response: \"" << inner_response->output()->str() << "\"\n";
-    assert(inner_response->output()->str() == "!regnesseM ksaT ,olleH");
+    // Parse and verify response
+    auto response = flatbuffers::GetRoot<StringReversalResponse>(response_payload.data());
+    std::cout << "Verified response: \"" << response->output()->str() << "\"\n";
+    assert(response->output()->str() == "!regnesseM ksaT ,olleH");
+    assert(response->original_length() == 22);
     std::cout << "String reversal test passed!\n";
 
     // Test 2: Math operation (scalar)

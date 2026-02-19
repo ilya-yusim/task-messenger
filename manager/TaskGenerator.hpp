@@ -83,7 +83,7 @@ public:
     bool is_stopped() const { return stopped_.load(); }
 
 private:
-    std::string generate_task_data(uint32_t task_id, uint32_t task_type);
+    std::string generate_task_data(uint32_t task_id, uint32_t skill_id);
 
     TaskIdGenerator task_id_generator_;
     std::atomic<bool> stopped_{false};

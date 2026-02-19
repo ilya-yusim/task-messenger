@@ -25,7 +25,7 @@
 struct TaskHeader {
     uint32_t task_id;    ///< Unique task identifier shared across request/response
     uint32_t body_size;  ///< Size of following payload (bytes)
-    uint32_t task_type;  ///< Application-defined task type discriminator
+    uint32_t skill_id;   ///< Skill identifier for dispatch
 };
 
 /**
@@ -53,11 +53,11 @@ public:
     /**
      * \brief Construct a TaskMessage taking ownership of the payload string.
      * \param id Task identifier
-     * \param type Application-defined task type
+     * \param skill Skill identifier for dispatch
      * \param task_data Payload string (moved, zero-copy)
      */
-    TaskMessage(uint32_t id, uint32_t type, std::string task_data)
-        : header_{id, static_cast<uint32_t>(task_data.size()), type}
+    TaskMessage(uint32_t id, uint32_t skill, std::string task_data)
+        : header_{id, static_cast<uint32_t>(task_data.size()), skill}
         , payload_(std::move(task_data))
         , created_time_(std::chrono::steady_clock::now()) {
         if (payload_.size() > std::numeric_limits<uint32_t>::max()) {
@@ -68,7 +68,7 @@ public:
     [[nodiscard]] bool is_valid() const noexcept { return header_.task_id != 0; }
 
     [[nodiscard]] uint32_t task_id() const noexcept { return header_.task_id; }
-    [[nodiscard]] uint32_t task_type() const noexcept { return header_.task_type; }
+    [[nodiscard]] uint32_t skill_id() const noexcept { return header_.skill_id; }
     [[nodiscard]] uint32_t body_size() const noexcept { return header_.body_size; }
 
     [[nodiscard]] TaskHeader header_view() const noexcept { return header_; }

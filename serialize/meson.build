@@ -14,5 +14,5 @@ cmake = import('cmake')
 
 subdir('flatbuffers')
 
-# Cap'n Proto can be added here later:
-# subdir('capnproto')
+# Cap'n Proto tests subdir handles its own dependencies via capnproto-wrapper
+subdir('capnproto')

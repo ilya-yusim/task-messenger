@@ -172,7 +172,7 @@ bool ZeroTierSocket::try_connect(const std::string& host, int port, std::error_c
     struct zts_sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = ZTS_AF_INET;
-    addr.sin_port = htons(port);
+    addr.sin_port = htons(static_cast<u_short>(port));
     
     if (zts_inet_pton(ZTS_AF_INET, host.c_str(), &addr.sin_addr) <= 0) {
         error = std::make_error_code(std::errc::invalid_argument);
@@ -344,7 +344,7 @@ bool ZeroTierSocket::bind(const std::string& host, int port) {
     struct zts_sockaddr_in addr;
     memset(&addr, 0, sizeof(addr));
     addr.sin_family = ZTS_AF_INET;
-    addr.sin_port = htons(port);
+    addr.sin_port = htons(static_cast<u_short>(port));
     
     std::string bind_addr = host;
     if (host.empty() || host == "0.0.0.0") {

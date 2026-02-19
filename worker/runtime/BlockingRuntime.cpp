@@ -48,10 +48,10 @@ bool read_task(IBlockingStream& s, TaskHeader& header, std::string& payload, std
 }
 
 /// Single call blocking write for a response; throws on error or short write.
-bool write_response(IBlockingStream& s, uint32_t task_id, uint32_t task_type, std::string_view payload,
+bool write_response(IBlockingStream& s, uint32_t task_id, uint32_t skill_id, std::string_view payload,
                     std::error_code& ec, std::uint64_t& bytes_written) {
     ec.clear();
-    TaskMessage response(task_id, task_type, std::string(payload));
+    TaskMessage response(task_id, skill_id, std::string(payload));
 
     // Scatter-send: send header and payload separately (TCP_NODELAY enabled)
     const auto [header_span, payload_span] = response.wire_bytes();
@@ -207,12 +207,12 @@ bool BlockingRuntime::run_loop(TaskProcessor& processor) {
         }
         bytes_received_.fetch_add(frame_bytes_read, std::memory_order_relaxed);
         
-        auto result = processor.process(header.task_id, header.task_type, payload);
+        auto result = processor.process(header.task_id, header.skill_id, payload);
         ec.clear();
         std::uint64_t frame_bytes_written = 0;
         
         try {
-            if (!write_response(*current_socket, header.task_id, header.task_type, result, ec, frame_bytes_written)) {
+            if (!write_response(*current_socket, header.task_id, header.skill_id, result, ec, frame_bytes_written)) {
                 if (logger_) logger_->error("write_response failed: " + ec.message());
                 return false;
             }

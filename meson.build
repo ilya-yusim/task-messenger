@@ -1,4 +1,4 @@
-project('task-messenger', 'cpp', version: '0.0.1', default_options : ['cpp_std=c++20'])
+project('task-messenger', 'cpp', version: '0.0.1', default_options : ['cpp_std=c++20', 'warning_level=3'])
 
 # =============================================================================
 # Compiler Arguments Configuration
@@ -48,7 +48,8 @@ add_project_arguments('-I' + meson.project_source_root(), language: 'cpp')
 # =============================================================================
 
 # Command-line parsing (CLI11) and JSON parsing (nlohmann_json)
-cli11_sp = subproject('CLI11', required : true)
+# Override CLI11's warning_level to match ours and prevent D9025 warnings
+cli11_sp = subproject('CLI11', required : true, default_options: ['warning_level=3'])
 json_sp = subproject('nlohmann_json', required : true)
 
 # Make CLI11 and nlohmann_json available to all subdirectories

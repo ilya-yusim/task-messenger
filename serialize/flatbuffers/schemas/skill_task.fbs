@@ -1,22 +1,8 @@
-// Skill-based task messaging schema for FlatBuffers
-// This schema defines the serialization format for skill requests and responses.
+// Skill messaging schema for FlatBuffers
+// This schema defines the serialization format for skill-specific payloads.
+// The TaskHeader (in TaskMessage.hpp) provides routing metadata (skill_id, task_id, body_size).
 
 namespace TaskMessenger.Skills;
-
-// Base skill request envelope
-table SkillRequest {
-  skill_id: uint32;
-  task_id: uint32;
-  payload: [ubyte];  // Nested skill-specific data
-}
-
-// Base skill response envelope
-table SkillResponse {
-  skill_id: uint32;
-  task_id: uint32;
-  success: bool;
-  payload: [ubyte];  // Nested skill-specific result
-}
 
 // Example: String reversal skill
 table StringReversalRequest {
@@ -28,7 +14,7 @@ table StringReversalResponse {
   original_length: uint32;
 }
 
-// Example: Math operation skill (scalar)
+// Example: Math operation task (scalar)
 enum MathOperation : byte { Add = 0, Subtract, Multiply, Divide }
 
 table MathOperationRequest {
@@ -42,7 +28,7 @@ table MathOperationResponse {
   overflow: bool;
 }
 
-// Example: Vector math operation skill (element-wise)
+// Example: Vector math operation task (element-wise)
 // Demonstrates direct buffer write access with CreateUninitializedVector
 table VectorMathRequest {
   operand_a: [double];  // First operand vector
@@ -75,5 +61,3 @@ table FusedMultiplyAddMutableRequest {
   operand_b: [double];      // Vector b
   scalar_c: double;         // TRUE scalar - use mutate_scalar_c() to update
 }
-
-root_type SkillRequest;

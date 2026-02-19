@@ -122,22 +122,22 @@ Task<void> Session::run_coroutine() {
                 stats_.timed_tasks += 1;
 
                 // Check response success
-                if (response.task_type == wire_header.task_type) {
+                if (response.skill_id == wire_header.skill_id) {
                     record_task_completed();
                     logger_->debug("Session " + std::to_string(session_id_) +
                                     ": Task " + std::to_string(task.task_id()) + " completed successfully");
                 } else {
                     record_task_failed();
                     logger_->warning("Session " + std::to_string(session_id_) + ": Task " + std::to_string(task.task_id()) +
-                                     " received mismatched type (expected " + std::to_string(wire_header.task_type) +
-                                     ", got " + std::to_string(response.task_type) + ")");
+                                     " received mismatched skill_id (expected " + std::to_string(wire_header.skill_id) +
+                                     ", got " + std::to_string(response.skill_id) + ")");
                     // Requeue the task to shared pool for retry
                     shared_task_pool_->add_task(task);
                     continue;
                 }
 
                 logger_->debug("Session " + std::to_string(session_id_) +
-                                ": Worker response type " + std::to_string(response.task_type) +
+                                ": Worker response skill_id " + std::to_string(response.skill_id) +
                                 ", payload " + std::to_string(response.body_size) + " bytes");
             } catch (const std::system_error& e) {
                 // Requeue task to shared pool if we acquired it but failed during I/O
