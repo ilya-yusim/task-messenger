@@ -3,25 +3,8 @@
 # This builds a test executable demonstrating FlatBuffers usage for
 # skill-based task messaging serialization.
 #
-# FlatBuffers is a CMake project, so we use Meson's CMake subproject support.
-
-# Configure CMake options for FlatBuffers
-flatbuffers_opts = cmake.subproject_options()
-flatbuffers_opts.add_cmake_defines({
-  'FLATBUFFERS_BUILD_TESTS': 'OFF',
-  'FLATBUFFERS_BUILD_FLATC': 'ON',
-  'FLATBUFFERS_BUILD_FLATHASH': 'OFF',
-  'FLATBUFFERS_BUILD_GRPCTEST': 'OFF',
-  'FLATBUFFERS_BUILD_SHAREDLIB': 'OFF',
-})
-
-# Use CMake subproject for FlatBuffers
-flatbuffers_proj = cmake.subproject('flatbuffers', options: flatbuffers_opts)
-
-flatbuffers_dep = flatbuffers_proj.dependency('flatbuffers')
-
-# Get the flatc compiler from the CMake build
-flatc = flatbuffers_proj.target('flatc')
+# FlatBuffers dependency (flatbuffers_dep) and compiler (flatc_prog)
+# are defined in root meson.build using native WrapDB wrap.
 
 # Schema file
 skill_task_fbs = files('schemas/skill_task.fbs')
@@ -33,7 +16,7 @@ flatbuffers_generated = custom_target(
   'flatbuffers_generated',
   input: skill_task_fbs,
   output: 'skill_task_generated.h',
-  command: [flatc, '--cpp', '--gen-mutable', '-o', '@OUTDIR@', '@INPUT@'],
+  command: [flatc_prog, '--cpp', '--gen-mutable', '-o', '@OUTDIR@', '@INPUT@'],
 )
 
 # Build test executable

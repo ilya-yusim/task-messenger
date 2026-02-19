@@ -85,6 +85,12 @@ endif
 shared_sp = subproject('shared', default_options: ['project_version=' + meson.project_version()])
 shared_dep = shared_sp.get_variable('shared_dep')
 
+# FlatBuffers serialization (native Meson wrap from WrapDB)
+# Used by worker/processor/skills and serialize/flatbuffers tests
+flatbuffers_sp = subproject('flatbuffers', default_options: ['warning_level=3'])
+flatbuffers_dep = flatbuffers_sp.get_variable('flatbuffers_dep')
+flatc_prog = find_program('flatc')
+
 # =============================================================================
 # Build Targets
 # =============================================================================

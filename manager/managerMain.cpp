@@ -16,6 +16,7 @@ static std::atomic<bool> shutdown_requested{false};
 
 // Signal handler for graceful shutdown
 static void signal_handler(int signum) {
+    (void)signum; // Suppress unused parameter warning
     shutdown_requested.store(true, std::memory_order_relaxed);
 }
 
