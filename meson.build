@@ -92,6 +92,14 @@ flatbuffers_dep = flatbuffers_sp.get_variable('flatbuffers_dep')
 flatc_prog = find_program('flatc')
 
 # =============================================================================
+# Shared Skills Library
+# =============================================================================
+
+# Skills library provides FlatBuffers-based skill handling for both manager and worker
+# Must be built before manager/worker as they depend on skills_dep
+subdir('skills')
+
+# =============================================================================
 # Build Targets
 # =============================================================================
 

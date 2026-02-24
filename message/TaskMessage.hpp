@@ -1,14 +1,16 @@
 // TaskMessage.hpp - Zero-copy task message with separate header and payload storage
 #pragma once
 
+#include "skills/registry/PayloadBuffer.hpp"
+
 #include <chrono>
 #include <cstdint>
-#include <cstring>
 #include <limits>
+#include <memory>
 #include <span>
-#include <string>
-#include <string_view>
 #include <utility>
+
+using TaskMessenger::Skills::PayloadBufferBase;
 
 /**
  * \defgroup message_module Task Message Module
@@ -33,8 +35,10 @@ struct TaskHeader {
  * \ingroup message_module
  * 
  * Header and payload are stored separately to enable zero-copy construction
- * when the payload string is moved in. The wire_bytes() method returns
+ * when the payload is moved in. The wire_bytes() method returns
  * separate spans for scatter-gather I/O with TCP_NODELAY.
+ * 
+ * Uses PayloadBufferBase for type-erased payload with typed access via downcast.
  */
 class TaskMessage {
 public:
@@ -42,25 +46,28 @@ public:
 
     TaskMessage()
         : header_{}
-        , payload_{}
+        , payload_buffer_{}
         , created_time_(std::chrono::steady_clock::now()) {}
 
-    TaskMessage(const TaskMessage&) = default;
+    // Move-only (unique_ptr is not copyable)
+    TaskMessage(const TaskMessage&) = delete;
+    TaskMessage& operator=(const TaskMessage&) = delete;
     TaskMessage(TaskMessage&&) noexcept = default;
-    TaskMessage& operator=(const TaskMessage&) = default;
     TaskMessage& operator=(TaskMessage&&) noexcept = default;
 
     /**
-     * \brief Construct a TaskMessage taking ownership of the payload string.
+     * \brief Construct a TaskMessage taking ownership of a PayloadBuffer (zero-copy).
      * \param id Task identifier
-     * \param skill Skill identifier for dispatch
-     * \param task_data Payload string (moved, zero-copy)
+     * \param buffer Unique pointer to PayloadBufferBase (moved)
+     * 
+     * Use this constructor with factory.create_payload() or create_payload_buffer()
+     * for zero-copy buffer transfer. The skill_id is extracted from the buffer.
      */
-    TaskMessage(uint32_t id, uint32_t skill, std::string task_data)
-        : header_{id, static_cast<uint32_t>(task_data.size()), skill}
-        , payload_(std::move(task_data))
+    TaskMessage(uint32_t id, std::unique_ptr<PayloadBufferBase> buffer)
+        : header_{id, static_cast<uint32_t>(buffer->size()), buffer->skill_id()}
+        , payload_buffer_(std::move(buffer))
         , created_time_(std::chrono::steady_clock::now()) {
-        if (payload_.size() > std::numeric_limits<uint32_t>::max()) {
+        if (payload_buffer_->size() > std::numeric_limits<uint32_t>::max()) {
             throw std::length_error("TaskMessage payload exceeds protocol limits");
         }
     }
@@ -73,12 +80,12 @@ public:
 
     [[nodiscard]] TaskHeader header_view() const noexcept { return header_; }
 
-    [[nodiscard]] std::string_view payload() const noexcept {
-        return std::string_view(payload_);
+    [[nodiscard]] std::span<const uint8_t> payload() const noexcept {
+        return payload_buffer_ ? payload_buffer_->span() : std::span<const uint8_t>{};
     }
 
     [[nodiscard]] std::span<const std::uint8_t> payload_bytes() const noexcept {
-        return {reinterpret_cast<const std::uint8_t*>(payload_.data()), payload_.size()};
+        return payload();
     }
 
     /**
@@ -90,7 +97,7 @@ public:
     wire_bytes() const noexcept {
         return {
             {reinterpret_cast<const std::uint8_t*>(&header_), kHeaderSize},
-            {reinterpret_cast<const std::uint8_t*>(payload_.data()), payload_.size()}
+            payload()
         };
     }
 
@@ -107,9 +114,48 @@ public:
         return std::chrono::duration_cast<std::chrono::milliseconds>(now - created_time_);
     }
 
+    /**
+     * \brief Check if this message holds a PayloadBuffer.
+     */
+    [[nodiscard]] bool has_payload_buffer() const noexcept {
+        return payload_buffer_ != nullptr;
+    }
+
+    /**
+     * \brief Release ownership of the PayloadBuffer for reuse.
+     * 
+     * After calling this, the message's payload is empty. The returned buffer
+     * can be modified and passed to a new TaskMessage.
+     * 
+     * \return unique_ptr to PayloadBufferBase, or nullptr if not holding one.
+     */
+    [[nodiscard]] std::unique_ptr<PayloadBufferBase> release_payload() {
+        if (payload_buffer_) {
+            header_.body_size = 0;
+            return std::move(payload_buffer_);
+        }
+        return nullptr;
+    }
+
+    /**
+     * \brief Downcast the payload buffer to a typed PayloadBuffer.
+     * 
+     * \tparam PayloadType The specific PayloadBuffer type (e.g., VectorMathPayload)
+     * \return Pointer to the typed payload, or nullptr if type mismatch or no buffer.
+     */
+    template<typename PayloadType>
+    [[nodiscard]] PayloadType* payload_as() noexcept {
+        return dynamic_cast<PayloadType*>(payload_buffer_.get());
+    }
+
+    template<typename PayloadType>
+    [[nodiscard]] const PayloadType* payload_as() const noexcept {
+        return dynamic_cast<const PayloadType*>(payload_buffer_.get());
+    }
+
 private:
     TaskHeader header_;
-    std::string payload_;
+    std::unique_ptr<PayloadBufferBase> payload_buffer_;
     std::chrono::steady_clock::time_point created_time_;
 };
 

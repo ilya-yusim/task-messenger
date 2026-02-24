@@ -14,12 +14,8 @@ if ftxui_dep.found()
   ui_cargs += ['-DHAS_WORKER_UI=1']
 endif
 
-# =============================================================================
-# Skill Processing (FlatBuffers Serialization)
-# =============================================================================
-
-# Skills module provides typed task handlers with efficient serialization
-subdir('processor/skills')
+# Note: Skills library (skills_dep) is now built at root level and shared
+# between manager and worker. No local subdir needed.
 
 # =============================================================================
 # Worker Executable

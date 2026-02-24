@@ -31,11 +31,12 @@
             "name": "Worker",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/builddir-worker/worker/worker.exe",
+            "program": "${workspaceFolder}/builddir/worker/tm-worker.exe",
             "args": ["-c", "config/config-worker.json","--mode","blocking"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
-            "environment": []
+            "environment": [],
+            "console": "externalTerminal"
         },
         {
             "name": "Worker (UI)",

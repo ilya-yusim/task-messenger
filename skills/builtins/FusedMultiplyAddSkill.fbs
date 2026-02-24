@@ -1,0 +1,33 @@
+// Skills 4 & 5: Fused Multiply-Add variants
+// Computes: result[i] = a[i] + c * b[i]
+// Location: skills/builtins/FusedMultiplyAddSkill.fbs
+
+namespace TaskMessenger.Skills;
+
+// =============================================================================
+// Skill 4: Fused Multiply-Add (scalar-as-vector pattern)
+// =============================================================================
+
+// For buffer template pattern, scalar c is stored as [double] (single element)
+// so we can get direct pointer access just like the vectors.
+table FusedMultiplyAddRequest {
+  operand_a: [double];      // Vector a
+  operand_b: [double];      // Vector b
+  scalar_c: [double];       // Scalar c stored as single-element vector for direct access
+}
+
+table FusedMultiplyAddResponse {
+  result: [double];         // result[i] = a[i] + c * b[i]
+}
+
+// =============================================================================
+// Skill 5: Fused Multiply-Add with TRUE scalar (--gen-mutable required)
+// =============================================================================
+
+// This version uses a real scalar field instead of a single-element vector.
+// Use mutate_scalar_c() to update the value without rebuilding.
+table FusedMultiplyAddMutableRequest {
+  operand_a: [double];      // Vector a
+  operand_b: [double];      // Vector b
+  scalar_c: double;         // TRUE scalar - use mutate_scalar_c() to update
+}

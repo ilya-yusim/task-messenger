@@ -13,8 +13,6 @@
 #include <chrono>
 #include <utility>
 
-using transport::CoroIoContext;
-
 AsyncRuntime::AsyncRuntime(const std::string& host, int port, std::shared_ptr<Logger> logger)
     : host_(host), port_(port), logger_(std::move(logger)) {}
 
@@ -157,7 +155,7 @@ Task<bool> AsyncRuntime::run_loop_coro(TaskProcessor& processor) {
         }
 
         // Read body
-        std::string payload;
+        std::vector<uint8_t> payload;
         payload.clear();
         if (header.body_size > 0) {
             if (payload.capacity() < header.body_size) {
@@ -176,7 +174,12 @@ Task<bool> AsyncRuntime::run_loop_coro(TaskProcessor& processor) {
         // Process task
         auto result = processor.process(header.task_id, header.skill_id, payload);
         
-        TaskMessage response(header.task_id, header.skill_id, std::move(result));
+        if (!result) {
+            if (logger_) logger_->error("Task processing failed for task_id=" + std::to_string(header.task_id));
+            co_return false;
+        }
+
+        auto response = TaskMessage(header.task_id, std::move(result));
 
         try {
             // Scatter-send: send header and payload separately (TCP_NODELAY enabled)

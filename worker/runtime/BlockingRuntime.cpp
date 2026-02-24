@@ -7,16 +7,18 @@
 #include "transport/socket/IBlockingStream.hpp"
 #include "transport/socket/SocketFactory.hpp"
 #include "message/TaskMessage.hpp"
+#include "skills/registry/PayloadBuffer.hpp"
 #include "logger.hpp"
 
 #include <cstdint>
-#include <string>
-#include <string_view>
+#include <memory>
+#include <span>
+#include <vector>
 #include <system_error>
 
 namespace {
 
-bool read_task(IBlockingStream& s, TaskHeader& header, std::string& payload, std::error_code& ec,
+bool read_task(IBlockingStream& s, TaskHeader& header, std::vector<uint8_t>& payload, std::error_code& ec,
                std::uint64_t& bytes_read,
                size_t max_frame_size = 16 * 1024 * 1024) {
     payload.clear();
@@ -48,10 +50,11 @@ bool read_task(IBlockingStream& s, TaskHeader& header, std::string& payload, std
 }
 
 /// Single call blocking write for a response; throws on error or short write.
-bool write_response(IBlockingStream& s, uint32_t task_id, uint32_t skill_id, std::string_view payload,
+bool write_response(IBlockingStream& s, uint32_t task_id, 
+                    std::unique_ptr<TaskMessenger::Skills::PayloadBufferBase> payload,
                     std::error_code& ec, std::uint64_t& bytes_written) {
     ec.clear();
-    TaskMessage response(task_id, skill_id, std::string(payload));
+    auto response = TaskMessage(task_id, std::move(payload));
 
     // Scatter-send: send header and payload separately (TCP_NODELAY enabled)
     const auto [header_span, payload_span] = response.wire_bytes();
@@ -192,7 +195,7 @@ bool BlockingRuntime::run_loop(TaskProcessor& processor) {
         }
         
         TaskHeader header{};
-        std::string payload;
+        std::vector<uint8_t> payload;
         std::error_code ec;
         std::uint64_t frame_bytes_read = 0;
         
@@ -208,11 +211,17 @@ bool BlockingRuntime::run_loop(TaskProcessor& processor) {
         bytes_received_.fetch_add(frame_bytes_read, std::memory_order_relaxed);
         
         auto result = processor.process(header.task_id, header.skill_id, payload);
+        
+        if (!result) {
+            if (logger_) logger_->error("Task processing failed for task_id=" + std::to_string(header.task_id));
+            return false;
+        }
+        
         ec.clear();
         std::uint64_t frame_bytes_written = 0;
         
         try {
-            if (!write_response(*current_socket, header.task_id, header.skill_id, result, ec, frame_bytes_written)) {
+            if (!write_response(*current_socket, header.task_id, std::move(result), ec, frame_bytes_written)) {
                 if (logger_) logger_->error("write_response failed: " + ec.message());
                 return false;
             }

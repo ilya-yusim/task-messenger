@@ -1,0 +1,17 @@
+// Skill 2: Scalar Math Operation
+// Location: skills/builtins/MathOperationSkill.fbs
+
+include "Common.fbs";
+
+namespace TaskMessenger.Skills;
+
+table MathOperationRequest {
+  operand_a: double;
+  operand_b: double;
+  operation: MathOperation;
+}
+
+table MathOperationResponse {
+  result: double;
+  overflow: bool;
+}

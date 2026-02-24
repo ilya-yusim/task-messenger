@@ -1,0 +1,17 @@
+// Skill 3: Vector Math Operation (element-wise)
+// Demonstrates direct buffer write access with CreateUninitializedVector
+// Location: skills/builtins/VectorMathSkill.fbs
+
+include "Common.fbs";
+
+namespace TaskMessenger.Skills;
+
+table VectorMathRequest {
+  operand_a: [double];  // First operand vector
+  operand_b: [double];  // Second operand vector
+  operation: MathOperation;
+}
+
+table VectorMathResponse {
+  result: [double];  // Result vector (same size as operands)
+}

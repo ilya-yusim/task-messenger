@@ -9,51 +9,16 @@
 			"problemMatcher": []
 		},
 		{
-			"label": "Meson Setup manager",
-			"type": "shell",
-			"command": "meson setup builddir --wipe --buildtype=${input:mesonBuildType}",
-			"group": "build",
-			"problemMatcher": []
-		},
-		{
-			"label": "Meson Setup worker",
-			"type": "shell",
-			"command": "meson setup builddir --wipe --buildtype=${input:mesonBuildType}",
-			"group": "build",
-			"problemMatcher": []
-		},
-		{
-			"label": "Meson Setup manager with Native File",
-			"type": "shell",
-			"command": "meson setup builddir --wipe --buildtype=${input:mesonBuildType} --native-file %XDG_DATA_HOME%/meson/native/meson.ini",
-			"group": "build",
-			"problemMatcher": []
-		},
-		{
-			"label": "Meson Setup worker with Native File",
-			"type": "shell",
-			"command": "meson setup builddir --wipe --buildtype=${input:mesonBuildType} --native-file %XDG_DATA_HOME%/meson/native/meson.ini",
-			"group": "build",
-			"problemMatcher": []
-		},
-		{
-			"label": "Meson Reconfigure Manager",
+			"label": "Meson Reconfigure with Native File",
 			"type": "shell",
 			"command": "meson setup --reconfigure builddir --native-file %XDG_DATA_HOME%/meson/native/meson.ini",
 			"group": "build",
 			"problemMatcher": []
 		},
 		{
-			"label": "Meson Build Manager",
+			"label": "Meson Build",
 			"type": "shell",
 			"command": "meson compile -C builddir",
-			"group": "build",
-			"problemMatcher": []
-		},
-		{
-			"label": "Meson Reconfigure Worker",
-			"type": "shell",
-			"command": "meson setup --reconfigure builddir --native-file %XDG_DATA_HOME%/meson/native/meson.ini",
 			"group": "build",
 			"problemMatcher": []
 		},
@@ -65,14 +30,7 @@
 			"problemMatcher": []
 		},
 		{
-			"label": "Meson Install Manager",
-			"type": "shell",
-			"command": "meson install -C builddir",
-			"group": "build",
-			"problemMatcher": []
-		},
-		{
-			"label": "Meson Install Worker",
+			"label": "Meson Install",
 			"type": "shell",
 			"command": "meson install -C builddir",
 			"group": "build",
@@ -131,12 +89,6 @@
 				"panel": "new"
 			},
 			"isBackground": true
-		},
-		{
-			"label": "Meson Build Worker",
-			"type": "shell",
-			"command": "meson compile -C builddir",
-			"group": "build"
 		},
 		{
 			"label": "Run Blocking Worker (Linux)",

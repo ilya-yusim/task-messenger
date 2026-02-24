@@ -102,7 +102,7 @@ Task<void> Session::run_coroutine() {
                                      std::to_string(task.task_id()) + ", Got: " + std::to_string(response.task_id));
                     record_task_failed();
                     // Requeue the task to shared pool since we didn't get a proper response
-                    shared_task_pool_->add_task(task);
+                    shared_task_pool_->add_task(std::move(task));
                     continue;
                 }
 
@@ -132,7 +132,7 @@ Task<void> Session::run_coroutine() {
                                      " received mismatched skill_id (expected " + std::to_string(wire_header.skill_id) +
                                      ", got " + std::to_string(response.skill_id) + ")");
                     // Requeue the task to shared pool for retry
-                    shared_task_pool_->add_task(task);
+                    shared_task_pool_->add_task(std::move(task));
                     continue;
                 }
 
@@ -144,7 +144,7 @@ Task<void> Session::run_coroutine() {
                 if (task_acquired && task.is_valid()) {
                     logger_->warning("Session " + std::to_string(session_id_) + ": I/O error for task " +
                                      std::to_string(task.task_id()) + ", requeuing: " + std::string(e.what()));
-                    shared_task_pool_->add_task(task);
+                    shared_task_pool_->add_task(std::move(task));
                     record_task_failed();
                 }
 
@@ -167,7 +167,7 @@ Task<void> Session::run_coroutine() {
                 if (task_acquired && task.is_valid()) {
                     logger_->warning("Session " + std::to_string(session_id_) + ": Exception for task " +
                                      std::to_string(task.task_id()) + ", requeuing: " + std::string(e.what()));
-                    shared_task_pool_->add_task(task);
+                    shared_task_pool_->add_task(std::move(task));
                     record_task_failed();
                 }
                 logger_->error("Session " + std::to_string(session_id_) + ": Exception processing task: " + std::string(e.what()));

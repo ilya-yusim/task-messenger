@@ -3,6 +3,8 @@
 #include "TaskGenerator.hpp"
 #include "options/Options.hpp"
 #include "ManagerOptions.hpp"
+#include "skills/registry/SkillRegistry.hpp"
+
 
 #include <atomic>
 #include <csignal>
@@ -111,6 +113,10 @@ int main(int argc, char* argv[]) {
     stdout_sink->set_level(LogLevel::Info); // Set to Info for general output
     logger->add_sink(stdout_sink);
 
+    // Log registered skills (verifies static initialization worked)
+    auto& skill_registry = TaskMessenger::Skills::SkillRegistry::instance();
+    logger->info("Registered skills: " + std::to_string(skill_registry.skill_count()));
+     
     try {
 
         // --- Stage 2: Parse CLI/JSON options ---

@@ -12,5 +12,3 @@
 # FlatBuffers tests (flatbuffers_dep and flatc_prog defined in root meson.build)
 subdir('flatbuffers')
 
-# Cap'n Proto tests subdir handles its own dependencies via capnproto-wrapper
-subdir('capnproto')

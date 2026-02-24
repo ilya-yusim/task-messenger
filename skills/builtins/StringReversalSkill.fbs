@@ -1,0 +1,13 @@
+// Skill 1: String Reversal
+// Location: skills/builtins/StringReversalSkill.fbs
+
+namespace TaskMessenger.Skills;
+
+table StringReversalRequest {
+  input: string;
+}
+
+table StringReversalResponse {
+  output: string;
+  original_length: uint32;
+}

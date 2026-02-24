@@ -1,15 +1,17 @@
 /**
- * @file worker/processor/skills/ISkillHandler.hpp
+ * @file skills/handlers/ISkillHandler.hpp
  * @brief Interface for skill handlers using FlatBuffers serialization.
  *
  * Skills are typed task categories with request/response data structures.
- * Each skill handler processes a specific task_type and returns serialized responses.
+ * Each skill handler processes a specific skill_id and returns serialized responses.
  */
 #pragma once
 
+#include "skills/registry/PayloadBuffer.hpp"
+
 #include <cstdint>
+#include <memory>
 #include <span>
-#include <vector>
 
 namespace TaskMessenger::Skills {
 
@@ -25,10 +27,10 @@ public:
     virtual ~ISkillHandler() = default;
 
     /**
-     * @brief Get the unique task type this handler processes.
-     * @return The task_type value this handler is registered for.
+     * @brief Get the unique skill ID this handler processes.
+     * @return The skill_id value this handler is registered for.
      */
-    [[nodiscard]] virtual uint32_t task_type() const noexcept = 0;
+    [[nodiscard]] virtual uint32_t skill_id() const noexcept = 0;
 
     /**
      * @brief Get a human-readable name for this skill.
@@ -41,13 +43,11 @@ public:
      *
      * @param payload The inner payload bytes from the TaskRequest.
      *                This is the skill-specific FlatBuffer data (e.g., StringReversalRequest).
-     * @param response_out Output vector to receive the serialized response payload.
-     *                     This should contain skill-specific response data (e.g., StringReversalResponse).
-     * @return true if processing succeeded, false on error.
+     * @return Unique pointer to response payload, or nullptr on error.
+     *         The response contains skill-specific data (e.g., StringReversalResponse).
      */
-    [[nodiscard]] virtual bool process(
-        std::span<const uint8_t> payload,
-        std::vector<uint8_t>& response_out
+    [[nodiscard]] virtual std::unique_ptr<PayloadBufferBase> process(
+        std::span<const uint8_t> payload
     ) = 0;
 };
 

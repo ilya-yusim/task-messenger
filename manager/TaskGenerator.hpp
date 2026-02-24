@@ -6,11 +6,18 @@
 #pragma once
 
 #include "message/TaskMessagePool.hpp"
+#include "skills/builtins/VectorMathPayload.hpp"
+#include "skills/builtins/FusedMultiplyAddPayload.hpp"
+#include "skills/builtins/MathOperationPayload.hpp"
+#include "skills/builtins/StringReversalPayload.hpp"
+#include "skills/registry/PayloadBuffer.hpp"
 
 #include <atomic>
 #include <memory>
 #include <string>
 #include <vector>
+
+using namespace TaskMessenger::Skills;
 
 // TaskIdGenerator - simple atomic counter for unique task IDs
 /**
@@ -67,6 +74,11 @@ public:
 /**
  * \ingroup task_messenger_manager
  * \brief Mock generator that demonstrates how applications push tasks into Task Messenger.
+ * 
+ * Supports two modes:
+ * - One-off: Uses create_payload() for each task (default)
+ * - Typed buffer: Uses create_payload_buffer() for typed data access 
+ *   (call init_payload_templates() first)
  */
 class DefaultTaskGenerator : public ITaskGenerator {
 public:
@@ -82,9 +94,36 @@ public:
 
     bool is_stopped() const { return stopped_.load(); }
 
+    /**
+     * \brief Enable typed buffer mode for the specified vector size.
+     * 
+     * After calling this, tasks will be generated using create_payload_buffer()
+     * for typed data access and zero-copy buffer ownership transfer.
+     * 
+     * @param vector_size Size for vector operands in VectorMath and FusedMultiplyAdd.
+     */
+    void init_payload_templates(size_t vector_size);
+
+    /**
+     * \brief Check if typed buffer mode is enabled.
+     */
+    bool templates_initialized() const { return templates_initialized_; }
+
 private:
-    std::string generate_task_data(uint32_t task_id, uint32_t skill_id);
+    /**
+     * \brief Generate task payload using simple one-off creation.
+     */
+    std::unique_ptr<PayloadBufferBase> generate_task_data_oneoff(uint32_t skill_id);
+
+    /**
+     * \brief Generate task payload using typed buffer creation.
+     */
+    std::unique_ptr<PayloadBufferBase> generate_task_data_typed(uint32_t skill_id);
 
     TaskIdGenerator task_id_generator_;
     std::atomic<bool> stopped_{false};
+
+    // Template state
+    bool templates_initialized_ = false;
+    size_t template_vector_size_ = 0;
 };

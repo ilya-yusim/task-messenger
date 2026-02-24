@@ -1,0 +1,7 @@
+// Common types shared across skill schemas
+// Location: skills/builtins/Common.fbs
+
+namespace TaskMessenger.Skills;
+
+// Math operation types used by scalar and vector math skills
+enum MathOperation : byte { Add = 0, Subtract, Multiply, Divide }
