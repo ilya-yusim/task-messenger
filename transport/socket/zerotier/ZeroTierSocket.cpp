@@ -272,14 +272,23 @@ bool ZeroTierSocket::try_read(void* buffer, size_t size, size_t& bytes_read, std
         return true;
     }
     
+    // Non-blocking read: attempt to read available data
+    // Returns true only when operation completes (full buffer or error/disconnect)
+    // Returns false with bytes_read > 0 for partial progress (caller must retry with adjusted buffer)
     ssize_t result = zts_recv(socket_fd_, buffer, size, 0);
 
     if (result > 0) {
         bytes_read = static_cast<size_t>(result);
+        if (bytes_read == size) {
+            // Full buffer read successfully
+            error = std::error_code{};
+            return true;
+        }
+        // Partial read - caller must continue with adjusted buffer
         error = std::error_code{};
-        return true;
+        return false;
     } else if (result == 0) {
-        // Zero bytes: check zts_errno for a more specific cause if provided
+        // Connection closed
         bytes_read = 0;
         int zts_err = zts_errno;
         if (zts_err != 0) {
@@ -292,7 +301,8 @@ bool ZeroTierSocket::try_read(void* buffer, size_t size, size_t& bytes_read, std
         bytes_read = 0;
         int zts_err = zts_errno;
         if (is_would_block_error(zts_err)) {
-            return false; // Would block
+            // Would block - no data available yet
+            return false;
         } else {
             error = translate_error(zts_err);
             return true;
@@ -307,12 +317,25 @@ bool ZeroTierSocket::try_write(const void* buffer, size_t size, size_t& bytes_wr
         return true;
     }
     
+    // Non-blocking write: attempt to write data
+    // Returns true only when operation completes (full buffer or error)
+    // Returns false with bytes_written > 0 for partial progress (caller must retry with adjusted buffer)
     ssize_t result = zts_send(socket_fd_, buffer, size, 0);
     
-    if (result >= 0) {
+    if (result > 0) {
         bytes_written = static_cast<size_t>(result);
+        if (bytes_written == size) {
+            // Full buffer written successfully
+            error = std::error_code{};
+            return true;
+        }
+        // Partial write - caller must continue with adjusted buffer
         error = std::error_code{};
-        return true;
+        return false;
+    } else if (result == 0) {
+        // Zero bytes written (unusual but possible)
+        bytes_written = 0;
+        return false;
     } else {
         bytes_written = 0;
         int zts_err = zts_errno;
@@ -558,13 +581,20 @@ void ZeroTierSocket::connect(const std::string& host, int port, std::error_code&
 }
 
 void ZeroTierSocket::read(void* buffer, size_t size, size_t& bytes_read, std::error_code& error) {
-    // Loop to handle SO_RCVTIMEO timeouts - retry if socket still valid
-    // This allows close() from another thread to be detected
-    while (true) {
+    // Loop to handle SO_RCVTIMEO timeouts and partial reads.
+    // Even in blocking mode, we set a 1-second SO_RCVTIMEO (see setup_socket()) to allow
+    // periodic checking for shutdown requests, since lwIP on Windows doesn't wake blocked
+    // operations when close() is called. When the timeout fires, lwIP may return -1 with
+    // ETIMEDOUT or EWOULDBLOCK depending on platform. zts_recv may also return fewer bytes
+    // than requested (partial read), so we must loop until the full buffer is received.
+    size_t total_read = 0;
+    char* buf_ptr = static_cast<char*>(buffer);
+    
+    while (total_read < size) {
         // Check for shutdown request
         if (shutdown_requested_.load(std::memory_order_relaxed)) {
             error = std::make_error_code(std::errc::bad_file_descriptor);
-            bytes_read = 0;
+            bytes_read = total_read;
             return;
         }
         
@@ -576,18 +606,18 @@ void ZeroTierSocket::read(void* buffer, size_t size, size_t& bytes_read, std::er
         
         if (fd < 0) {
             error = std::make_error_code(std::errc::bad_file_descriptor);
-            bytes_read = 0;
+            bytes_read = total_read;
             return;
         }
 
-        ssize_t result = zts_recv(fd, buffer, size, 0);
+        ssize_t result = zts_recv(fd, buf_ptr + total_read, size - total_read, 0);
 
         if (result > 0) {
-            bytes_read = static_cast<size_t>(result);
-            error = std::error_code{};
-            return;
+            total_read += static_cast<size_t>(result);
+            // Continue loop to read remaining bytes if needed
         } else if (result == 0) {
-            bytes_read = 0;
+            // Connection closed
+            bytes_read = total_read;
             int zts_err = zts_errno;
             if (zts_err != 0) {
                 error = translate_error(zts_err);
@@ -612,34 +642,92 @@ void ZeroTierSocket::read(void* buffer, size_t size, size_t& bytes_read, std::er
                 }
                 // Socket was closed, return bad_file_descriptor
                 error = std::make_error_code(std::errc::bad_file_descriptor);
-                bytes_read = 0;
+                bytes_read = total_read;
                 return;
             }
             
             // Other errors are fatal
             error = translate_error(zts_err);
-            bytes_read = 0;
+            bytes_read = total_read;
             return;
         }
     }
+    
+    // Full buffer read successfully
+    bytes_read = total_read;
+    error = std::error_code{};
 }
 
 void ZeroTierSocket::write(const void* buffer, size_t size, size_t& bytes_written, std::error_code& error) {
-    if (socket_fd_ < 0) {
-        error = std::make_error_code(std::errc::bad_file_descriptor);
-        bytes_written = 0;
-        return;
-    }
-
-    ssize_t result = zts_send(socket_fd_, buffer, size, 0);
+    // Loop to handle SO_SNDTIMEO timeouts and partial writes.
+    // Even in blocking mode, we set a 1-second SO_SNDTIMEO (see setup_socket()) to allow
+    // periodic checking for shutdown requests, since lwIP on Windows doesn't wake blocked
+    // operations when close() is called. When the timeout fires, lwIP may return -1 with
+    // ETIMEDOUT or EWOULDBLOCK depending on platform. zts_send may also return fewer bytes
+    // than requested (partial write due to TCP send buffer limits), so we must loop until
+    // the full buffer is written.
+    size_t total_written = 0;
+    const char* buf_ptr = static_cast<const char*>(buffer);
     
-    if (result >= 0) {
-        bytes_written = static_cast<size_t>(result);
-        error = std::error_code{};
-    } else {
-        bytes_written = 0;
-        error = translate_error(zts_errno);
+    while (total_written < size) {
+        // Check for shutdown request
+        if (shutdown_requested_.load(std::memory_order_relaxed)) {
+            error = std::make_error_code(std::errc::bad_file_descriptor);
+            bytes_written = total_written;
+            return;
+        }
+        
+        int fd;
+        {
+            std::lock_guard<std::mutex> lock(socket_mtx_);
+            fd = socket_fd_;
+        }
+        
+        if (fd < 0) {
+            error = std::make_error_code(std::errc::bad_file_descriptor);
+            bytes_written = total_written;
+            return;
+        }
+
+        ssize_t result = zts_send(fd, buf_ptr + total_written, size - total_written, 0);
+
+        if (result > 0) {
+            total_written += static_cast<size_t>(result);
+            // Continue loop to write remaining bytes if needed
+        } else if (result == 0) {
+            // Zero bytes written - unusual, treat as would-block and retry
+            continue;
+        } else {
+            // Error occurred
+            int zts_err = zts_errno;
+            
+            // Normalize error code to handle platform differences
+            int norm = ZeroTierErrnoCompat::normalize_errno(zts_err);
+            
+            // If timeout/wouldblock or shutdown, check if socket still valid and retry
+            // ESHUTDOWN can occur if close() was called while send was blocked
+            if (norm == ETIMEDOUT || norm == ESHUTDOWN || norm == EWOULDBLOCK) {
+                // Re-check socket validity under lock before retrying
+                std::lock_guard<std::mutex> lock(socket_mtx_);
+                if (socket_fd_ >= 0) {
+                    continue; // Socket still valid, retry send
+                }
+                // Socket was closed, return bad_file_descriptor
+                error = std::make_error_code(std::errc::bad_file_descriptor);
+                bytes_written = total_written;
+                return;
+            }
+            
+            // Other errors are fatal
+            error = translate_error(zts_err);
+            bytes_written = total_written;
+            return;
+        }
     }
+    
+    // Full buffer written successfully
+    bytes_written = total_written;
+    error = std::error_code{};
 }
 
 int ZeroTierSocket::get_handle() const {

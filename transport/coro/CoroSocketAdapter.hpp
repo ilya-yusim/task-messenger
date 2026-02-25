@@ -237,18 +237,64 @@ public:
                     last_error_ = std::make_error_code(std::errc::bad_file_descriptor);
                     return true;
                 }
-                bool completed = socket_->try_read(read_buffer_, read_size_, last_bytes_transferred_, last_error_);
-                if (completed) current_operation_ = OperationType::NONE;
-                return completed;
+                // Read into buffer at current offset, for remaining size
+                char* buf_ptr = static_cast<char*>(read_buffer_) + read_offset_;
+                size_t remaining = read_size_ - read_offset_;
+                size_t bytes_this_call = 0;
+                socket_->try_read(buf_ptr, remaining, bytes_this_call, last_error_);
+                read_offset_ += bytes_this_call;
+                
+                // Check if we have an error
+                if (last_error_) {
+                    // Error occurred - report total bytes read so far
+                    last_bytes_transferred_ = read_offset_;
+                    read_offset_ = 0; // Reset for next operation
+                    current_operation_ = OperationType::NONE;
+                    return true;
+                }
+                
+                // Check if full buffer was read
+                if (read_offset_ >= read_size_) {
+                    last_bytes_transferred_ = read_offset_;
+                    read_offset_ = 0; // Reset for next operation
+                    current_operation_ = OperationType::NONE;
+                    return true;
+                }
+                
+                // Partial read or would-block - not complete yet
+                return false;
             }
             case OperationType::WRITE: {
                 if (!socket_) {
                     last_error_ = std::make_error_code(std::errc::bad_file_descriptor);
                     return true;
                 }
-                bool completed = socket_->try_write(write_buffer_, write_size_, last_bytes_transferred_, last_error_);
-                if (completed) current_operation_ = OperationType::NONE;
-                return completed;
+                // Write from buffer at current offset, for remaining size
+                const char* buf_ptr = static_cast<const char*>(write_buffer_) + write_offset_;
+                size_t remaining = write_size_ - write_offset_;
+                size_t bytes_this_call = 0;
+                socket_->try_write(buf_ptr, remaining, bytes_this_call, last_error_);
+                write_offset_ += bytes_this_call;
+                
+                // Check if we have an error
+                if (last_error_) {
+                    // Error occurred - report total bytes written so far
+                    last_bytes_transferred_ = write_offset_;
+                    write_offset_ = 0; // Reset for next operation
+                    current_operation_ = OperationType::NONE;
+                    return true;
+                }
+                
+                // Check if full buffer was written
+                if (write_offset_ >= write_size_) {
+                    last_bytes_transferred_ = write_offset_;
+                    write_offset_ = 0; // Reset for next operation
+                    current_operation_ = OperationType::NONE;
+                    return true;
+                }
+                
+                // Partial write or would-block - not complete yet
+                return false;
             }
             case OperationType::NONE:
             default:
@@ -256,9 +302,9 @@ public:
         }
     }
     /** \brief Prepare a read operation using the provided buffer reference. */
-    void prepare_read_operation(void* buffer, size_t size) { read_buffer_ = buffer; read_size_ = size; }
+    void prepare_read_operation(void* buffer, size_t size) { read_buffer_ = buffer; read_size_ = size; read_offset_ = 0; }
     /** \brief Prepare a write operation using the provided buffer reference. */
-    void prepare_write_operation(const void* buffer, size_t size) { write_buffer_ = buffer; write_size_ = size; }
+    void prepare_write_operation(const void* buffer, size_t size) { write_buffer_ = buffer; write_size_ = size; write_offset_ = 0; }
 
 private:
     /** \brief Underlying asynchronous stream implementation (transport-specific). */
@@ -278,8 +324,10 @@ private:
     /** \brief Buffers describing the currently prepared read/write operation. */
     void* read_buffer_ = nullptr;
     size_t read_size_ = 0;
+    size_t read_offset_ = 0;  ///< Tracks partial read progress across retries
     const void* write_buffer_ = nullptr;
     size_t write_size_ = 0;
+    size_t write_offset_ = 0;  ///< Tracks partial write progress across retries
 };
 
 } // namespace transport

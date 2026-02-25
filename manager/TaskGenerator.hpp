@@ -75,10 +75,8 @@ public:
  * \ingroup task_messenger_manager
  * \brief Mock generator that demonstrates how applications push tasks into Task Messenger.
  * 
- * Supports two modes:
- * - One-off: Uses create_payload() for each task (default)
- * - Typed buffer: Uses create_payload_buffer() for typed data access 
- *   (call init_payload_templates() first)
+ * Uses typed buffer creation (create_payload_buffer()) for zero-copy buffer
+ * ownership transfer and direct data access.
  */
 class DefaultTaskGenerator : public ITaskGenerator {
 public:
@@ -95,26 +93,17 @@ public:
     bool is_stopped() const { return stopped_.load(); }
 
     /**
-     * \brief Enable typed buffer mode for the specified vector size.
-     * 
-     * After calling this, tasks will be generated using create_payload_buffer()
-     * for typed data access and zero-copy buffer ownership transfer.
-     * 
-     * @param vector_size Size for vector operands in VectorMath and FusedMultiplyAdd.
+     * \brief Set vector size for VectorMath and FusedMultiplyAdd payloads.
+     * @param size Number of elements in vector operands (default: 1024).
      */
-    void init_payload_templates(size_t vector_size);
+    void set_vector_size(size_t size) { vector_size_ = size; }
 
     /**
-     * \brief Check if typed buffer mode is enabled.
+     * \brief Get current vector size setting.
      */
-    bool templates_initialized() const { return templates_initialized_; }
+    size_t vector_size() const { return vector_size_; }
 
 private:
-    /**
-     * \brief Generate task payload using simple one-off creation.
-     */
-    std::unique_ptr<PayloadBufferBase> generate_task_data_oneoff(uint32_t skill_id);
-
     /**
      * \brief Generate task payload using typed buffer creation.
      */
@@ -122,8 +111,5 @@ private:
 
     TaskIdGenerator task_id_generator_;
     std::atomic<bool> stopped_{false};
-
-    // Template state
-    bool templates_initialized_ = false;
-    size_t template_vector_size_ = 0;
+    size_t vector_size_ = 1024;  ///< Default vector size for vector operations
 };

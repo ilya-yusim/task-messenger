@@ -312,7 +312,18 @@ public:
      * @return FusedMultiplyAddResponseBuffer with ownership and typed pointer.
      */
     [[nodiscard]] static FusedMultiplyAddResponseBuffer create_response_buffer(size_t vector_size) {
-        return FusedMultiplyAddPayloadFactory::create_response_buffer(vector_size);
+        flatbuffers::FlatBufferBuilder builder(64 + vector_size * sizeof(double));
+        
+        double* result_ptr = nullptr;
+        auto result_offset = builder.CreateUninitializedVector(vector_size, &result_ptr);
+        auto response = CreateFusedMultiplyAddResponse(builder, result_offset);
+        builder.Finish(response);
+        
+        FusedMultiplyAddResponsePtrs ptrs{
+            .result = std::span<double>(result_ptr, vector_size)
+        };
+        
+        return FusedMultiplyAddResponseBuffer(builder.Release(), ptrs, SkillIds::FusedMultiplyAddMutable);
     }
 
     /**
