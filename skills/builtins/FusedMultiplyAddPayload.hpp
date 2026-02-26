@@ -120,13 +120,22 @@ public:
         auto request = CreateFusedMultiplyAddRequest(builder, vec_a, vec_b, scalar_c);
         builder.Finish(request);
         
+        auto detached = builder.Release();
+        
+        // Extract pointers from the FINISHED buffer by parsing it
+        // This is the only safe way since FlatBuffers builds backwards
+        auto* req = flatbuffers::GetMutableRoot<FusedMultiplyAddRequest>(detached.data());
+        double* final_ptr_a = const_cast<double*>(req->operand_a()->data());
+        double* final_ptr_b = const_cast<double*>(req->operand_b()->data());
+        double* final_ptr_c = const_cast<double*>(req->scalar_c()->data());
+        
         FusedMultiplyAddBufferPtrs ptrs{
-            .a = std::span<double>(ptr_a, vector_size),
-            .b = std::span<double>(ptr_b, vector_size),
-            .c = ptr_c
+            .a = std::span<double>(final_ptr_a, vector_size),
+            .b = std::span<double>(final_ptr_b, vector_size),
+            .c = final_ptr_c
         };
         
-        return FusedMultiplyAddPayload(builder.Release(), ptrs, SkillIds::FusedMultiplyAdd);
+        return FusedMultiplyAddPayload(std::move(detached), ptrs, SkillIds::FusedMultiplyAdd);
     }
 
     /**
@@ -171,11 +180,17 @@ public:
         auto response = CreateFusedMultiplyAddResponse(builder, result_offset);
         builder.Finish(response);
         
+        auto detached = builder.Release();
+        
+        // Extract pointer from the FINISHED buffer by parsing it
+        auto* resp = flatbuffers::GetMutableRoot<FusedMultiplyAddResponse>(detached.data());
+        double* final_result_ptr = const_cast<double*>(resp->result()->data());
+        
         FusedMultiplyAddResponsePtrs ptrs{
-            .result = std::span<double>(result_ptr, vector_size)
+            .result = std::span<double>(final_result_ptr, vector_size)
         };
         
-        return FusedMultiplyAddResponseBuffer(builder.Release(), ptrs, SkillIds::FusedMultiplyAdd);
+        return FusedMultiplyAddResponseBuffer(std::move(detached), ptrs, SkillIds::FusedMultiplyAdd);
     }
 
     /**
@@ -257,13 +272,20 @@ public:
         auto request = CreateFusedMultiplyAddMutableRequest(builder, vec_a, vec_b, c);
         builder.Finish(request);
         
+        auto detached = builder.Release();
+        
+        // Extract pointers from the FINISHED buffer by parsing it
+        auto* req = flatbuffers::GetMutableRoot<FusedMultiplyAddMutableRequest>(detached.data());
+        double* final_ptr_a = const_cast<double*>(req->operand_a()->data());
+        double* final_ptr_b = const_cast<double*>(req->operand_b()->data());
+        
         FusedMultiplyAddBufferPtrs ptrs{
-            .a = std::span<double>(ptr_a, vector_size),
-            .b = std::span<double>(ptr_b, vector_size),
+            .a = std::span<double>(final_ptr_a, vector_size),
+            .b = std::span<double>(final_ptr_b, vector_size),
             .c = nullptr  // Use get_mutable_request()->mutate_scalar_c()
         };
         
-        return FusedMultiplyAddPayload(builder.Release(), ptrs, SkillIds::FusedMultiplyAddMutable);
+        return FusedMultiplyAddPayload(std::move(detached), ptrs, SkillIds::FusedMultiplyAddMutable);
     }
 
     /**
@@ -319,11 +341,17 @@ public:
         auto response = CreateFusedMultiplyAddResponse(builder, result_offset);
         builder.Finish(response);
         
+        auto detached = builder.Release();
+        
+        // Extract pointer from the FINISHED buffer by parsing it
+        auto* resp = flatbuffers::GetMutableRoot<FusedMultiplyAddResponse>(detached.data());
+        double* final_result_ptr = const_cast<double*>(resp->result()->data());
+        
         FusedMultiplyAddResponsePtrs ptrs{
-            .result = std::span<double>(result_ptr, vector_size)
+            .result = std::span<double>(final_result_ptr, vector_size)
         };
         
-        return FusedMultiplyAddResponseBuffer(builder.Release(), ptrs, SkillIds::FusedMultiplyAddMutable);
+        return FusedMultiplyAddResponseBuffer(std::move(detached), ptrs, SkillIds::FusedMultiplyAddMutable);
     }
 
     /**

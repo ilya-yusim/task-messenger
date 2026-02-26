@@ -96,13 +96,20 @@ public:
         auto request = CreateVectorMathRequest(builder, vec_a, vec_b, op);
         builder.Finish(request);
         
+        auto detached = builder.Release();
+        
+        // Extract pointers from the FINISHED buffer by parsing it
+        auto* req = flatbuffers::GetMutableRoot<VectorMathRequest>(detached.data());
+        double* final_ptr_a = const_cast<double*>(req->operand_a()->data());
+        double* final_ptr_b = const_cast<double*>(req->operand_b()->data());
+        
         VectorMathBufferPtrs ptrs{
-            .a = std::span<double>(ptr_a, vector_size),
-            .b = std::span<double>(ptr_b, vector_size),
+            .a = std::span<double>(final_ptr_a, vector_size),
+            .b = std::span<double>(final_ptr_b, vector_size),
             .operation = op
         };
         
-        return VectorMathPayload(builder.Release(), ptrs, SkillIds::VectorMath);
+        return VectorMathPayload(std::move(detached), ptrs, SkillIds::VectorMath);
     }
 
     /**
@@ -156,11 +163,17 @@ public:
         auto response = CreateVectorMathResponse(builder, result_offset);
         builder.Finish(response);
         
+        auto detached = builder.Release();
+        
+        // Extract pointer from the FINISHED buffer by parsing it
+        auto* resp = flatbuffers::GetMutableRoot<VectorMathResponse>(detached.data());
+        double* final_result_ptr = const_cast<double*>(resp->result()->data());
+        
         VectorMathResponsePtrs ptrs{
-            .result = std::span<double>(result_ptr, vector_size)
+            .result = std::span<double>(final_result_ptr, vector_size)
         };
         
-        return VectorMathResponseBuffer(builder.Release(), ptrs, SkillIds::VectorMath);
+        return VectorMathResponseBuffer(std::move(detached), ptrs, SkillIds::VectorMath);
     }
 
     /**
