@@ -73,6 +73,20 @@ public:
     }
 
     /**
+     * @brief Create a pre-allocated response buffer sized for a given request.
+     */
+    [[nodiscard]] std::unique_ptr<PayloadBufferBase> create_response_buffer_for_request(
+        std::span<const uint8_t> request
+    ) const override {
+        auto req_ptrs = scatter_request_span(request);
+        if (!req_ptrs) {
+            return nullptr;
+        }
+        return std::make_unique<VectorMathResponseBuffer>(
+            create_response_buffer(req_ptrs->a.size()));
+    }
+
+    /**
      * @brief Create a payload buffer with typed data access.
      * 
      * Returns a VectorMathPayload combining ownership with spans pointing
@@ -184,7 +198,7 @@ public:
      * @param payload Raw FlatBuffer bytes.
      * @return View pointers on success, nullopt on validation failure.
      */
-    [[nodiscard]] static std::optional<VectorMathViewPtrs> decode_request(
+    [[nodiscard]] static std::optional<VectorMathViewPtrs> scatter_request_span(
         std::span<const uint8_t> payload
     ) {
         auto request = flatbuffers::GetRoot<VectorMathRequest>(payload.data());
@@ -205,6 +219,37 @@ public:
             .b = std::span<const double>(vec_b->data(), vec_b->size()),
             .operation = request->operation()
         };
+    }
+
+    /**
+     * @brief Decode a VectorMath response payload into typed view pointers.
+     * 
+     * Validates the payload and returns view pointers into the buffer.
+     * 
+     * @tparam Mutable If true, returns writable spans; if false, read-only.
+     * @param payload Raw FlatBuffer bytes.
+     * @return View pointers on success, nullopt on validation failure.
+     */
+    template<bool Mutable = false>
+    [[nodiscard]] static auto scatter_response_span(
+        std::conditional_t<Mutable, std::span<uint8_t>, std::span<const uint8_t>> payload
+    ) -> std::optional<VectorMathResponsePtrsT<not Mutable>> {
+        auto* response = flatbuffers::GetMutableRoot<VectorMathResponse>(
+            const_cast<uint8_t*>(payload.data()));
+        if (!response || !response->result()) {
+            return std::nullopt;
+        }
+
+        auto* result = response->mutable_result();
+        if constexpr (Mutable) {
+            return VectorMathResponsePtrs{
+                .result = std::span<double>(result->data(), result->size())
+            };
+        } else {
+            return VectorMathResponseViewPtrs{
+                .result = std::span<const double>(result->data(), result->size())
+            };
+        }
     }
 };
 

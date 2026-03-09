@@ -7,10 +7,7 @@
  */
 #pragma once
 
-#include "skills/registry/PayloadBuffer.hpp"
-
 #include <cstdint>
-#include <memory>
 #include <span>
 
 namespace TaskMessenger::Skills {
@@ -21,33 +18,26 @@ namespace TaskMessenger::Skills {
  * Implement this interface to create handlers for specific skill types.
  * The handler receives the inner payload from a TaskRequest and produces
  * the inner payload for a TaskResponse.
+ *
+ * Skill metadata (id, name, description) is stored in SkillDescriptor,
+ * not in the handler itself.
  */
 class ISkillHandler {
 public:
     virtual ~ISkillHandler() = default;
 
     /**
-     * @brief Get the unique skill ID this handler processes.
-     * @return The skill_id value this handler is registered for.
-     */
-    [[nodiscard]] virtual uint32_t skill_id() const noexcept = 0;
-
-    /**
-     * @brief Get a human-readable name for this skill.
-     * @return Skill name for logging and diagnostics.
-     */
-    [[nodiscard]] virtual const char* skill_name() const noexcept = 0;
-
-    /**
-     * @brief Process a task request payload.
+     * @brief Process a task request payload into a pre-allocated response buffer.
      *
-     * @param payload The inner payload bytes from the TaskRequest.
-     *                This is the skill-specific FlatBuffer data (e.g., StringReversalRequest).
-     * @return Unique pointer to response payload, or nullptr on error.
-     *         The response contains skill-specific data (e.g., StringReversalResponse).
+     * @param request The inner payload bytes from the TaskRequest.
+     *                This is the skill-specific FlatBuffer data (e.g., VectorMathRequest).
+     * @param response Pre-allocated response buffer to write results into.
+     *                 Use factory's scatter_response_span<true>() for typed access.
+     * @return true on success, false on error.
      */
-    [[nodiscard]] virtual std::unique_ptr<PayloadBufferBase> process(
-        std::span<const uint8_t> payload
+    [[nodiscard]] virtual bool process(
+        std::span<const uint8_t> request,
+        std::span<uint8_t> response
     ) = 0;
 };
 

@@ -7,7 +7,6 @@
 #pragma once
 
 #include "skills/registry/SkillRegistry.hpp"
-#include "skills/registry/PayloadBuffer.hpp"
 
 #include <span>
 #include <memory>
@@ -26,16 +25,18 @@ public:
 	}
 
 	/**
-	 * \brief Execute a task payload and return the result.
+	 * \brief Execute a task payload into a pre-allocated response buffer.
 	 * \param task_id Manager-provided identifier for correlation.
 	 * \param skill_id Skill identifier for dispatch.
-	 * \param payload Serialized task data (FlatBuffers payload).
-	 * \return Response payload, or nullptr on error.
+	 * \param request Serialized task data (FlatBuffers payload).
+	 * \param response Pre-allocated response buffer for skill output.
+	 * \return true on success, false on error.
 	 */
-	std::unique_ptr<TaskMessenger::Skills::PayloadBufferBase> process(
+	bool process(
 		uint32_t task_id, 
 		uint32_t skill_id, 
-		std::span<const uint8_t> payload
+		std::span<const uint8_t> request,
+		std::span<uint8_t> response
 	);
 	
 private:

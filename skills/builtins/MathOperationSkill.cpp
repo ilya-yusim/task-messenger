@@ -22,25 +22,18 @@ namespace {
  */
 class MathOperationHandler : public ISkillHandler {
 public:
-    [[nodiscard]] uint32_t skill_id() const noexcept override { 
-        return SkillIds::MathOperation; 
-    }
-    
-    [[nodiscard]] const char* skill_name() const noexcept override { 
-        return "MathOperation"; 
-    }
-
-    [[nodiscard]] std::unique_ptr<PayloadBufferBase> process(
-        std::span<const uint8_t> payload
+    [[nodiscard]] bool process(
+        std::span<const uint8_t> request,
+        std::span<uint8_t> response
     ) override {
-        auto decoded = MathOperationPayloadFactory::decode_request(payload);
-        if (!decoded) {
-            return nullptr;
+        auto req_ptrs = MathOperationPayloadFactory::scatter_request_span(request);
+        if (!req_ptrs) {
+            return false;
         }
 
-        double a = *decoded->a;
-        double b = *decoded->b;
-        MathOperation op = decoded->operation;
+        double a = *req_ptrs->a;
+        double b = *req_ptrs->b;
+        MathOperation op = req_ptrs->operation;
 
         double result = 0.0;
         bool overflow = false;
@@ -68,12 +61,18 @@ public:
                 }
                 break;
             default:
-                return nullptr;  // Unknown operation
+                return false;  // Unknown operation
         }
 
-        // Create response buffer with result
-        auto response = MathOperationPayloadFactory::create_response_buffer(result, overflow);
-        return std::make_unique<SimplePayload>(std::move(response));
+        // Write result to pre-allocated response buffer
+        auto* resp = flatbuffers::GetMutableRoot<MathOperationResponse>(response.data());
+        if (!resp) {
+            return false;
+        }
+        resp->mutate_result(result);
+        resp->mutate_overflow(overflow);
+
+        return true;
     }
 };
 

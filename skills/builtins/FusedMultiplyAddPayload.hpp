@@ -92,6 +92,20 @@ public:
     }
 
     /**
+     * @brief Create a pre-allocated response buffer sized for a given request.
+     */
+    [[nodiscard]] std::unique_ptr<PayloadBufferBase> create_response_buffer_for_request(
+        std::span<const uint8_t> request
+    ) const override {
+        auto req_ptrs = scatter_request_span(request);
+        if (!req_ptrs) {
+            return nullptr;
+        }
+        return std::make_unique<FusedMultiplyAddResponseBuffer>(
+            create_response_buffer(req_ptrs->a.size()));
+    }
+
+    /**
      * @brief Create a payload buffer with typed data access.
      * 
      * Returns a FusedMultiplyAddPayload combining ownership with spans/pointers
@@ -201,7 +215,7 @@ public:
      * @param payload Raw FlatBuffer bytes.
      * @return Decoded request on success, nullopt on validation failure.
      */
-    [[nodiscard]] static std::optional<FusedMultiplyAddDecodedRequest> decode_request(
+    [[nodiscard]] static std::optional<FusedMultiplyAddDecodedRequest> scatter_request_span(
         std::span<const uint8_t> payload
     ) {
         auto request = flatbuffers::GetRoot<FusedMultiplyAddRequest>(payload.data());
@@ -231,6 +245,37 @@ public:
         result.c = &result.c_storage;
         return result;
     }
+
+    /**
+     * @brief Decode a FusedMultiplyAdd response payload into typed view pointers.
+     * 
+     * Validates the payload and returns view pointers into the buffer.
+     * 
+     * @tparam Mutable If true, returns writable spans; if false, read-only.
+     * @param payload Raw FlatBuffer bytes.
+     * @return View pointers on success, nullopt on validation failure.
+     */
+    template<bool Mutable = false>
+    [[nodiscard]] static auto scatter_response_span(
+        std::conditional_t<Mutable, std::span<uint8_t>, std::span<const uint8_t>> payload
+    ) -> std::optional<FusedMultiplyAddResponsePtrsT<not Mutable>> {
+        auto* response = flatbuffers::GetMutableRoot<FusedMultiplyAddResponse>(
+            const_cast<uint8_t*>(payload.data()));
+        if (!response || !response->result()) {
+            return std::nullopt;
+        }
+
+        auto* result = response->mutable_result();
+        if constexpr (Mutable) {
+            return FusedMultiplyAddResponsePtrs{
+                .result = std::span<double>(result->data(), result->size())
+            };
+        } else {
+            return FusedMultiplyAddResponseViewPtrs{
+                .result = std::span<const double>(result->data(), result->size())
+            };
+        }
+    }
 };
 
 /**
@@ -244,6 +289,20 @@ class FusedMultiplyAddMutablePayloadFactory : public IPayloadFactory {
 public:
     [[nodiscard]] uint32_t skill_id() const noexcept override {
         return SkillIds::FusedMultiplyAddMutable;
+    }
+
+    /**
+     * @brief Create a pre-allocated response buffer sized for a given request.
+     */
+    [[nodiscard]] std::unique_ptr<PayloadBufferBase> create_response_buffer_for_request(
+        std::span<const uint8_t> request
+    ) const override {
+        auto req_ptrs = scatter_request_span(request);
+        if (!req_ptrs) {
+            return nullptr;
+        }
+        return std::make_unique<FusedMultiplyAddResponseBuffer>(
+            create_response_buffer(req_ptrs->a.size()));
     }
 
     /**
@@ -363,7 +422,7 @@ public:
      * @param payload Raw FlatBuffer bytes.
      * @return Decoded request on success, nullopt on validation failure.
      */
-    [[nodiscard]] static std::optional<FusedMultiplyAddDecodedRequest> decode_request(
+    [[nodiscard]] static std::optional<FusedMultiplyAddDecodedRequest> scatter_request_span(
         std::span<const uint8_t> payload
     ) {
         auto request = flatbuffers::GetRoot<FusedMultiplyAddMutableRequest>(payload.data());
@@ -386,6 +445,38 @@ public:
         };
         result.c = &result.c_storage;
         return result;
+    }
+
+    /**
+     * @brief Decode a FusedMultiplyAddMutable response payload into typed view pointers.
+     * 
+     * Validates the payload and returns view pointers into the buffer.
+     * Note: Both FusedMultiplyAdd and FusedMultiplyAddMutable use the same response schema.
+     * 
+     * @tparam Mutable If true, returns writable spans; if false, read-only.
+     * @param payload Raw FlatBuffer bytes.
+     * @return View pointers on success, nullopt on validation failure.
+     */
+    template<bool Mutable = false>
+    [[nodiscard]] static auto scatter_response_span(
+        std::conditional_t<Mutable, std::span<uint8_t>, std::span<const uint8_t>> payload
+    ) -> std::optional<FusedMultiplyAddResponsePtrsT<not Mutable>> {
+        auto* response = flatbuffers::GetMutableRoot<FusedMultiplyAddResponse>(
+            const_cast<uint8_t*>(payload.data()));
+        if (!response || !response->result()) {
+            return std::nullopt;
+        }
+
+        auto* result = response->mutable_result();
+        if constexpr (Mutable) {
+            return FusedMultiplyAddResponsePtrs{
+                .result = std::span<double>(result->data(), result->size())
+            };
+        } else {
+            return FusedMultiplyAddResponseViewPtrs{
+                .result = std::span<const double>(result->data(), result->size())
+            };
+        }
     }
 };
 

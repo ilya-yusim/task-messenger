@@ -55,10 +55,11 @@ size_t SkillRegistry::skill_count() const {
     return skills_.size();
 }
 
-std::unique_ptr<PayloadBufferBase> SkillRegistry::dispatch(
+bool SkillRegistry::dispatch(
     uint32_t skill_id,
     uint32_t task_id,
-    std::span<const uint8_t> payload
+    std::span<const uint8_t> request,
+    std::span<uint8_t> response
 ) {
     // Find skill under lock, get handler pointer
     ISkillHandler* handler = nullptr;
@@ -69,16 +70,16 @@ std::unique_ptr<PayloadBufferBase> SkillRegistry::dispatch(
         if (it == skills_.end() || !it->second.handler) {
             log_debug("Unknown skill_id=" + std::to_string(skill_id) +
                       " for task_id=" + std::to_string(task_id));
-            return nullptr;
+            return false;
         }
         handler = it->second.handler.get();
         skill_name = it->second.name;
     }
     
     // Process outside lock (handler execution may be slow)
-    auto response = handler->process(payload);
+    bool success = handler->process(request, response);
     
-    if (response) {
+    if (success) {
         log_debug("Processed skill=" + skill_name +
                   " task_id=" + std::to_string(task_id));
     } else {
@@ -86,7 +87,7 @@ std::unique_ptr<PayloadBufferBase> SkillRegistry::dispatch(
                   " task_id=" + std::to_string(task_id));
     }
     
-    return response;
+    return success;
 }
 
 IPayloadFactory* SkillRegistry::get_payload_factory(uint32_t skill_id) const {
@@ -96,6 +97,17 @@ IPayloadFactory* SkillRegistry::get_payload_factory(uint32_t skill_id) const {
         return it->second.payload_factory.get();
     }
     return nullptr;
+}
+
+std::unique_ptr<PayloadBufferBase> SkillRegistry::create_response_buffer(
+    uint32_t skill_id,
+    std::span<const uint8_t> request
+) const {
+    auto* factory = get_payload_factory(skill_id);
+    if (!factory) {
+        return nullptr;
+    }
+    return factory->create_response_buffer_for_request(request);
 }
 
 void SkillRegistry::clear() {

@@ -15,6 +15,7 @@
 #include <atomic>
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 using namespace TaskMessenger::Skills;
@@ -105,9 +106,11 @@ public:
 
 private:
     /**
-     * \brief Generate task payload using typed buffer creation.
+     * \brief Generate task request and response buffers using typed buffer creation.
+     * \return Pair of (request_buffer, response_buffer).
      */
-    std::unique_ptr<PayloadBufferBase> generate_task_data_typed(uint32_t skill_id);
+    std::pair<std::unique_ptr<PayloadBufferBase>, std::unique_ptr<PayloadBufferBase>> 
+    generate_task_data_typed(uint32_t skill_id);
 
     TaskIdGenerator task_id_generator_;
     std::atomic<bool> stopped_{false};

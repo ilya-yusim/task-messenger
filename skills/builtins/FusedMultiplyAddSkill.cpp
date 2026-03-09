@@ -21,37 +21,36 @@ namespace {
  */
 class FusedMultiplyAddHandler : public ISkillHandler {
 public:
-    [[nodiscard]] uint32_t skill_id() const noexcept override { 
-        return SkillIds::FusedMultiplyAdd; 
-    }
-    
-    [[nodiscard]] const char* skill_name() const noexcept override { 
-        return "FusedMultiplyAdd"; 
-    }
-
-    [[nodiscard]] std::unique_ptr<PayloadBufferBase> process(
-        std::span<const uint8_t> payload
+    [[nodiscard]] bool process(
+        std::span<const uint8_t> request,
+        std::span<uint8_t> response
     ) override {
-        auto decoded = FusedMultiplyAddPayloadFactory::decode_request(payload);
-        if (!decoded) {
-            return nullptr;
+        auto req_ptrs = FusedMultiplyAddPayloadFactory::scatter_request_span(request);
+        if (!req_ptrs) {
+            return false;
         }
 
-        const auto& a = decoded->a;
-        const auto& b = decoded->b;
-        double c = *decoded->c;
-        auto size = a.size();
+        auto resp_ptrs = FusedMultiplyAddPayloadFactory::scatter_response_span<true>(response);
+        if (!resp_ptrs) {
+            return false;
+        }
 
-        // Create response buffer with direct write access
-        auto response = FusedMultiplyAddPayloadFactory::create_response_buffer(size);
-        auto& result = response.ptrs().result;
+        const auto& a = req_ptrs->a;
+        const auto& b = req_ptrs->b;
+        double c = *req_ptrs->c;
+        auto size = a.size();
+        auto& result = resp_ptrs->result;
+
+        if (result.size() != size) {
+            return false;  // Response buffer size mismatch
+        }
 
         // Compute FMA: result[i] = a[i] + c * b[i]
         for (decltype(size) i = 0; i < size; ++i) {
             result[i] = a[i] + c * b[i];
         }
 
-        return std::make_unique<FusedMultiplyAddResponseBuffer>(std::move(response));
+        return true;
     }
 };
 
@@ -62,37 +61,36 @@ public:
  */
 class FusedMultiplyAddMutableHandler : public ISkillHandler {
 public:
-    [[nodiscard]] uint32_t skill_id() const noexcept override { 
-        return SkillIds::FusedMultiplyAddMutable; 
-    }
-    
-    [[nodiscard]] const char* skill_name() const noexcept override { 
-        return "FusedMultiplyAddMutable"; 
-    }
-
-    [[nodiscard]] std::unique_ptr<PayloadBufferBase> process(
-        std::span<const uint8_t> payload
+    [[nodiscard]] bool process(
+        std::span<const uint8_t> request,
+        std::span<uint8_t> response
     ) override {
-        auto decoded = FusedMultiplyAddMutablePayloadFactory::decode_request(payload);
-        if (!decoded) {
-            return nullptr;
+        auto req_ptrs = FusedMultiplyAddMutablePayloadFactory::scatter_request_span(request);
+        if (!req_ptrs) {
+            return false;
         }
 
-        const auto& a = decoded->a;
-        const auto& b = decoded->b;
-        double c = *decoded->c;
-        auto size = a.size();
+        auto resp_ptrs = FusedMultiplyAddMutablePayloadFactory::scatter_response_span<true>(response);
+        if (!resp_ptrs) {
+            return false;
+        }
 
-        // Create response buffer with direct write access
-        auto response = FusedMultiplyAddMutablePayloadFactory::create_response_buffer(size);
-        auto& result = response.ptrs().result;
+        const auto& a = req_ptrs->a;
+        const auto& b = req_ptrs->b;
+        double c = *req_ptrs->c;
+        auto size = a.size();
+        auto& result = resp_ptrs->result;
+
+        if (result.size() != size) {
+            return false;  // Response buffer size mismatch
+        }
 
         // Compute FMA: result[i] = a[i] + c * b[i]
         for (decltype(size) i = 0; i < size; ++i) {
             result[i] = a[i] + c * b[i];
         }
 
-        return std::make_unique<FusedMultiplyAddResponseBuffer>(std::move(response));
+        return true;
     }
 };
 

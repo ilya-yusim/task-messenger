@@ -72,6 +72,27 @@ public:
         }
     }
 
+    /**
+     * \brief Construct a TaskMessage with both request and pre-allocated response buffers.
+     * \param id Task identifier
+     * \param request_buffer Request payload buffer (moved)
+     * \param response_buffer Pre-allocated response buffer for skill output (moved)
+     * 
+     * Use this constructor when pre-allocating response buffers for zero-copy
+     * skill processing. The response buffer will be passed to the skill handler.
+     */
+    TaskMessage(uint32_t id, 
+                std::unique_ptr<PayloadBufferBase> request_buffer,
+                std::unique_ptr<PayloadBufferBase> response_buffer)
+        : header_{id, static_cast<uint32_t>(request_buffer->size()), request_buffer->skill_id()}
+        , payload_buffer_(std::move(request_buffer))
+        , response_buffer_(std::move(response_buffer))
+        , created_time_(std::chrono::steady_clock::now()) {
+        if (payload_buffer_->size() > std::numeric_limits<uint32_t>::max()) {
+            throw std::length_error("TaskMessage payload exceeds protocol limits");
+        }
+    }
+
     [[nodiscard]] bool is_valid() const noexcept { return header_.task_id != 0; }
 
     [[nodiscard]] uint32_t task_id() const noexcept { return header_.task_id; }
@@ -122,6 +143,49 @@ public:
     }
 
     /**
+     * \brief Check if this message holds a pre-allocated response buffer.
+     */
+    [[nodiscard]] bool has_response_buffer() const noexcept {
+        return response_buffer_ != nullptr;
+    }
+
+    /**
+     * \brief Get raw pointer to the response buffer.
+     * \return Pointer to response buffer, or nullptr if not present.
+     */
+    [[nodiscard]] PayloadBufferBase* response_buffer() noexcept {
+        return response_buffer_.get();
+    }
+
+    [[nodiscard]] const PayloadBufferBase* response_buffer() const noexcept {
+        return response_buffer_.get();
+    }
+
+    /**
+     * \brief Release ownership of the response buffer.
+     * \return unique_ptr to response buffer, or nullptr if not holding one.
+     */
+    [[nodiscard]] std::unique_ptr<PayloadBufferBase> release_response_buffer() {
+        return std::move(response_buffer_);
+    }
+
+    /**
+     * \brief Downcast the response buffer to a typed PayloadBuffer.
+     * 
+     * \tparam PayloadType The specific PayloadBuffer type (e.g., VectorMathResponseBuffer)
+     * \return Pointer to the typed response, or nullptr if type mismatch or no buffer.
+     */
+    template<typename PayloadType>
+    [[nodiscard]] PayloadType* response_as() noexcept {
+        return dynamic_cast<PayloadType*>(response_buffer_.get());
+    }
+
+    template<typename PayloadType>
+    [[nodiscard]] const PayloadType* response_as() const noexcept {
+        return dynamic_cast<const PayloadType*>(response_buffer_.get());
+    }
+
+    /**
      * \brief Release ownership of the PayloadBuffer for reuse.
      * 
      * After calling this, the message's payload is empty. The returned buffer
@@ -156,6 +220,7 @@ public:
 private:
     TaskHeader header_;
     std::unique_ptr<PayloadBufferBase> payload_buffer_;
+    std::unique_ptr<PayloadBufferBase> response_buffer_;  ///< Pre-allocated response buffer (optional)
     std::chrono::steady_clock::time_point created_time_;
 };
 

@@ -18,6 +18,16 @@
 namespace TaskMessenger::Skills {
 
 /**
+ * @brief Decoded MathOperation response.
+ * 
+ * Stores the result value and overflow flag.
+ */
+struct MathOperationDecodedResponse {
+    double result;     ///< Computed result
+    bool overflow;     ///< Overflow flag
+};
+
+/**
  * @brief Buffer pointers for MathOperation skill (templated on constness).
  * @tparam Const If true, provides read-only pointers; if false, provides mutable pointers.
  * 
@@ -71,6 +81,16 @@ class MathOperationPayloadFactory : public IPayloadFactory {
 public:
     [[nodiscard]] uint32_t skill_id() const noexcept override {
         return SkillIds::MathOperation;
+    }
+
+    /**
+     * @brief Create a pre-allocated response buffer sized for a given request.
+     */
+    [[nodiscard]] std::unique_ptr<PayloadBufferBase> create_response_buffer_for_request(
+        [[maybe_unused]] std::span<const uint8_t> request
+    ) const override {
+        // MathOperation response is fixed size (result + overflow)
+        return std::make_unique<SimplePayload>(create_response_buffer());
     }
 
     /**
@@ -139,7 +159,7 @@ public:
      * @param payload Raw payload bytes from TaskMessage.
      * @return Decoded request with typed pointers, or nullopt if validation fails.
      */
-    [[nodiscard]] static std::optional<MathOperationDecodedRequest> decode_request(
+    [[nodiscard]] static std::optional<MathOperationDecodedRequest> scatter_request_span(
         std::span<const uint8_t> payload
     ) noexcept {
         auto request = flatbuffers::GetRoot<MathOperationRequest>(payload.data());
@@ -169,6 +189,28 @@ public:
         auto response = CreateMathOperationResponse(builder, result, overflow);
         builder.Finish(response);
         return SimplePayload(builder.Release(), SimpleBufferPtrs{}, SkillIds::MathOperation);
+    }
+
+    /**
+     * @brief Decode a MathOperation response payload.
+     * 
+     * Extracts scalar result and overflow flag from the buffer.
+     * 
+     * @param payload Raw FlatBuffer bytes.
+     * @return Decoded response on success, nullopt on validation failure.
+     */
+    [[nodiscard]] static std::optional<MathOperationDecodedResponse> scatter_response_span(
+        std::span<const uint8_t> payload
+    ) noexcept {
+        auto response = flatbuffers::GetRoot<MathOperationResponse>(payload.data());
+        if (!response) {
+            return std::nullopt;
+        }
+
+        return MathOperationDecodedResponse{
+            .result = response->result(),
+            .overflow = response->overflow()
+        };
     }
 };
 

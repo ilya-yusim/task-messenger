@@ -103,13 +103,15 @@ public:
      *
      * @param skill_id The skill identifier.
      * @param task_id The task identifier (for logging).
-     * @param payload The skill-specific request payload (FlatBuffers).
-     * @return Response payload, or nullptr if dispatch/processing failed.
+     * @param request The skill-specific request payload (FlatBuffers).
+     * @param response Pre-allocated response buffer for skill output.
+     * @return true on success, false if dispatch/processing failed.
      */
-    [[nodiscard]] std::unique_ptr<PayloadBufferBase> dispatch(
+    [[nodiscard]] bool dispatch(
         uint32_t skill_id,
         uint32_t task_id,
-        std::span<const uint8_t> payload
+        std::span<const uint8_t> request,
+        std::span<uint8_t> response
     );
     
     // =========================================================================
@@ -122,6 +124,17 @@ public:
      * @return Pointer to the factory or nullptr if skill not found or has no factory.
      */
     [[nodiscard]] IPayloadFactory* get_payload_factory(uint32_t skill_id) const;
+
+    /**
+     * @brief Create a pre-allocated response buffer for a request.
+     * @param skill_id The skill identifier.
+     * @param request The serialized request payload.
+     * @return A pre-allocated response buffer, or nullptr on error.
+     */
+    [[nodiscard]] std::unique_ptr<PayloadBufferBase> create_response_buffer(
+        uint32_t skill_id,
+        std::span<const uint8_t> request
+    ) const;
     
     // =========================================================================
     // Testing / Reset

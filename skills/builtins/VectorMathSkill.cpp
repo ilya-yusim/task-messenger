@@ -24,30 +24,29 @@ namespace {
  */
 class VectorMathHandler : public ISkillHandler {
 public:
-    [[nodiscard]] uint32_t skill_id() const noexcept override { 
-        return SkillIds::VectorMath; 
-    }
-    
-    [[nodiscard]] const char* skill_name() const noexcept override { 
-        return "VectorMath"; 
-    }
-
-    [[nodiscard]] std::unique_ptr<PayloadBufferBase> process(
-        std::span<const uint8_t> payload
+    [[nodiscard]] bool process(
+        std::span<const uint8_t> request,
+        std::span<uint8_t> response
     ) override {
-        auto decoded = VectorMathPayloadFactory::decode_request(payload);
-        if (!decoded) {
-            return nullptr;
+        auto req_ptrs = VectorMathPayloadFactory::scatter_request_span(request);
+        if (!req_ptrs) {
+            return false;
         }
 
-        const auto& a = decoded->a;
-        const auto& b = decoded->b;
-        auto size = a.size();
-        MathOperation op = decoded->operation;
+        auto resp_ptrs = VectorMathPayloadFactory::scatter_response_span<true>(response);
+        if (!resp_ptrs) {
+            return false;
+        }
 
-        // Create response buffer with direct write access
-        auto response = VectorMathPayloadFactory::create_response_buffer(size);
-        auto& result = response.ptrs().result;
+        const auto& a = req_ptrs->a;
+        const auto& b = req_ptrs->b;
+        auto size = a.size();
+        MathOperation op = req_ptrs->operation;
+        auto& result = resp_ptrs->result;
+
+        if (result.size() != size) {
+            return false;  // Response buffer size mismatch
+        }
 
         // Compute results directly into the buffer
         for (decltype(size) i = 0; i < size; ++i) {
@@ -65,11 +64,11 @@ public:
                     result[i] = (b[i] != 0.0) ? a[i] / b[i] : std::numeric_limits<double>::quiet_NaN();
                     break;
                 default:
-                    return nullptr;
+                    return false;
             }
         }
 
-        return std::make_unique<VectorMathResponseBuffer>(std::move(response));
+        return true;
     }
 };
 

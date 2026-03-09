@@ -210,9 +210,17 @@ bool BlockingRuntime::run_loop(TaskProcessor& processor) {
         }
         bytes_received_.fetch_add(frame_bytes_read, std::memory_order_relaxed);
         
-        auto result = processor.process(header.task_id, header.skill_id, payload);
+        // Create response buffer and process
+        auto& registry = TaskMessenger::Skills::SkillRegistry::instance();
+        auto response = registry.create_response_buffer(header.skill_id, payload);
+        if (!response) {
+            if (logger_) logger_->error("Failed to create response buffer for skill_id=" + std::to_string(header.skill_id));
+            return false;
+        }
+
+        bool success = processor.process(header.task_id, header.skill_id, payload, response->mutable_span());
         
-        if (!result) {
+        if (!success) {
             if (logger_) logger_->error("Task processing failed for task_id=" + std::to_string(header.task_id));
             return false;
         }
@@ -221,7 +229,7 @@ bool BlockingRuntime::run_loop(TaskProcessor& processor) {
         std::uint64_t frame_bytes_written = 0;
         
         try {
-            if (!write_response(*current_socket, header.task_id, std::move(result), ec, frame_bytes_written)) {
+            if (!write_response(*current_socket, header.task_id, std::move(response), ec, frame_bytes_written)) {
                 if (logger_) logger_->error("write_response failed: " + ec.message());
                 return false;
             }
