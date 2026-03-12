@@ -7,40 +7,104 @@
 using namespace TaskMessenger::Skills;
 
 /** \ingroup task_messenger_manager */
-void DefaultTaskGenerator::generate_tasks(std::shared_ptr<TaskMessagePool> pool, uint32_t count) {
-    if (!pool || stopped_.load()) {
-        return;
-    }
-
-    auto tasks = make_tasks(count);
-    if (!tasks.empty()) {
-        pool->add_tasks(std::move(tasks));
-    }
+void DefaultTaskGenerator::stop() {
+    stopped_.store(true);
 }
 
 /** \ingroup task_messenger_manager */
-std::vector<TaskMessage> DefaultTaskGenerator::make_tasks(uint32_t count) {
-    std::vector<TaskMessage> out;
-    if (stopped_.load() || count == 0) {
-        return out;
+GeneratorCoroutine DefaultTaskGenerator::run_async_chain(
+    std::shared_ptr<TaskMessagePool> pool,
+    uint32_t initial_count) 
+{
+    if (!pool || !response_ctx_) {
+        co_return;
     }
 
-    out.reserve(count);
-    for (uint32_t i = 0; i < count && !stopped_.load(); ++i) {
+    for (uint32_t i = 0; i < initial_count && !stopped_.load(); ++i) {
         uint32_t task_id = task_id_generator_.get_next_id();
         // Cycle through all available skills (1 to MaxSkillId)
         uint32_t skill_id = (i % SkillIds::Count) + 1;
 
         auto [request, response] = generate_task_data_typed(skill_id);
-        out.emplace_back(task_id, std::move(request), std::move(response));
+        
+        // Submit task and await response
+        auto& result = co_await submit_task(pool, response_ctx_, task_id, 
+                                             std::move(request), std::move(response));
+        
+        if (result.is_success()) {
+            // Response received successfully
+            // Process result.body_span() here to decide follow-up actions
+            // For now, just continue to next task
+        } else {
+            // Task failed - could implement retry logic here
+        }
     }
-
-    return out;
+    
+    co_return;
 }
 
 /** \ingroup task_messenger_manager */
-void DefaultTaskGenerator::stop() {
-    stopped_.store(true);
+GeneratorCoroutine DefaultTaskGenerator::process_single_task(
+    std::shared_ptr<TaskMessagePool> pool,
+    uint32_t task_id,
+    uint32_t skill_id) 
+{
+    if (!pool || !response_ctx_) {
+        co_return;
+    }
+
+    auto [request, response] = generate_task_data_typed(skill_id);
+    
+    // Submit task and await response - coroutine suspends here
+    auto& result = co_await submit_task(pool, response_ctx_, task_id, 
+                                         std::move(request), std::move(response));
+    
+    if (result.is_success()) {
+        // Response received successfully - process on ResponseContext thread
+        // Access result.body_span() for response data
+        // Can generate follow-up tasks here if needed
+    } else {
+        // Task failed
+    }
+    
+    co_return;
+}
+
+/** \ingroup task_messenger_manager */
+std::vector<GeneratorCoroutine> DefaultTaskGenerator::dispatch_parallel(
+    std::shared_ptr<TaskMessagePool> pool,
+    uint32_t count) 
+{
+    std::vector<GeneratorCoroutine> coroutines;
+    
+    if (!pool || !response_ctx_ || count == 0) {
+        return coroutines;
+    }
+
+    coroutines.reserve(count);
+    
+    for (uint32_t i = 0; i < count && !stopped_.load(); ++i) {
+        uint32_t task_id = task_id_generator_.get_next_id();
+        // Cycle through all available skills (1 to MaxSkillId)
+        uint32_t skill_id = (i % SkillIds::Count) + 1;
+        
+        // Launch coroutine - starts immediately, submits task, then suspends
+        coroutines.emplace_back(process_single_task(pool, task_id, skill_id));
+    }
+    
+    // All tasks submitted, coroutines suspended waiting for responses
+    // Caller must keep this vector alive until all_done() returns true
+    return coroutines;
+}
+
+/** \ingroup task_messenger_manager */
+bool DefaultTaskGenerator::all_done(const std::vector<GeneratorCoroutine>& coroutines) {
+    for (const auto& coro : coroutines) {
+        if (!coro.done()) {
+            return false;
+        }
+    }
+    return true;
 }
 
 /** \ingroup task_messenger_manager */

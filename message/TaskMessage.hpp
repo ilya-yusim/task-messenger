@@ -1,6 +1,7 @@
 // TaskMessage.hpp - Zero-copy task message with separate header and payload storage
 #pragma once
 
+#include "message/TaskCompletionSource.hpp"
 #include "skills/registry/PayloadBuffer.hpp"
 
 #include <chrono>
@@ -217,10 +218,67 @@ public:
         return dynamic_cast<const PayloadType*>(payload_buffer_.get());
     }
 
+    // --- Completion source support for async response processing ---
+
+    /**
+     * \brief Attach a completion source for async notification.
+     * \param source Shared pointer to TaskCompletionSource
+     * 
+     * When the response arrives, Session will call complete() to fill
+     * response data and post resumption to the ResponseContext.
+     */
+    void set_completion_source(std::shared_ptr<TaskCompletionSource> source) {
+        completion_source_ = std::move(source);
+    }
+    
+    /**
+     * \brief Check if this task has an awaiting coroutine.
+     */
+    [[nodiscard]] bool has_completion_source() const noexcept {
+        return completion_source_ != nullptr;
+    }
+    
+    /**
+     * \brief Get the completion source (for Session to call complete()).
+     */
+    [[nodiscard]] std::shared_ptr<TaskCompletionSource> completion_source() const noexcept {
+        return completion_source_;
+    }
+    
+    /**
+     * \brief Release ownership of the completion source.
+     */
+    [[nodiscard]] std::shared_ptr<TaskCompletionSource> release_completion_source() {
+        return std::move(completion_source_);
+    }
+    
+    /**
+     * \brief Complete the task and resume the awaiting coroutine.
+     * \param response_header The response header from worker
+     * \param response_body The response body data
+     * \param success Whether the task was successful
+     * 
+     * Convenience method that delegates to TaskCompletionSource::complete().
+     * Called by Session after receiving response from worker.
+     */
+    void complete(const TaskHeader& response_header, 
+                  std::span<const std::byte> response_body,
+                  bool success) {
+        if (completion_source_) {
+            completion_source_->complete(
+                response_header.task_id,
+                response_header.skill_id,
+                response_body,
+                success
+            );
+        }
+    }
+
 private:
     TaskHeader header_;
     std::unique_ptr<PayloadBufferBase> payload_buffer_;
     std::unique_ptr<PayloadBufferBase> response_buffer_;  ///< Pre-allocated response buffer (optional)
+    std::shared_ptr<TaskCompletionSource> completion_source_;  ///< Completion source for async notification (optional)
     std::chrono::steady_clock::time_point created_time_;
 };
 

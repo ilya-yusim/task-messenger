@@ -6,6 +6,9 @@
 #pragma once
 
 #include "message/TaskMessagePool.hpp"
+#include "message/ResponseContext.hpp"
+#include "message/TaskSubmitAwaitable.hpp"
+#include "message/GeneratorCoroutine.hpp"
 #include "skills/builtins/VectorMathPayload.hpp"
 #include "skills/builtins/FusedMultiplyAddPayload.hpp"
 #include "skills/builtins/MathOperationPayload.hpp"
@@ -57,16 +60,6 @@ public:
     virtual ~ITaskGenerator() = default;
 
     /**
-     * \brief Populate the shared pool with freshly created tasks.
-     */
-    virtual void generate_tasks(std::shared_ptr<TaskMessagePool> pool, uint32_t count) = 0;
-
-    /**
-     * \brief Produce demo tasks without enqueuing them.
-     */
-    virtual std::vector<TaskMessage> make_tasks(uint32_t count) = 0;
-
-    /**
      * \brief Signal shutdown so generators stop producing work.
      */
     virtual void stop() = 0;
@@ -84,10 +77,6 @@ public:
     DefaultTaskGenerator() = default;
     ~DefaultTaskGenerator() override = default;
 
-    /** \brief Enqueue demo tasks into the shared pool. */
-    void generate_tasks(std::shared_ptr<TaskMessagePool> pool, uint32_t count) override;
-    /** \brief Build a vector of demo tasks for inspection or manual enqueueing. */
-    std::vector<TaskMessage> make_tasks(uint32_t count) override;
     /** \brief Halt further task production. */
     void stop() override;
 
@@ -104,7 +93,69 @@ public:
      */
     size_t vector_size() const { return vector_size_; }
 
+    /**
+     * \brief Set response context for async task generation.
+     * \param ctx ResponseContext for coroutine resumption
+     */
+    void set_response_context(std::shared_ptr<ResponseContext> ctx) {
+        response_ctx_ = std::move(ctx);
+    }
+
+    /**
+     * \brief Get the response context.
+     */
+    std::shared_ptr<ResponseContext> response_context() const { return response_ctx_; }
+
+    /**
+     * \brief Coroutine-based async task generator that awaits responses.
+     * \param pool Task message pool to enqueue tasks
+     * \param initial_count Number of tasks to submit in the chain
+     * \return Coroutine task that can be started on ResponseContext
+     * 
+     * This coroutine submits tasks one at a time, awaits each response,
+     * and can process the response to decide on follow-up actions.
+     * Resumes on ResponseContext worker threads.
+     */
+    GeneratorCoroutine run_async_chain(std::shared_ptr<TaskMessagePool> pool,
+                                       uint32_t initial_count);
+
+    /**
+     * \brief Dispatch N tasks in parallel, each with its own coroutine.
+     * \param pool Task message pool to enqueue tasks
+     * \param count Number of tasks to dispatch
+     * \return Vector of coroutine handles (must be kept alive until all complete)
+     * 
+     * All tasks are submitted immediately. Each coroutine suspends after
+     * submitting its task. As responses arrive from workers, ResponseContext
+     * resumes each coroutine to process its response in parallel.
+     */
+    std::vector<GeneratorCoroutine> dispatch_parallel(
+        std::shared_ptr<TaskMessagePool> pool,
+        uint32_t count);
+
+    /**
+     * \brief Check if all coroutines in a batch have completed.
+     * \param coroutines Vector of coroutine handles to check
+     * \return true if all coroutines are done
+     */
+    static bool all_done(const std::vector<GeneratorCoroutine>& coroutines);
+
 private:
+    /**
+     * \brief Process a single task: submit, await response, process result.
+     * \param pool Task message pool
+     * \param task_id Unique task identifier
+     * \param skill_id Skill to invoke
+     * \return Coroutine that suspends until response arrives
+     * 
+     * This is the per-task coroutine launched by dispatch_parallel().
+     * Runs on ResponseContext threads after response arrives.
+     */
+    GeneratorCoroutine process_single_task(
+        std::shared_ptr<TaskMessagePool> pool,
+        uint32_t task_id,
+        uint32_t skill_id);
+
     /**
      * \brief Generate task request and response buffers using typed buffer creation.
      * \return Pair of (request_buffer, response_buffer).
@@ -115,4 +166,5 @@ private:
     TaskIdGenerator task_id_generator_;
     std::atomic<bool> stopped_{false};
     size_t vector_size_ = 1024;  ///< Default vector size for vector operations
+    std::shared_ptr<ResponseContext> response_ctx_;  ///< Context for async coroutine resumption
 };

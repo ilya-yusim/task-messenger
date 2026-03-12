@@ -9,6 +9,7 @@ namespace transport_server_opts { std::optional<std::string> get_listen_host(); 
 AsyncTransportServer::AsyncTransportServer(std::shared_ptr<Logger> logger)
     : logger_(std::move(logger)), running_(false) {
     session_manager_ = std::make_unique<session::SessionManager>(logger_);
+    response_ctx_ = std::make_shared<ResponseContext>("ResponseWorker", logger_);
 }
 
 AsyncTransportServer::~AsyncTransportServer() = default;
@@ -26,6 +27,9 @@ bool AsyncTransportServer::start(const std::string& host, int port, int backlog)
     }
     io_->start(threads);
     io_guard_.emplace(io_->make_work_guard());
+
+    // Start response context worker threads (for resuming async generator coroutines)
+    response_ctx_->start(1);
 
     server_socket_ = transport::CoroSocketAdapter::create_server(logger_, io_);
 
@@ -69,6 +73,8 @@ void AsyncTransportServer::stop() noexcept {
     }
     io_guard_.reset();
     if (io_) io_->stop();
+    // Stop response context workers
+    if (response_ctx_) response_ctx_->stop();
     cleanup_closed_connections();
     session_manager_->cleanup_completed_sessions();
     logger_->info("AsyncTransportServer: stopped");
@@ -82,6 +88,10 @@ void AsyncTransportServer::enqueue_tasks(std::vector<TaskMessage> tasks) {
 
 std::pair<size_t, size_t> AsyncTransportServer::get_task_pool_stats() const {
     return session_manager_->get_task_pool_stats();
+}
+
+std::shared_ptr<TaskMessagePool> AsyncTransportServer::task_pool() const {
+    return session_manager_->task_pool();
 }
 
 void AsyncTransportServer::print_transporter_statistics() const noexcept {

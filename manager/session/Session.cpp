@@ -1,8 +1,10 @@
 // Session.cpp - Session lifecycle and task handling implementation
 #include "Session.hpp"
+#include "message/ResponseContext.hpp"
 #include <cassert>
 #include <chrono>
 #include <cstring>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -126,6 +128,11 @@ Task<void> Session::run_coroutine() {
                     record_task_completed();
                     logger_->debug("Session " + std::to_string(session_id_) +
                                     ": Task " + std::to_string(task.task_id()) + " completed successfully");
+                    
+                    // Signal completion to awaiting coroutine if present
+                    if (task.has_completion_source()) {
+                        task.complete(response, std::as_bytes(std::span{response_body}), true);
+                    }
                 } else {
                     record_task_failed();
                     logger_->warning("Session " + std::to_string(session_id_) + ": Task " + std::to_string(task.task_id()) +
