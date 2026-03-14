@@ -1,6 +1,9 @@
 /**
  * @file skills/builtins/MathOperationPayload.hpp
  * @brief Payload factory for MathOperation skill.
+ * 
+ * MathOperation uses scalar-as-vector pattern: operand_a, operand_b, and result
+ * are stored as single-element [double] vectors for uniform pointer access.
  */
 #pragma once
 
@@ -12,70 +15,49 @@
 #include <memory>
 #include <optional>
 #include <span>
-#include <type_traits>
 #include <vector>
 
 namespace TaskMessenger::Skills {
 
 /**
- * @brief Decoded MathOperation response.
+ * @brief Direct buffer pointers for MathOperation request (write side).
  * 
- * Stores the result value and overflow flag.
+ * All scalar fields are stored as single-element vectors for uniform `double*` access.
  */
-struct MathOperationDecodedResponse {
-    double result;     ///< Computed result
-    bool overflow;     ///< Overflow flag
+struct MathOperationRequestPtrs {
+    double* a;               ///< Pointer to operand a (single-element vector)
+    double* b;               ///< Pointer to operand b (single-element vector)
+    MathOperation operation; ///< Operation type
 };
 
 /**
- * @brief Buffer pointers for MathOperation skill (templated on constness).
- * @tparam Const If true, provides read-only pointers; if false, provides mutable pointers.
+ * @brief Response buffer pointers for MathOperation (templated on constness).
  * 
- * For scalar operations, use the generated mutate_*() methods directly
- * via get_mutable_request() instead of these pointers on the write side.
+ * @tparam Const If true, provides read-only pointers (verification);
+ *               if false, provides mutable pointers (handler write).
  */
 template<bool Const>
-struct MathOperationPtrs {
+struct MathOperationResponsePtrsT {
     using DoublePtr = std::conditional_t<Const, const double*, double*>;
-    
-    DoublePtr a;            ///< First operand (nullptr on write side, use mutate methods)
-    DoublePtr b;            ///< Second operand (nullptr on write side, use mutate methods)
-    MathOperation operation;  ///< Operation type
+
+    DoublePtr result;        ///< Pointer to result (single-element vector)
+    bool* overflow;          ///< Pointer to overflow flag (nullptr for read-only)
 };
 
-/// @brief Mutable buffer pointers for writing MathOperation request.
-using MathOperationBufferPtrs = MathOperationPtrs<false>;
+/// @brief Mutable response pointers for handlers writing results.
+using MathOperationResponsePtrs = MathOperationResponsePtrsT<false>;
 
-/// @brief Read-only view pointers for decoding MathOperation request.
-using MathOperationViewPtrs = MathOperationPtrs<true>;
-
-/**
- * @brief Decoded MathOperation request with scalar storage.
- * 
- * Stores scalar values (no pointer into buffer for FlatBuffer scalar fields).
- * This struct must outlive any use of its pointers.
- */
-struct MathOperationDecodedRequest {
-    double a_storage;           ///< First operand storage
-    double b_storage;           ///< Second operand storage
-    const double* a = &a_storage;  ///< Pointer to first operand
-    const double* b = &b_storage;  ///< Pointer to second operand
-    MathOperation operation;    ///< Operation type
-    
-    /// @brief Get view pointers (for uniform access pattern).
-    [[nodiscard]] MathOperationViewPtrs ptrs() const noexcept {
-        return MathOperationViewPtrs{.a = a, .b = b, .operation = operation};
-    }
-};
+/// @brief Read-only response pointers for verification/read access.
+using MathOperationResponseViewPtrs = MathOperationResponsePtrsT<true>;
 
 /// @brief Typed payload buffer for MathOperation skill.
-using MathOperationPayload = PayloadBuffer<MathOperationBufferPtrs>;
+using MathOperationPayload = PayloadBuffer<MathOperationRequestPtrs>;
 
 /**
  * @brief Payload factory for scalar math operations.
  *
- * Creates FlatBuffers payloads for MathOperationRequest.
- * Uses --gen-mutable for direct field mutation.
+ * Creates FlatBuffers payloads for MathOperationRequest using scalar-as-vector
+ * pattern for uniform pointer access to all fields.
  */
 class MathOperationPayloadFactory : public IPayloadFactory {
 public:
@@ -89,50 +71,77 @@ public:
     [[nodiscard]] std::unique_ptr<PayloadBufferBase> create_response_buffer_for_request(
         [[maybe_unused]] std::span<const uint8_t> request
     ) const override {
-        // MathOperation response is fixed size (result + overflow)
         return std::make_unique<SimplePayload>(create_response_buffer());
     }
 
     /**
-     * @brief Create a payload buffer with mutable field access.
+     * @brief Create a payload buffer with direct pointer access.
      * 
-     * Returns a MathOperationPayload. Use get_mutable_request() with
-     * mutate_operand_a(), mutate_operand_b(), and mutate_operation() to update values.
+     * Returns a MathOperationPayload with pointers to operand_a, operand_b.
+     * Modify values via direct pointer writes: `*ptrs.a = value;`
      * 
      * @param a Initial first operand.
      * @param b Initial second operand.
      * @param op Initial operation type.
-     * @return MathOperationPayload with ownership (use mutate methods for changes).
+     * @return MathOperationPayload with ownership and direct buffer pointers.
      */
     [[nodiscard]] static MathOperationPayload create_payload_buffer(
         double a = 0.0, 
         double b = 0.0, 
         MathOperation op = MathOperation_Add
     ) {
-        flatbuffers::FlatBufferBuilder builder(64);
-        
-        auto request = CreateMathOperationRequest(builder, a, b, op);
+        flatbuffers::FlatBufferBuilder builder(128);
+
+        // Create single-element vectors for scalar fields
+        double* a_ptr = nullptr;
+        double* b_ptr = nullptr;
+
+        // Create vectors in reverse order (FlatBuffers requirement)
+        auto b_offset = builder.CreateUninitializedVector(1, &b_ptr);
+        auto a_offset = builder.CreateUninitializedVector(1, &a_ptr);
+
+        // Initialize values
+        *a_ptr = a;
+        *b_ptr = b;
+
+        auto request = CreateMathOperationRequest(builder, a_offset, b_offset, op);
         builder.Finish(request);
+
+        // Pointers become invalid after Release() - must recalculate
+        auto buffer = builder.Release();
+
+        // Get mutable pointers from final buffer
+        auto mutable_request = flatbuffers::GetMutableRoot<MathOperationRequest>(buffer.data());
         
-        // For scalar fields, use mutate methods via get_mutable_request()
-        MathOperationBufferPtrs ptrs{
-            .a = nullptr,  // Use get_mutable_request()->mutate_operand_a()
-            .b = nullptr   // Use get_mutable_request()->mutate_operand_b()
+        MathOperationRequestPtrs ptrs{
+            .a = const_cast<double*>(mutable_request->operand_a()->data()),
+            .b = const_cast<double*>(mutable_request->operand_b()->data()),
+            .operation = op
         };
-        
-        return MathOperationPayload(builder.Release(), ptrs, SkillIds::MathOperation);
+
+        return MathOperationPayload(std::move(buffer), ptrs, SkillIds::MathOperation);
     }
 
     /**
-     * @brief Get mutable access to the request for changing field values.
+     * @brief Extract request pointers from a buffer span.
      * 
-     * @param payload The payload to get mutable access to.
-     * @return Mutable pointer to the MathOperationRequest.
+     * @param payload Buffer span (request sent to handler).
+     * @return Request pointers, or nullopt if validation fails.
      */
-    [[nodiscard]] static MathOperationRequest* get_mutable_request(
-        MathOperationPayload& payload
+    [[nodiscard]] static std::optional<MathOperationRequestPtrs> scatter_request_span(
+        std::span<const uint8_t> payload
     ) noexcept {
-        return flatbuffers::GetMutableRoot<MathOperationRequest>(payload.mutable_data());
+        auto* request = flatbuffers::GetMutableRoot<MathOperationRequest>(
+            const_cast<uint8_t*>(payload.data()));
+        if (!request || !request->operand_a() || !request->operand_b()) {
+            return std::nullopt;
+        }
+
+        return MathOperationRequestPtrs{
+            .a = const_cast<double*>(request->operand_a()->data()),
+            .b = const_cast<double*>(request->operand_b()->data()),
+            .operation = request->operation()
+        };
     }
 
     /**
@@ -143,35 +152,22 @@ public:
      * @return SimplePayload with buffer ownership.
      */
     [[nodiscard]] static SimplePayload create_payload(double a, double b, MathOperation op) {
-        flatbuffers::FlatBufferBuilder builder(64);
-        
-        auto request = CreateMathOperationRequest(builder, a, b, op);
+        flatbuffers::FlatBufferBuilder builder(128);
+
+        // Create single-element vectors
+        double* a_ptr = nullptr;
+        double* b_ptr = nullptr;
+
+        auto b_offset = builder.CreateUninitializedVector(1, &b_ptr);
+        auto a_offset = builder.CreateUninitializedVector(1, &a_ptr);
+
+        *a_ptr = a;
+        *b_ptr = b;
+
+        auto request = CreateMathOperationRequest(builder, a_offset, b_offset, op);
         builder.Finish(request);
-        
+
         return SimplePayload(builder.Release(), SimpleBufferPtrs{}, SkillIds::MathOperation);
-    }
-
-    /**
-     * @brief Decode a request payload into typed view pointers.
-     * 
-     * Extracts scalar values into a DecodedRequest.
-     * 
-     * @param payload Raw payload bytes from TaskMessage.
-     * @return Decoded request with typed pointers, or nullopt if validation fails.
-     */
-    [[nodiscard]] static std::optional<MathOperationDecodedRequest> scatter_request_span(
-        std::span<const uint8_t> payload
-    ) noexcept {
-        auto request = flatbuffers::GetRoot<MathOperationRequest>(payload.data());
-        if (!request) {
-            return std::nullopt;
-        }
-
-        return MathOperationDecodedRequest{
-            .a_storage = request->operand_a(),
-            .b_storage = request->operand_b(),
-            .operation = request->operation()
-        };
     }
 
     /**
@@ -186,31 +182,46 @@ public:
         bool overflow = false
     ) {
         flatbuffers::FlatBufferBuilder builder(64);
-        auto response = CreateMathOperationResponse(builder, result, overflow);
+        
+        // Create single-element vector for result
+        double* result_ptr = nullptr;
+        auto result_offset = builder.CreateUninitializedVector(1, &result_ptr);
+        *result_ptr = result;
+        
+        auto response = CreateMathOperationResponse(builder, result_offset, overflow);
         builder.Finish(response);
         return SimplePayload(builder.Release(), SimpleBufferPtrs{}, SkillIds::MathOperation);
     }
 
     /**
-     * @brief Decode a MathOperation response payload.
-     * 
-     * Extracts scalar result and overflow flag from the buffer.
+     * @brief Extract response pointers for read-only access.
      * 
      * @param payload Raw FlatBuffer bytes.
-     * @return Decoded response on success, nullopt on validation failure.
+     * @return Read-only response pointers, or nullopt on failure.
      */
-    [[nodiscard]] static std::optional<MathOperationDecodedResponse> scatter_response_span(
+    [[nodiscard]] static std::optional<MathOperationResponseViewPtrs> scatter_response_span(
         std::span<const uint8_t> payload
     ) noexcept {
         auto response = flatbuffers::GetRoot<MathOperationResponse>(payload.data());
-        if (!response) {
+        if (!response || !response->result()) {
             return std::nullopt;
         }
 
-        return MathOperationDecodedResponse{
-            .result = response->result(),
-            .overflow = response->overflow()
+        return MathOperationResponseViewPtrs{
+            .result = response->result()->data(),
+            .overflow = nullptr  // Read via response->overflow() for bool
         };
+    }
+
+    /**
+     * @brief Get overflow flag from parsed response.
+     * 
+     * @param payload Raw FlatBuffer bytes.
+     * @return Overflow flag value.
+     */
+    [[nodiscard]] static bool get_response_overflow(std::span<const uint8_t> payload) noexcept {
+        auto response = flatbuffers::GetRoot<MathOperationResponse>(payload.data());
+        return response ? response->overflow() : false;
     }
 };
 

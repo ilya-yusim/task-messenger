@@ -6,12 +6,12 @@ include "Common.fbs";
 namespace TaskMessenger.Skills;
 
 table MathOperationRequest {
-  operand_a: double;
-  operand_b: double;
+  operand_a: [double];   // Scalar stored as single-element vector for uniform pointer access
+  operand_b: [double];   // Scalar stored as single-element vector for uniform pointer access
   operation: MathOperation;
 }
 
 table MathOperationResponse {
-  result: double;
+  result: [double];      // Scalar stored as single-element vector for uniform pointer access
   overflow: bool;
 }

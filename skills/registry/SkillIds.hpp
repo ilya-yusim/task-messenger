@@ -29,14 +29,11 @@ namespace SkillIds {
     /// Fused multiply-add with scalar-as-vector (FusedMultiplyAddHandler)
     constexpr uint32_t FusedMultiplyAdd = 4;
     
-    /// Fused multiply-add with true scalar (FusedMultiplyAddMutableHandler)
-    constexpr uint32_t FusedMultiplyAddMutable = 5;
-    
     /// Maximum valid skill ID (for iteration/validation)
-    constexpr uint32_t MaxSkillId = 5;
+    constexpr uint32_t MaxSkillId = 4;
     
     /// Total number of defined skills
-    constexpr uint32_t Count = 5;
+    constexpr uint32_t Count = 4;
 }
 
 } // namespace TaskMessenger::Skills

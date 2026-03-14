@@ -19,15 +19,3 @@ table FusedMultiplyAddRequest {
 table FusedMultiplyAddResponse {
   result: [double];         // result[i] = a[i] + c * b[i]
 }
-
-// =============================================================================
-// Skill 5: Fused Multiply-Add with TRUE scalar (--gen-mutable required)
-// =============================================================================
-
-// This version uses a real scalar field instead of a single-element vector.
-// Use mutate_scalar_c() to update the value without rebuilding.
-table FusedMultiplyAddMutableRequest {
-  operand_a: [double];      // Vector a
-  operand_b: [double];      // Vector b
-  scalar_c: double;         // TRUE scalar - use mutate_scalar_c() to update
-}

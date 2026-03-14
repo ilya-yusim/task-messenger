@@ -154,20 +154,6 @@ DefaultTaskGenerator::generate_task_data_typed(uint32_t skill_id) {
                 FusedMultiplyAddPayloadFactory::create_response_buffer(vector_size_));
             return {std::move(request), std::move(response)};
         }
-        case SkillIds::FusedMultiplyAddMutable: {
-            // Create typed buffer, write into spans, use mutate for scalar
-            auto request = std::make_unique<FusedMultiplyAddPayload>(
-                FusedMultiplyAddMutablePayloadFactory::create_payload_buffer(vector_size_));
-            for (size_t i = 0; i < vector_size_; ++i) {
-                request->ptrs().a[i] = static_cast<double>(i + 1);
-                request->ptrs().b[i] = static_cast<double>(i + 4);
-            }
-            auto* req = FusedMultiplyAddMutablePayloadFactory::get_mutable_request(*request);
-            req->mutate_scalar_c(2.0);
-            auto response = std::make_unique<FusedMultiplyAddResponseBuffer>(
-                FusedMultiplyAddMutablePayloadFactory::create_response_buffer(vector_size_));
-            return {std::move(request), std::move(response)};
-        }
         default: {
             // Fallback: use MathOperation
             auto request = std::make_unique<MathOperationPayload>(

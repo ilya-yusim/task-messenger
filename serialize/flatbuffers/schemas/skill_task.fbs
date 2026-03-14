@@ -18,13 +18,13 @@ table StringReversalResponse {
 enum MathOperation : byte { Add = 0, Subtract, Multiply, Divide }
 
 table MathOperationRequest {
-  operand_a: double;
-  operand_b: double;
+  operand_a: [double];   // Scalar stored as single-element vector for uniform pointer access
+  operand_b: [double];   // Scalar stored as single-element vector for uniform pointer access
   operation: MathOperation;
 }
 
 table MathOperationResponse {
-  result: double;
+  result: [double];      // Scalar stored as single-element vector for uniform pointer access
   overflow: bool;
 }
 
@@ -51,13 +51,4 @@ table FusedMultiplyAddRequest {
 
 table FusedMultiplyAddResponse {
   result: [double];         // result[i] = a[i] + c * b[i]
-}
-
-// Fused Multiply-Add with TRUE scalar (requires --gen-mutable for buffer template)
-// This version uses a real scalar field instead of a single-element vector.
-// Use mutate_scalar_c() to update the value without rebuilding.
-table FusedMultiplyAddMutableRequest {
-  operand_a: [double];      // Vector a
-  operand_b: [double];      // Vector b
-  scalar_c: double;         // TRUE scalar - use mutate_scalar_c() to update
 }

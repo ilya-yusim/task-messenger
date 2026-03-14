@@ -70,21 +70,32 @@ std::vector<uint8_t> process_string_reversal(const std::vector<uint8_t>& payload
 /**
  * @brief Test math operation task serialization.
  *
- * Demonstrates another task type with numeric data.
+ * Demonstrates another task type with numeric data using scalar-as-vector pattern.
  */
 void test_math_operation() {
     std::cout << "\n=== Testing Math Operation Task ===\n";
 
     flatbuffers::FlatBufferBuilder builder(256);
-    auto math_req = CreateMathOperationRequest(builder, 42.0, 8.0, MathOperation_Multiply);
+    
+    // Create single-element vectors for operands (scalar-as-vector pattern)
+    double* a_ptr = nullptr;
+    double* b_ptr = nullptr;
+    auto b_offset = builder.CreateUninitializedVector(1, &b_ptr);
+    auto a_offset = builder.CreateUninitializedVector(1, &a_ptr);
+    
+    *a_ptr = 42.0;
+    *b_ptr = 8.0;
+    
+    auto math_req = CreateMathOperationRequest(builder, a_offset, b_offset, MathOperation_Multiply);
     builder.Finish(math_req);
 
     // Simulate round-trip using flatbuffers::GetRoot<T>
     auto buffer = builder.GetBufferPointer();
     auto parsed = flatbuffers::GetRoot<MathOperationRequest>(buffer);
 
-    double a = parsed->operand_a();
-    double b = parsed->operand_b();
+    // Access scalars via single-element vector data()
+    double a = parsed->operand_a()->Get(0);
+    double b = parsed->operand_b()->Get(0);
     MathOperation op = parsed->operation();
 
     double result = 0;
@@ -650,362 +661,6 @@ void test_fused_multiply_add_buffer_template() {
     std::cout << "  Fused multiply-add buffer template test passed!\n";
 }
 
-/**
- * @brief Alternative: Using mutable API for true scalar fields.
- *
- * If you prefer scalar_c as a true scalar (not a vector), you need:
- * 1. Generate with: flatc --gen-mutable --cpp skill_task.fbs
- * 2. Use the mutate_*() methods
- *
- * Example (if schema had `scalar_c: double;`):
- *   auto mutable_req = GetMutableFusedMultiplyAddRequest(buffer);
- *   mutable_req->mutate_scalar_c(new_value);
- *
- * Trade-offs:
- * - True scalar: Slightly smaller buffer, requires mutable API
- * - Single-element vector: +8 bytes overhead, but uniform pointer access
- */
-void show_mutable_api_alternative() {
-    std::cout << "\n=== Note: Mutable API Alternative ===\n";
-    std::cout << "  For true scalar fields, you can use FlatBuffers' mutable API:\n";
-    std::cout << "    1. Generate with: flatc --gen-mutable --cpp schema.fbs\n";
-    std::cout << "    2. Use mutate_*() methods: mutable_req->mutate_scalar_c(value);\n";
-    std::cout << "  \n";
-    std::cout << "  Trade-offs:\n";
-    std::cout << "    - True scalar (double): Smaller, needs mutable API generation\n";
-    std::cout << "    - 1-element vector [double]: +8 bytes, uniform pointer pattern\n";
-    std::cout << "  \n";
-    std::cout << "  For buffer template pattern, single-element vector is often cleaner.\n";
-}
-
-/**
- * @brief Demonstrates Fused Multiply-Add with TRUE scalar using mutable API.
- *
- * This uses the --gen-mutable generated code to update a true scalar field
- * without rebuilding the buffer. The mutable API provides mutate_*() methods.
- *
- * Schema:
- *   scalar_c: double;  // TRUE scalar (not a vector)
- *
- * Generated API:
- *   mutate_scalar_c(double value) -> bool
- *
- * Benefits:
- *   - No wasted space (scalar is 8 bytes, not 8 + vector overhead)
- *   - Semantic clarity (it's clearly a scalar in the schema)
- *
- * Requirement:
- *   - Must generate with: flatc --gen-mutable --cpp schema.fbs
- */
-void test_fma_mutable_scalar_buffer_template() {
-    std::cout << "\n=== Testing FMA with Mutable Scalar (Buffer Template) ===\n";
-    std::cout << "  Operation: result[i] = a[i] + c * b[i]\n";
-    std::cout << "  Using mutate_scalar_c() for true scalar field\n\n";
-
-    const size_t VECTOR_SIZE = 10;
-    const int NUM_ITERATIONS = 4;
-
-    // =========================================================================
-    // SETUP PHASE: Build the buffer structure ONCE
-    // =========================================================================
-    flatbuffers::FlatBufferBuilder builder(256 + 2 * VECTOR_SIZE * sizeof(double));
-
-    double* a_ptr = nullptr;
-    double* b_ptr = nullptr;
-
-    // Create vectors in reverse order
-    auto b_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &b_ptr);
-    auto a_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &a_ptr);
-
-    // Initialize vectors
-    for (size_t i = 0; i < VECTOR_SIZE; ++i) {
-        a_ptr[i] = static_cast<double>(i);  // a = [0, 1, 2, 3, ...]
-        b_ptr[i] = 2.0;                      // b = [2, 2, 2, 2, ...]
-    }
-
-    // Initial scalar value
-    double initial_c = 1.0;
-
-    // Build the table with the scalar field
-    auto request = CreateFusedMultiplyAddMutableRequest(
-        builder, a_offset, b_offset, initial_c
-    );
-    builder.Finish(request);
-
-    // Get buffer pointer - this stays constant
-    uint8_t* buffer_ptr = builder.GetBufferPointer();
-    const size_t buffer_size = builder.GetSize();
-
-    std::cout << "  Buffer created: " << buffer_size << " bytes\n";
-    std::cout << "  a_ptr: " << static_cast<void*>(a_ptr) << "\n";
-    std::cout << "  b_ptr: " << static_cast<void*>(b_ptr) << "\n\n";
-
-    // =========================================================================
-    // ITERATION PHASE: Update vectors via pointers, scalar via mutate_*()
-    // =========================================================================
-    std::cout << "  Testing different values of c using mutate_scalar_c():\n";
-
-    for (int iter = 0; iter < NUM_ITERATIONS; ++iter) {
-        // Update vectors directly via pointers (same as before)
-        for (size_t i = 0; i < VECTOR_SIZE; ++i) {
-            a_ptr[i] = static_cast<double>(i);
-            b_ptr[i] = 2.0;
-        }
-
-        // =====================================================================
-        // KEY: Update scalar using mutable API
-        // =====================================================================
-        // flatbuffers::GetMutableRoot<T>() returns a mutable pointer
-        // that allows modifying scalar fields in-place via mutate_*()
-        double new_c = static_cast<double>(iter + 1);
-
-        auto mutable_request = flatbuffers::GetMutableRoot<FusedMultiplyAddMutableRequest>(buffer_ptr);
-        bool success = mutable_request->mutate_scalar_c(new_c);
-
-        if (!success) {
-            std::cerr << "  ERROR: mutate_scalar_c() failed!\n";
-            return;
-        }
-
-        // Buffer is ready to use/send immediately!
-
-        // Verify by parsing (read-only view)
-        auto parsed = flatbuffers::GetRoot<FusedMultiplyAddMutableRequest>(buffer_ptr);
-        double c = parsed->scalar_c();
-
-        // Compute a + c*b for element [5]
-        double result_5 = parsed->operand_a()->Get(5) + c * parsed->operand_b()->Get(5);
-        double expected = 5.0 + new_c * 2.0;
-
-        assert(result_5 == expected);
-        assert(c == new_c);
-
-        std::cout << "    mutate_scalar_c(" << new_c << "): a[5] + c*b[5] = "
-                  << parsed->operand_a()->Get(5) << " + " << c << "*" << parsed->operand_b()->Get(5)
-                  << " = " << result_5 << "\n";
-    }
-
-    std::cout << "\n  Pointers unchanged (no reallocation):\n";
-    std::cout << "  a_ptr: " << static_cast<void*>(a_ptr) << "\n";
-    std::cout << "  b_ptr: " << static_cast<void*>(b_ptr) << "\n";
-    std::cout << "  FMA mutable scalar buffer template test passed!\n";
-}
-
-/**
- * @brief Compare the two approaches side-by-side.
- */
-void compare_scalar_approaches() {
-    std::cout << "\n=== Comparing Scalar Approaches for Buffer Template ===\n\n";
-
-    const size_t VECTOR_SIZE = 100;
-
-    // Approach 1: Single-element vector
-    {
-        flatbuffers::FlatBufferBuilder builder(256 + 2 * VECTOR_SIZE * sizeof(double));
-        double* a_ptr = nullptr;
-        double* b_ptr = nullptr;
-        double* c_ptr = nullptr;
-
-        auto c_offset = builder.CreateUninitializedVector(1, &c_ptr);
-        auto b_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &b_ptr);
-        auto a_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &a_ptr);
-
-        for (size_t i = 0; i < VECTOR_SIZE; ++i) { a_ptr[i] = 1.0; b_ptr[i] = 1.0; }
-        c_ptr[0] = 1.0;
-
-        auto req = CreateFusedMultiplyAddRequest(builder, a_offset, b_offset, c_offset);
-        builder.Finish(req);
-
-        std::cout << "  Approach 1: scalar_c as [double] (1-element vector)\n";
-        std::cout << "    Buffer size: " << builder.GetSize() << " bytes\n";
-        std::cout << "    Update method: c_ptr[0] = new_value;\n\n";
-    }
-
-    // Approach 2: True scalar with mutable API
-    {
-        flatbuffers::FlatBufferBuilder builder(256 + 2 * VECTOR_SIZE * sizeof(double));
-        double* a_ptr = nullptr;
-        double* b_ptr = nullptr;
-
-        auto b_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &b_ptr);
-        auto a_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &a_ptr);
-
-        for (size_t i = 0; i < VECTOR_SIZE; ++i) { a_ptr[i] = 1.0; b_ptr[i] = 1.0; }
-
-        auto req = CreateFusedMultiplyAddMutableRequest(builder, a_offset, b_offset, 1.0);
-        builder.Finish(req);
-
-        std::cout << "  Approach 2: scalar_c as double (true scalar, mutable API)\n";
-        std::cout << "    Buffer size: " << builder.GetSize() << " bytes\n";
-        std::cout << "    Update method: mutable_req->mutate_scalar_c(new_value);\n\n";
-    }
-
-    std::cout << "  Summary:\n";
-    std::cout << "    - 1-element vector: Uniform pointer access, slightly larger\n";
-    std::cout << "    - True scalar + mutable: Smaller, requires GetMutable*() call\n";
-    std::cout << "    - Both allow buffer template pattern without rebuilding!\n";
-}
-
-/**
- * @brief Portable FMA buffer template using WriteScalar and mutable scalar API.
- *
- * This is the RECOMMENDED pattern for maximum portability:
- * 1. Use flatbuffers::WriteScalar() for vector element writes (handles endianness)
- * 2. Use mutate_scalar_c() for true scalar updates (generated mutable API)
- *
- * Performance notes:
- * - On little-endian (x86, x64, most ARM): WriteScalar is a no-op assignment
- * - On big-endian: WriteScalar performs necessary byte swap
- * - mutate_scalar_c() writes directly to a known offset - minimal overhead
- *
- * This ensures the buffer is valid on ANY architecture without code changes.
- */
-void test_portable_fma_buffer_template() {
-    std::cout << "\n=== Testing Portable FMA Buffer Template ===\n";
-    std::cout << "  Using WriteScalar() for vectors + mutate_scalar_c() for scalar\n";
-    std::cout << "  Operation: result[i] = a[i] + c * b[i]\n\n";
-
-    const size_t VECTOR_SIZE = 10;
-    const int NUM_ITERATIONS = 4;
-
-    // =========================================================================
-    // SETUP PHASE: Build the buffer structure ONCE
-    // =========================================================================
-    flatbuffers::FlatBufferBuilder builder(256 + 2 * VECTOR_SIZE * sizeof(double));
-
-    double* a_ptr = nullptr;
-    double* b_ptr = nullptr;
-
-    // Create vectors in reverse order
-    auto b_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &b_ptr);
-    auto a_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &a_ptr);
-
-    // Initialize vectors using WriteScalar for portability
-    for (size_t i = 0; i < VECTOR_SIZE; ++i) {
-        flatbuffers::WriteScalar(&a_ptr[i], static_cast<double>(i));
-        flatbuffers::WriteScalar(&b_ptr[i], 2.0);
-    }
-
-    // Initial scalar value
-    double initial_c = 1.0;
-
-    // Build the table with the true scalar field
-    auto request = CreateFusedMultiplyAddMutableRequest(
-        builder, a_offset, b_offset, initial_c
-    );
-    builder.Finish(request);
-
-    // Get buffer pointer - this stays constant
-    uint8_t* buffer_ptr = builder.GetBufferPointer();
-    const size_t buffer_size = builder.GetSize();
-
-    std::cout << "  Buffer created: " << buffer_size << " bytes\n";
-    std::cout << "  Endianness: " << (FLATBUFFERS_LITTLEENDIAN ? "little" : "big") << "\n";
-    std::cout << "  WriteScalar overhead on this platform: "
-              << (FLATBUFFERS_LITTLEENDIAN ? "none (no-op)" : "byte swap") << "\n\n";
-
-    // =========================================================================
-    // ITERATION PHASE: Update vectors with WriteScalar, scalar with mutate_*()
-    // =========================================================================
-    std::cout << "  Running iterations with portable writes:\n";
-
-    for (int iter = 0; iter < NUM_ITERATIONS; ++iter) {
-        // =====================================================================
-        // PORTABLE VECTOR WRITES: Use WriteScalar for each element
-        // =====================================================================
-        for (size_t i = 0; i < VECTOR_SIZE; ++i) {
-            // WriteScalar handles endian conversion automatically
-            flatbuffers::WriteScalar(&a_ptr[i], static_cast<double>(i));
-            flatbuffers::WriteScalar(&b_ptr[i], 2.0);
-        }
-
-        // =====================================================================
-        // PORTABLE SCALAR UPDATE: Use mutable API
-        // =====================================================================
-        double new_c = static_cast<double>(iter + 1);
-        auto mutable_request = flatbuffers::GetMutableRoot<FusedMultiplyAddMutableRequest>(buffer_ptr);
-        bool mutate_ok = mutable_request->mutate_scalar_c(new_c);
-        assert(mutate_ok);
-
-        // Buffer is now ready to send - properly formatted for any architecture!
-
-        // Verify by parsing (using ReadScalar internally via Get())
-        auto parsed = flatbuffers::GetRoot<FusedMultiplyAddMutableRequest>(buffer_ptr);
-        double c = parsed->scalar_c();
-
-        // Get() uses ReadScalar internally, so this is also portable
-        double a5 = parsed->operand_a()->Get(5);
-        double b5 = parsed->operand_b()->Get(5);
-        double result_5 = a5 + c * b5;
-        double expected = 5.0 + new_c * 2.0;
-
-        assert(result_5 == expected);
-
-        std::cout << "    Iter " << iter << ": a[5]=" << a5 << ", b[5]=" << b5
-                  << ", c=" << c << " -> result=" << result_5 << "\n";
-    }
-
-    std::cout << "\n  Portable FMA buffer template test passed!\n";
-}
-
-/**
- * @brief Benchmark comparing direct writes vs WriteScalar.
- *
- * On little-endian systems, these should be nearly identical.
- * This demonstrates that portability doesn't cost performance.
- */
-void benchmark_write_scalar_overhead() {
-    std::cout << "\n=== Benchmarking WriteScalar Overhead ===\n";
-
-    const size_t VECTOR_SIZE = 10000;
-    const int NUM_ITERATIONS = 100;
-
-    flatbuffers::FlatBufferBuilder builder(64 + VECTOR_SIZE * sizeof(double));
-
-    double* data_ptr = nullptr;
-    auto data_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &data_ptr);
-    (void)data_offset;  // Suppress unused warning
-
-    // Warm up
-    for (size_t i = 0; i < VECTOR_SIZE; ++i) {
-        data_ptr[i] = static_cast<double>(i);
-    }
-
-    // Method 1: Direct assignment
-    auto start1 = std::chrono::high_resolution_clock::now();
-    for (int iter = 0; iter < NUM_ITERATIONS; ++iter) {
-        for (size_t i = 0; i < VECTOR_SIZE; ++i) {
-            data_ptr[i] = static_cast<double>(i + iter);
-        }
-    }
-    auto end1 = std::chrono::high_resolution_clock::now();
-    auto direct_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end1 - start1).count();
-
-    // Method 2: WriteScalar (portable)
-    auto start2 = std::chrono::high_resolution_clock::now();
-    for (int iter = 0; iter < NUM_ITERATIONS; ++iter) {
-        for (size_t i = 0; i < VECTOR_SIZE; ++i) {
-            flatbuffers::WriteScalar(&data_ptr[i], static_cast<double>(i + iter));
-        }
-    }
-    auto end2 = std::chrono::high_resolution_clock::now();
-    auto portable_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end2 - start2).count();
-
-    double ratio = static_cast<double>(portable_ns) / static_cast<double>(direct_ns);
-
-    std::cout << "  Vector size: " << VECTOR_SIZE << ", Iterations: " << NUM_ITERATIONS << "\n";
-    std::cout << "  Direct assignment: " << direct_ns / 1000000.0 << " ms\n";
-    std::cout << "  WriteScalar:       " << portable_ns / 1000000.0 << " ms\n";
-    std::cout << "  Ratio (portable/direct): " << ratio << "x\n";
-
-    if (FLATBUFFERS_LITTLEENDIAN) {
-        std::cout << "  (On little-endian, WriteScalar compiles to direct assignment)\n";
-    }
-
-    // They should be very close (within 20% typically, often identical)
-    std::cout << "  Benchmark complete - portability has minimal overhead!\n";
-}
-
 }  // namespace
 
 int main() {
@@ -1053,22 +708,6 @@ int main() {
     // Test 10: Fused Multiply-Add (a + c*b) with buffer template pattern
     // Demonstrates storing scalar as single-element vector for direct pointer access
     test_fused_multiply_add_buffer_template();
-
-    // Info: Alternative using mutable API
-    show_mutable_api_alternative();
-
-    // Test 11: FMA with mutable scalar (true scalar with mutate_*() method)
-    test_fma_mutable_scalar_buffer_template();
-
-    // Test 12: Compare both scalar approaches
-    compare_scalar_approaches();
-
-    // Test 13: Portable FMA buffer template (WriteScalar + mutable scalar)
-    // This is the RECOMMENDED pattern for portable high-performance code
-    test_portable_fma_buffer_template();
-
-    // Test 14: Benchmark WriteScalar overhead (should be negligible on little-endian)
-    benchmark_write_scalar_overhead();
 
     std::cout << "\n=== All FlatBuffers tests passed! ===\n";
     return 0;

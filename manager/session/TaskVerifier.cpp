@@ -108,25 +108,33 @@ VerificationResult TaskVerifier::compare_responses(
             auto exp = MathOperationPayloadFactory::scatter_response_span(expected);
             auto act = MathOperationPayloadFactory::scatter_response_span(actual);
             
-            if (!exp) {
+            if (!exp || !exp->result) {
                 return VerificationResult::fail(
                     std::format("Task {}: failed to decode expected MathOperation response", task_id));
             }
-            if (!act) {
+            if (!act || !act->result) {
                 return VerificationResult::fail(
                     std::format("Task {}: failed to decode actual MathOperation response", task_id));
             }
             
-            if (!compare_doubles(exp->result, act->result, abs_epsilon, rel_epsilon)) {
+            // Result is stored as single-element vector
+            double exp_result = *exp->result;
+            double act_result = *act->result;
+            
+            if (!compare_doubles(exp_result, act_result, abs_epsilon, rel_epsilon)) {
                 return VerificationResult::fail(
                     std::format("Task {}: MathOperation result mismatch: expected {}, got {}",
-                               task_id, exp->result, act->result));
+                               task_id, exp_result, act_result));
             }
             
-            if (exp->overflow != act->overflow) {
+            // Overflow is read separately
+            bool exp_overflow = MathOperationPayloadFactory::get_response_overflow(expected);
+            bool act_overflow = MathOperationPayloadFactory::get_response_overflow(actual);
+            
+            if (exp_overflow != act_overflow) {
                 return VerificationResult::fail(
                     std::format("Task {}: MathOperation overflow flag mismatch: expected {}, got {}",
-                               task_id, exp->overflow, act->overflow));
+                               task_id, exp_overflow, act_overflow));
             }
             break;
         }
@@ -175,29 +183,6 @@ VerificationResult TaskVerifier::compare_responses(
             if (!compare_double_vectors(exp->result, act->result, abs_epsilon, rel_epsilon, mismatch_idx)) {
                 return VerificationResult::fail(
                     std::format("Task {}: FusedMultiplyAdd mismatch at index {}: expected {}, got {}",
-                               task_id, mismatch_idx, 
-                               exp->result[mismatch_idx], act->result[mismatch_idx]));
-            }
-            break;
-        }
-        
-        case SkillIds::FusedMultiplyAddMutable: {
-            auto exp = FusedMultiplyAddMutablePayloadFactory::scatter_response_span<false>(expected);
-            auto act = FusedMultiplyAddMutablePayloadFactory::scatter_response_span<false>(actual);
-            
-            if (!exp) {
-                return VerificationResult::fail(
-                    std::format("Task {}: failed to decode expected FusedMultiplyAddMutable response", task_id));
-            }
-            if (!act) {
-                return VerificationResult::fail(
-                    std::format("Task {}: failed to decode actual FusedMultiplyAddMutable response", task_id));
-            }
-            
-            size_t mismatch_idx = 0;
-            if (!compare_double_vectors(exp->result, act->result, abs_epsilon, rel_epsilon, mismatch_idx)) {
-                return VerificationResult::fail(
-                    std::format("Task {}: FusedMultiplyAddMutable mismatch at index {}: expected {}, got {}",
                                task_id, mismatch_idx, 
                                exp->result[mismatch_idx], act->result[mismatch_idx]));
             }

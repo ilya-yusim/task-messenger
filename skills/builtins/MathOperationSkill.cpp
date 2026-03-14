@@ -66,10 +66,15 @@ public:
 
         // Write result to pre-allocated response buffer
         auto* resp = flatbuffers::GetMutableRoot<MathOperationResponse>(response.data());
-        if (!resp) {
+        if (!resp || !resp->mutable_result()) {
             return false;
         }
-        resp->mutate_result(result);
+        
+        // Result is stored as single-element vector
+        auto* result_vec = resp->mutable_result();
+        if (result_vec->size() > 0) {
+            const_cast<double*>(result_vec->data())[0] = result;
+        }
         resp->mutate_overflow(overflow);
 
         return true;

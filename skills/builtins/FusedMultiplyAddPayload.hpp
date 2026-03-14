@@ -13,51 +13,25 @@
 #include <memory>
 #include <optional>
 #include <span>
-#include <type_traits>
 #include <vector>
 
 namespace TaskMessenger::Skills {
 
 /**
- * @brief Buffer pointers for FusedMultiplyAdd request (templated on constness).
- * @tparam Const If true, provides read-only views; if false, provides mutable access.
- */
-template<bool Const>
-struct FusedMultiplyAddPtrs {
-    using DoubleSpan = std::conditional_t<Const, std::span<const double>, std::span<double>>;
-    using DoublePtr = std::conditional_t<Const, const double*, double*>;
-    
-    DoubleSpan a;   ///< First operand vector
-    DoubleSpan b;   ///< Second operand vector
-    DoublePtr c;    ///< Scalar multiplier (nullptr for Mutable variant on write side)
-};
-
-/// @brief Mutable buffer pointers for writing FusedMultiplyAdd request.
-using FusedMultiplyAddBufferPtrs = FusedMultiplyAddPtrs<false>;
-
-/// @brief Read-only view pointers for decoding FusedMultiplyAdd request.
-using FusedMultiplyAddViewPtrs = FusedMultiplyAddPtrs<true>;
-
-/**
- * @brief Decoded FusedMultiplyAdd request with scalar storage.
+ * @brief Buffer pointers for FusedMultiplyAdd request.
  * 
- * For the Mutable variant, the scalar is stored by value and the pointer
- * points to the stored value. This struct must outlive any use of its pointers.
+ * Provides direct pointer access into FlatBuffer memory for both read and write.
+ * Uses scalar-as-vector pattern: scalar c is stored as single-element vector
+ * for uniform pointer-based access.
  */
-struct FusedMultiplyAddDecodedRequest {
-    std::span<const double> a;  ///< First operand vector (view into buffer)
-    std::span<const double> b;  ///< Second operand vector (view into buffer)
-    double c_storage;           ///< Scalar storage (copied from buffer)
-    const double* c = &c_storage;  ///< Pointer to scalar (always valid)
-    
-    /// @brief Get view pointers (for uniform access pattern).
-    [[nodiscard]] FusedMultiplyAddViewPtrs ptrs() const noexcept {
-        return FusedMultiplyAddViewPtrs{.a = a, .b = b, .c = c};
-    }
+struct FusedMultiplyAddRequestPtrs {
+    std::span<double> a;   ///< First operand vector
+    std::span<double> b;   ///< Second operand vector
+    double* c;             ///< Scalar multiplier (single-element vector)
 };
 
 /// @brief Typed payload buffer for FusedMultiplyAdd request.
-using FusedMultiplyAddPayload = PayloadBuffer<FusedMultiplyAddBufferPtrs>;
+using FusedMultiplyAddPayload = PayloadBuffer<FusedMultiplyAddRequestPtrs>;
 
 /**
  * @brief Buffer pointers for FusedMultiplyAdd response (templated on constness).
@@ -143,7 +117,7 @@ public:
         double* final_ptr_b = const_cast<double*>(req->operand_b()->data());
         double* final_ptr_c = const_cast<double*>(req->scalar_c()->data());
         
-        FusedMultiplyAddBufferPtrs ptrs{
+        FusedMultiplyAddRequestPtrs ptrs{
             .a = std::span<double>(final_ptr_a, vector_size),
             .b = std::span<double>(final_ptr_b, vector_size),
             .c = final_ptr_c
@@ -208,24 +182,25 @@ public:
     }
 
     /**
-     * @brief Decode a FusedMultiplyAdd request payload into typed view pointers.
+     * @brief Decode a FusedMultiplyAdd request payload into typed pointers.
      * 
-     * Validates the payload and returns read-only view pointers into the buffer.
+     * Validates the payload and returns pointers directly into the FlatBuffer memory.
      * 
      * @param payload Raw FlatBuffer bytes.
-     * @return Decoded request on success, nullopt on validation failure.
+     * @return Request pointers on success, nullopt on validation failure.
      */
-    [[nodiscard]] static std::optional<FusedMultiplyAddDecodedRequest> scatter_request_span(
+    [[nodiscard]] static std::optional<FusedMultiplyAddRequestPtrs> scatter_request_span(
         std::span<const uint8_t> payload
     ) {
-        auto request = flatbuffers::GetRoot<FusedMultiplyAddRequest>(payload.data());
+        auto* request = flatbuffers::GetMutableRoot<FusedMultiplyAddRequest>(
+            const_cast<uint8_t*>(payload.data()));
         if (!request || !request->operand_a() || !request->operand_b() || !request->scalar_c()) {
             return std::nullopt;
         }
 
-        auto vec_a = request->operand_a();
-        auto vec_b = request->operand_b();
-        auto scalar_c_vec = request->scalar_c();
+        auto* vec_a = request->mutable_operand_a();
+        auto* vec_b = request->mutable_operand_b();
+        auto* scalar_c_vec = request->mutable_scalar_c();
 
         // Vectors must have the same size
         if (vec_a->size() != vec_b->size()) {
@@ -237,221 +212,17 @@ public:
             return std::nullopt;
         }
 
-        FusedMultiplyAddDecodedRequest result{
-            .a = std::span<const double>(vec_a->data(), vec_a->size()),
-            .b = std::span<const double>(vec_b->data(), vec_b->size()),
-            .c_storage = scalar_c_vec->Get(0)
+        return FusedMultiplyAddRequestPtrs{
+            .a = std::span<double>(vec_a->data(), vec_a->size()),
+            .b = std::span<double>(vec_b->data(), vec_b->size()),
+            .c = scalar_c_vec->data()
         };
-        result.c = &result.c_storage;
-        return result;
     }
 
     /**
      * @brief Decode a FusedMultiplyAdd response payload into typed view pointers.
      * 
      * Validates the payload and returns view pointers into the buffer.
-     * 
-     * @tparam Mutable If true, returns writable spans; if false, read-only.
-     * @param payload Raw FlatBuffer bytes.
-     * @return View pointers on success, nullopt on validation failure.
-     */
-    template<bool Mutable = false>
-    [[nodiscard]] static auto scatter_response_span(
-        std::conditional_t<Mutable, std::span<uint8_t>, std::span<const uint8_t>> payload
-    ) -> std::optional<FusedMultiplyAddResponsePtrsT<not Mutable>> {
-        auto* response = flatbuffers::GetMutableRoot<FusedMultiplyAddResponse>(
-            const_cast<uint8_t*>(payload.data()));
-        if (!response || !response->result()) {
-            return std::nullopt;
-        }
-
-        auto* result = response->mutable_result();
-        if constexpr (Mutable) {
-            return FusedMultiplyAddResponsePtrs{
-                .result = std::span<double>(result->data(), result->size())
-            };
-        } else {
-            return FusedMultiplyAddResponseViewPtrs{
-                .result = std::span<const double>(result->data(), result->size())
-            };
-        }
-    }
-};
-
-/**
- * @brief Payload factory for FusedMultiplyAddMutable (true scalar pattern).
- *
- * Creates FlatBuffers payloads for FusedMultiplyAddMutableRequest.
- * Computes: result[i] = a[i] + c * b[i]
- * Uses --gen-mutable for scalar field mutation via mutate_scalar_c().
- */
-class FusedMultiplyAddMutablePayloadFactory : public IPayloadFactory {
-public:
-    [[nodiscard]] uint32_t skill_id() const noexcept override {
-        return SkillIds::FusedMultiplyAddMutable;
-    }
-
-    /**
-     * @brief Create a pre-allocated response buffer sized for a given request.
-     */
-    [[nodiscard]] std::unique_ptr<PayloadBufferBase> create_response_buffer_for_request(
-        std::span<const uint8_t> request
-    ) const override {
-        auto req_ptrs = scatter_request_span(request);
-        if (!req_ptrs) {
-            return nullptr;
-        }
-        return std::make_unique<FusedMultiplyAddResponseBuffer>(
-            create_response_buffer(req_ptrs->a.size()));
-    }
-
-    /**
-     * @brief Create a payload buffer with typed data access.
-     * 
-     * Returns a FusedMultiplyAddPayload combining ownership with spans
-     * directly into the FlatBuffer memory. Use get_mutable_request() and
-     * mutate_scalar_c() to change the scalar value.
-     * 
-     * @param vector_size Size of both operand vectors.
-     * @param c Initial scalar multiplier value.
-     * @return FusedMultiplyAddPayload with ownership and typed pointers (c is nullptr).
-     */
-    [[nodiscard]] static FusedMultiplyAddPayload create_payload_buffer(
-        size_t vector_size, 
-        double c = 0.0
-    ) {
-        flatbuffers::FlatBufferBuilder builder(64 + vector_size * 2 * sizeof(double));
-        
-        double* ptr_a = nullptr;
-        double* ptr_b = nullptr;
-        
-        auto vec_a = builder.CreateUninitializedVector(vector_size, &ptr_a);
-        auto vec_b = builder.CreateUninitializedVector(vector_size, &ptr_b);
-        
-        auto request = CreateFusedMultiplyAddMutableRequest(builder, vec_a, vec_b, c);
-        builder.Finish(request);
-        
-        auto detached = builder.Release();
-        
-        // Extract pointers from the FINISHED buffer by parsing it
-        auto* req = flatbuffers::GetMutableRoot<FusedMultiplyAddMutableRequest>(detached.data());
-        double* final_ptr_a = const_cast<double*>(req->operand_a()->data());
-        double* final_ptr_b = const_cast<double*>(req->operand_b()->data());
-        
-        FusedMultiplyAddBufferPtrs ptrs{
-            .a = std::span<double>(final_ptr_a, vector_size),
-            .b = std::span<double>(final_ptr_b, vector_size),
-            .c = nullptr  // Use get_mutable_request()->mutate_scalar_c()
-        };
-        
-        return FusedMultiplyAddPayload(std::move(detached), ptrs, SkillIds::FusedMultiplyAddMutable);
-    }
-
-    /**
-     * @brief Get mutable access to the request for changing scalar_c.
-     * 
-     * @param payload The payload to get mutable access to.
-     * @return Mutable pointer to the FusedMultiplyAddMutableRequest.
-     */
-    [[nodiscard]] static FusedMultiplyAddMutableRequest* get_mutable_request(
-        FusedMultiplyAddPayload& payload
-    ) noexcept {
-        return flatbuffers::GetMutableRoot<FusedMultiplyAddMutableRequest>(payload.mutable_data());
-    }
-
-    /**
-     * @brief Create a simple payload (one-off, no typed pointers needed).
-     * @param a First operand vector.
-     * @param b Second operand vector.
-     * @param c Scalar multiplier.
-     * @return SimplePayload with buffer ownership.
-     */
-    [[nodiscard]] static SimplePayload create_payload(
-        const std::vector<double>& a,
-        const std::vector<double>& b,
-        double c
-    ) {
-        flatbuffers::FlatBufferBuilder builder(64 + (a.size() + b.size()) * sizeof(double));
-        
-        auto vec_a = builder.CreateVector(a);
-        auto vec_b = builder.CreateVector(b);
-        
-        auto request = CreateFusedMultiplyAddMutableRequest(builder, vec_a, vec_b, c);
-        builder.Finish(request);
-        
-        return SimplePayload(builder.Release(), SimpleBufferPtrs{}, SkillIds::FusedMultiplyAddMutable);
-    }
-
-    /**
-     * @brief Create a response buffer with typed data access.
-     * 
-     * Returns a FusedMultiplyAddResponseBuffer combining ownership with span pointing
-     * directly into the FlatBuffer memory for zero-copy result writing.
-     * Note: Both FusedMultiplyAdd and FusedMultiplyAddMutable use the same response schema.
-     * 
-     * @param vector_size Size of the result vector.
-     * @return FusedMultiplyAddResponseBuffer with ownership and typed pointer.
-     */
-    [[nodiscard]] static FusedMultiplyAddResponseBuffer create_response_buffer(size_t vector_size) {
-        flatbuffers::FlatBufferBuilder builder(64 + vector_size * sizeof(double));
-        
-        double* result_ptr = nullptr;
-        auto result_offset = builder.CreateUninitializedVector(vector_size, &result_ptr);
-        auto response = CreateFusedMultiplyAddResponse(builder, result_offset);
-        builder.Finish(response);
-        
-        auto detached = builder.Release();
-        
-        // Extract pointer from the FINISHED buffer by parsing it
-        auto* resp = flatbuffers::GetMutableRoot<FusedMultiplyAddResponse>(detached.data());
-        double* final_result_ptr = const_cast<double*>(resp->result()->data());
-        
-        FusedMultiplyAddResponsePtrs ptrs{
-            .result = std::span<double>(final_result_ptr, vector_size)
-        };
-        
-        return FusedMultiplyAddResponseBuffer(std::move(detached), ptrs, SkillIds::FusedMultiplyAddMutable);
-    }
-
-    /**
-     * @brief Decode a FusedMultiplyAddMutable request payload into typed view pointers.
-     * 
-     * Validates the payload and returns read-only view pointers. The scalar value
-     * is copied into the returned struct (no pointer into buffer for true scalars).
-     * 
-     * @param payload Raw FlatBuffer bytes.
-     * @return Decoded request on success, nullopt on validation failure.
-     */
-    [[nodiscard]] static std::optional<FusedMultiplyAddDecodedRequest> scatter_request_span(
-        std::span<const uint8_t> payload
-    ) {
-        auto request = flatbuffers::GetRoot<FusedMultiplyAddMutableRequest>(payload.data());
-        if (!request || !request->operand_a() || !request->operand_b()) {
-            return std::nullopt;
-        }
-
-        auto vec_a = request->operand_a();
-        auto vec_b = request->operand_b();
-
-        // Vectors must have the same size
-        if (vec_a->size() != vec_b->size()) {
-            return std::nullopt;
-        }
-
-        FusedMultiplyAddDecodedRequest result{
-            .a = std::span<const double>(vec_a->data(), vec_a->size()),
-            .b = std::span<const double>(vec_b->data(), vec_b->size()),
-            .c_storage = request->scalar_c()
-        };
-        result.c = &result.c_storage;
-        return result;
-    }
-
-    /**
-     * @brief Decode a FusedMultiplyAddMutable response payload into typed view pointers.
-     * 
-     * Validates the payload and returns view pointers into the buffer.
-     * Note: Both FusedMultiplyAdd and FusedMultiplyAddMutable use the same response schema.
      * 
      * @tparam Mutable If true, returns writable spans; if false, read-only.
      * @param payload Raw FlatBuffer bytes.

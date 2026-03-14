@@ -54,46 +54,6 @@ public:
     }
 };
 
-/**
- * @brief Handler for fused multiply-add with true scalar field.
- *
- * Uses FusedMultiplyAddMutableRequest where scalar_c is a true scalar field.
- */
-class FusedMultiplyAddMutableHandler : public ISkillHandler {
-public:
-    [[nodiscard]] bool process(
-        std::span<const uint8_t> request,
-        std::span<uint8_t> response
-    ) override {
-        auto req_ptrs = FusedMultiplyAddMutablePayloadFactory::scatter_request_span(request);
-        if (!req_ptrs) {
-            return false;
-        }
-
-        auto resp_ptrs = FusedMultiplyAddMutablePayloadFactory::scatter_response_span<true>(response);
-        if (!resp_ptrs) {
-            return false;
-        }
-
-        const auto& a = req_ptrs->a;
-        const auto& b = req_ptrs->b;
-        double c = *req_ptrs->c;
-        auto size = a.size();
-        auto& result = resp_ptrs->result;
-
-        if (result.size() != size) {
-            return false;  // Response buffer size mismatch
-        }
-
-        // Compute FMA: result[i] = a[i] + c * b[i]
-        for (decltype(size) i = 0; i < size; ++i) {
-            result[i] = a[i] + c * b[i];
-        }
-
-        return true;
-    }
-};
-
 // Self-registration: runs before main()
 REGISTER_SKILL(
     SkillIds::FusedMultiplyAdd,
@@ -101,15 +61,6 @@ REGISTER_SKILL(
     "Computes result[i] = a[i] + c * b[i] with scalar-as-vector pattern",
     std::make_unique<FusedMultiplyAddHandler>(),
     std::make_unique<FusedMultiplyAddPayloadFactory>(),
-    1, 4096, 4096
-);
-
-REGISTER_SKILL(
-    SkillIds::FusedMultiplyAddMutable,
-    "FusedMultiplyAddMutable",
-    "Computes result[i] = a[i] + c * b[i] with true scalar field",
-    std::make_unique<FusedMultiplyAddMutableHandler>(),
-    std::make_unique<FusedMultiplyAddMutablePayloadFactory>(),
     1, 4096, 4096
 );
 
