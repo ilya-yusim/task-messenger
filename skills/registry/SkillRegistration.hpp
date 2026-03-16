@@ -68,3 +68,35 @@ public:
                 id, name, description, handler, factory, version, max_input, max_output \
             ) \
         )
+
+/**
+ * @def REGISTER_SKILL_CLASS
+ * @brief Macro to register a combined Skill class (preferred over REGISTER_SKILL).
+ *
+ * Usage:
+ * @code
+ * REGISTER_SKILL_CLASS(
+ *     MySkill,           // The skill class (must extend Skill<MySkill>)
+ *     "MySkill",         // Human-readable name
+ *     "Description",     // Description
+ *     1,                 // Version
+ *     4096,              // Max input size
+ *     4096               // Max output size
+ * );
+ * @endcode
+ *
+ * @param SkillClass The skill class that extends Skill<SkillClass>
+ * @param name The skill name string
+ * @param description The skill description string
+ * @param version The skill version
+ * @param max_input Maximum input size
+ * @param max_output Maximum output size
+ */
+#define REGISTER_SKILL_CLASS(SkillClass, name, description, version, max_input, max_output) \
+    static ::TaskMessenger::Skills::SkillRegistration \
+        SKILL_REG_CONCAT(_skill_registration_, __COUNTER__)( \
+            ::TaskMessenger::Skills::SkillDescriptor::create( \
+                std::make_unique<SkillClass>(), \
+                name, description, version, max_input, max_output \
+            ) \
+        )

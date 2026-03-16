@@ -67,12 +67,12 @@ bool SkillRegistry::dispatch(
     {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = skills_.find(skill_id);
-        if (it == skills_.end() || !it->second.handler) {
+        if (it == skills_.end() || !it->second.get_handler()) {
             log_debug("Unknown skill_id=" + std::to_string(skill_id) +
                       " for task_id=" + std::to_string(task_id));
             return false;
         }
-        handler = it->second.handler.get();
+        handler = it->second.get_handler();
         skill_name = it->second.name;
     }
     
@@ -93,8 +93,8 @@ bool SkillRegistry::dispatch(
 IPayloadFactory* SkillRegistry::get_payload_factory(uint32_t skill_id) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = skills_.find(skill_id);
-    if (it != skills_.end() && it->second.payload_factory) {
-        return it->second.payload_factory.get();
+    if (it != skills_.end()) {
+        return it->second.get_factory();
     }
     return nullptr;
 }

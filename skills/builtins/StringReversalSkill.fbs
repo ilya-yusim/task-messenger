@@ -9,5 +9,5 @@ table StringReversalRequest {
 
 table StringReversalResponse {
   output: string;
-  original_length: uint32;
+  original_length: [uint32];  // Scalar stored as single-element vector for uniform pointer access
 }

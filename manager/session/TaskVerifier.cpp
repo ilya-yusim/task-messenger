@@ -4,10 +4,10 @@
  */
 #include "TaskVerifier.hpp"
 #include "skills/registry/SkillIds.hpp"
-#include "skills/builtins/VectorMathPayload.hpp"
-#include "skills/builtins/MathOperationPayload.hpp"
-#include "skills/builtins/StringReversalPayload.hpp"
-#include "skills/builtins/FusedMultiplyAddPayload.hpp"
+#include "skills/builtins/VectorMathSkill.hpp"
+#include "skills/builtins/MathOperationSkill.hpp"
+#include "skills/builtins/StringReversalSkill.hpp"
+#include "skills/builtins/FusedMultiplyAddSkill.hpp"
 
 #include <cmath>
 #include <format>
@@ -82,8 +82,8 @@ VerificationResult TaskVerifier::compare_responses(
 ) {
     switch (skill_id) {
         case SkillIds::VectorMath: {
-            auto exp = VectorMathPayloadFactory::scatter_response_span<false>(expected);
-            auto act = VectorMathPayloadFactory::scatter_response_span<false>(actual);
+            auto exp = VectorMathSkill::get_result(expected);
+            auto act = VectorMathSkill::get_result(actual);
             
             if (!exp) {
                 return VerificationResult::fail(
@@ -95,31 +95,18 @@ VerificationResult TaskVerifier::compare_responses(
             }
             
             size_t mismatch_idx = 0;
-            if (!compare_double_vectors(exp->result, act->result, abs_epsilon, rel_epsilon, mismatch_idx)) {
+            if (!compare_double_vectors(*exp, *act, abs_epsilon, rel_epsilon, mismatch_idx)) {
                 return VerificationResult::fail(
                     std::format("Task {}: VectorMath mismatch at index {}: expected {}, got {}",
                                task_id, mismatch_idx, 
-                               exp->result[mismatch_idx], act->result[mismatch_idx]));
+                               (*exp)[mismatch_idx], (*act)[mismatch_idx]));
             }
             break;
         }
         
         case SkillIds::MathOperation: {
-            auto exp = MathOperationPayloadFactory::scatter_response_span(expected);
-            auto act = MathOperationPayloadFactory::scatter_response_span(actual);
-            
-            if (!exp || !exp->result) {
-                return VerificationResult::fail(
-                    std::format("Task {}: failed to decode expected MathOperation response", task_id));
-            }
-            if (!act || !act->result) {
-                return VerificationResult::fail(
-                    std::format("Task {}: failed to decode actual MathOperation response", task_id));
-            }
-            
-            // Result is stored as single-element vector
-            double exp_result = *exp->result;
-            double act_result = *act->result;
+            double exp_result = MathOperationSkill::get_result(expected);
+            double act_result = MathOperationSkill::get_result(actual);
             
             if (!compare_doubles(exp_result, act_result, abs_epsilon, rel_epsilon)) {
                 return VerificationResult::fail(
@@ -127,9 +114,8 @@ VerificationResult TaskVerifier::compare_responses(
                                task_id, exp_result, act_result));
             }
             
-            // Overflow is read separately
-            bool exp_overflow = MathOperationPayloadFactory::get_response_overflow(expected);
-            bool act_overflow = MathOperationPayloadFactory::get_response_overflow(actual);
+            bool exp_overflow = MathOperationSkill::get_overflow(expected);
+            bool act_overflow = MathOperationSkill::get_overflow(actual);
             
             if (exp_overflow != act_overflow) {
                 return VerificationResult::fail(
@@ -140,8 +126,8 @@ VerificationResult TaskVerifier::compare_responses(
         }
         
         case SkillIds::StringReversal: {
-            auto exp = StringReversalPayloadFactory::scatter_response_span(expected);
-            auto act = StringReversalPayloadFactory::scatter_response_span(actual);
+            auto exp = StringReversalSkill::get_output(expected);
+            auto act = StringReversalSkill::get_output(actual);
             
             if (!exp) {
                 return VerificationResult::fail(
@@ -152,23 +138,26 @@ VerificationResult TaskVerifier::compare_responses(
                     std::format("Task {}: failed to decode actual StringReversal response", task_id));
             }
             
-            if (!compare_strings(exp->output, act->output)) {
+            if (!compare_strings(*exp, *act)) {
                 return VerificationResult::fail(
                     std::format("Task {}: StringReversal output mismatch: expected '{}', got '{}'",
-                               task_id, exp->output, act->output));
+                               task_id, *exp, *act));
             }
             
-            if (exp->original_length != act->original_length) {
+            uint32_t exp_length = StringReversalSkill::get_original_length(expected);
+            uint32_t act_length = StringReversalSkill::get_original_length(actual);
+            
+            if (exp_length != act_length) {
                 return VerificationResult::fail(
                     std::format("Task {}: StringReversal length mismatch: expected {}, got {}",
-                               task_id, exp->original_length, act->original_length));
+                               task_id, exp_length, act_length));
             }
             break;
         }
         
         case SkillIds::FusedMultiplyAdd: {
-            auto exp = FusedMultiplyAddPayloadFactory::scatter_response_span<false>(expected);
-            auto act = FusedMultiplyAddPayloadFactory::scatter_response_span<false>(actual);
+            auto exp = FusedMultiplyAddSkill::get_result(expected);
+            auto act = FusedMultiplyAddSkill::get_result(actual);
             
             if (!exp) {
                 return VerificationResult::fail(
@@ -180,11 +169,11 @@ VerificationResult TaskVerifier::compare_responses(
             }
             
             size_t mismatch_idx = 0;
-            if (!compare_double_vectors(exp->result, act->result, abs_epsilon, rel_epsilon, mismatch_idx)) {
+            if (!compare_double_vectors(*exp, *act, abs_epsilon, rel_epsilon, mismatch_idx)) {
                 return VerificationResult::fail(
                     std::format("Task {}: FusedMultiplyAdd mismatch at index {}: expected {}, got {}",
                                task_id, mismatch_idx, 
-                               exp->result[mismatch_idx], act->result[mismatch_idx]));
+                               (*exp)[mismatch_idx], (*act)[mismatch_idx]));
             }
             break;
         }

@@ -13,5 +13,5 @@ table MathOperationRequest {
 
 table MathOperationResponse {
   result: [double];      // Scalar stored as single-element vector for uniform pointer access
-  overflow: bool;
+  overflow: [bool];      // Scalar stored as single-element vector for uniform pointer access
 }

@@ -11,7 +11,7 @@ table StringReversalRequest {
 
 table StringReversalResponse {
   output: string;
-  original_length: uint32;
+  original_length: [uint32];  // Scalar stored as single-element vector for uniform pointer access
 }
 
 // Example: Math operation task (scalar)
@@ -25,7 +25,7 @@ table MathOperationRequest {
 
 table MathOperationResponse {
   result: [double];      // Scalar stored as single-element vector for uniform pointer access
-  overflow: bool;
+  overflow: [bool];      // Scalar stored as single-element vector for uniform pointer access
 }
 
 // Example: Vector math operation task (element-wise)

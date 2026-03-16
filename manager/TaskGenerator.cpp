@@ -114,52 +114,51 @@ DefaultTaskGenerator::generate_task_data_typed(uint32_t skill_id) {
         case SkillIds::StringReversal: {
             // StringReversal doesn't benefit from typed buffers (variable-length string)
             auto request = std::make_unique<SimplePayload>(
-                StringReversalPayloadFactory::create_payload("Hello, World!"));
+                StringReversalSkill::create_request("Hello, World!"));
             auto response = std::make_unique<SimplePayload>(
-                StringReversalPayloadFactory::create_response_buffer(13));  // "Hello, World!" is 13 chars
+                StringReversalSkill::create_response(13));  // "Hello, World!" is 13 chars
             return {std::move(request), std::move(response)};
         }
         case SkillIds::MathOperation: {
             // Create typed buffer with initial values
             auto request = std::make_unique<MathOperationPayload>(
-                MathOperationPayloadFactory::create_payload_buffer(42.0, 13.0, MathOperation_Add));
-            auto response = std::make_unique<SimplePayload>(
-                MathOperationPayloadFactory::create_response_buffer());
+                MathOperationSkill::create_request(42.0, 13.0, MathOperation_Add));
+            auto response = std::make_unique<MathOperationResponseBuffer>(
+                MathOperationSkill::create_response());
             return {std::move(request), std::move(response)};
         }
         case SkillIds::VectorMath: {
             // Create typed buffer, write directly into spans
             auto request = std::make_unique<VectorMathPayload>(
-                VectorMathPayloadFactory::create_payload_buffer(vector_size_));
+                VectorMathSkill::create_request(vector_size_));
             for (size_t i = 0; i < vector_size_; ++i) {
                 request->ptrs().a[i] = static_cast<double>(i + 1);
                 request->ptrs().b[i] = static_cast<double>(i + 4);
             }
-            auto* req = VectorMathPayloadFactory::get_mutable_request(*request);
-            req->mutate_operation(MathOperation_Add);
+            // VectorMath operation is set during create_request
             auto response = std::make_unique<VectorMathResponseBuffer>(
-                VectorMathPayloadFactory::create_response_buffer(vector_size_));
+                VectorMathSkill::create_response(vector_size_));
             return {std::move(request), std::move(response)};
         }
         case SkillIds::FusedMultiplyAdd: {
             // Create typed buffer, write directly into spans and scalar pointer
             auto request = std::make_unique<FusedMultiplyAddPayload>(
-                FusedMultiplyAddPayloadFactory::create_payload_buffer(vector_size_));
+                FusedMultiplyAddSkill::create_request(vector_size_));
             for (size_t i = 0; i < vector_size_; ++i) {
                 request->ptrs().a[i] = static_cast<double>(i + 1);
                 request->ptrs().b[i] = static_cast<double>(i + 4);
             }
             *request->ptrs().c = 2.0;
             auto response = std::make_unique<FusedMultiplyAddResponseBuffer>(
-                FusedMultiplyAddPayloadFactory::create_response_buffer(vector_size_));
+                FusedMultiplyAddSkill::create_response(vector_size_));
             return {std::move(request), std::move(response)};
         }
         default: {
             // Fallback: use MathOperation
             auto request = std::make_unique<MathOperationPayload>(
-                MathOperationPayloadFactory::create_payload_buffer(0.0, 0.0, MathOperation_Add));
-            auto response = std::make_unique<SimplePayload>(
-                MathOperationPayloadFactory::create_response_buffer());
+                MathOperationSkill::create_request(0.0, 0.0, MathOperation_Add));
+            auto response = std::make_unique<MathOperationResponseBuffer>(
+                MathOperationSkill::create_response());
             return {std::move(request), std::move(response)};
         }
     }
