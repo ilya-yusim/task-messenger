@@ -8,6 +8,7 @@
 #pragma once
 
 #include "skills/registry/ISkill.hpp"
+#include "skills/registry/VerificationResult.hpp"
 
 #include <optional>
 #include <span>
@@ -106,6 +107,94 @@ public:
         std::span<const uint8_t> request
     ) const override {
         return Derived::create_response_for_request(request);
+    }
+
+    // =========================================================================
+    // Test/Verification Support
+    // =========================================================================
+
+    /**
+     * @brief Create a test request buffer with predefined test data.
+     *
+     * Delegates to Derived::create_test_request() and wraps in unique_ptr.
+     *
+     * @param case_index Which test case to create.
+     * @return Populated request buffer, or nullptr if case_index invalid.
+     */
+    [[nodiscard]] std::unique_ptr<PayloadBufferBase> create_test_request_buffer(
+        size_t case_index = 0
+    ) const override {
+        if (case_index >= Derived::get_test_case_count()) {
+            return nullptr;
+        }
+        using PayloadType = decltype(Derived::create_test_request(case_index));
+        return std::make_unique<PayloadType>(Derived::create_test_request(case_index));
+    }
+
+    /**
+     * @brief Get the number of available test cases.
+     * @return Number of test cases from Derived::get_test_case_count().
+     */
+    [[nodiscard]] size_t get_test_case_count() const noexcept override {
+        return Derived::get_test_case_count();
+    }
+
+    /**
+     * @brief Verify a worker's response against locally computed result.
+     *
+     * This method orchestrates the full verification pipeline:
+     * 1. scatter_request() - parse request into typed pointers
+     * 2. create_response_for_request() - allocate local response buffer
+     * 3. scatter_response() - get typed pointers into local buffer
+     * 4. compute() - compute expected result locally
+     * 5. scatter_response() - parse worker's response (const_cast encapsulated here)
+     * 6. compare_response() - delegate to skill-specific comparison
+     *
+     * Skills only need to implement compare_response(computed, worker).
+     *
+     * @param request The original request payload.
+     * @param worker_response The worker's response payload.
+     * @return VerificationResult indicating pass/fail with optional message.
+     */
+    [[nodiscard]] VerificationResult verify_response(
+        std::span<const uint8_t> request,
+        std::span<const uint8_t> worker_response
+    ) const override {
+        // 1. Parse request into typed pointers
+        auto req = Derived::scatter_request(request);
+        if (!req) {
+            return VerificationResult::failure("Failed to scatter request");
+        }
+
+        // 2. Create local response buffer
+        auto local_buf = Derived::create_response_for_request(request);
+        if (!local_buf) {
+            return VerificationResult::failure("Failed to create local response buffer");
+        }
+
+        // 3. Get typed pointers into local buffer (mutable for writing)
+        auto local_resp = Derived::scatter_response(local_buf->mutable_span());
+        if (!local_resp) {
+            return VerificationResult::failure("Failed to scatter local response");
+        }
+
+        // 4. Compute expected result locally (const_cast: we need mutable this for compute)
+        bool compute_ok = static_cast<Derived*>(const_cast<Skill*>(this))->compute(*req, *local_resp);
+        if (!compute_ok) {
+            return VerificationResult::failure("Local computation failed");
+        }
+
+        // 5. Parse worker's response (const_cast encapsulated - we only read)
+        auto worker_resp = Derived::scatter_response(
+            std::span<uint8_t>(const_cast<uint8_t*>(worker_response.data()),
+                               worker_response.size())
+        );
+        if (!worker_resp) {
+            return VerificationResult::failure("Failed to scatter worker response");
+        }
+
+        // 6. Delegate to skill-specific comparison
+        return Derived::compare_response(*local_resp, *worker_resp);
     }
 };
 

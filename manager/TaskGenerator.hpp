@@ -9,10 +9,6 @@
 #include "message/ResponseContext.hpp"
 #include "message/TaskSubmitAwaitable.hpp"
 #include "message/GeneratorCoroutine.hpp"
-#include "skills/builtins/VectorMathSkill.hpp"
-#include "skills/builtins/FusedMultiplyAddSkill.hpp"
-#include "skills/builtins/MathOperationSkill.hpp"
-#include "skills/builtins/StringReversalSkill.hpp"
 #include "skills/registry/PayloadBuffer.hpp"
 
 #include <atomic>

@@ -20,7 +20,6 @@ sources: [
   'TaskGenerator.cpp',
   'session/Session.cpp',
   'session/SessionManager.cpp',
-  'session/TaskVerifier.cpp',
   '../transport/socket/SocketFactory.cpp',
   '../transport/coro/coroSocketAdapter.cpp',
   '../transport/socket/zerotier/ZeroTierSocket.cpp',

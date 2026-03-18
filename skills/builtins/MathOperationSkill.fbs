@@ -8,7 +8,7 @@ namespace TaskMessenger.Skills;
 table MathOperationRequest {
   operand_a: [double];   // Scalar stored as single-element vector for uniform pointer access
   operand_b: [double];   // Scalar stored as single-element vector for uniform pointer access
-  operation: MathOperation;
+  operation: [int8];     // MathOperation enum as single-element vector for pointer access
 }
 
 table MathOperationResponse {

@@ -110,6 +110,34 @@ std::unique_ptr<PayloadBufferBase> SkillRegistry::create_response_buffer(
     return factory->create_response_buffer_for_request(request);
 }
 
+std::unique_ptr<PayloadBufferBase> SkillRegistry::create_test_request_buffer(
+    uint32_t skill_id,
+    size_t case_index
+) const {
+    auto* factory = get_payload_factory(skill_id);
+    if (!factory) {
+        return nullptr;
+    }
+    return factory->create_test_request_buffer(case_index);
+}
+
+size_t SkillRegistry::get_test_case_count(uint32_t skill_id) const {
+    auto* factory = get_payload_factory(skill_id);
+    return factory ? factory->get_test_case_count() : 0;
+}
+
+VerificationResult SkillRegistry::verify_response(
+    uint32_t skill_id,
+    std::span<const uint8_t> request,
+    std::span<const uint8_t> worker_response
+) const {
+    auto* factory = get_payload_factory(skill_id);
+    if (!factory) {
+        return VerificationResult::failure("Unknown skill_id=" + std::to_string(skill_id));
+    }
+    return factory->verify_response(request, worker_response);
+}
+
 void SkillRegistry::clear() {
     std::lock_guard<std::mutex> lock(mutex_);
     skills_.clear();

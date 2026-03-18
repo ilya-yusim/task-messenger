@@ -10,6 +10,8 @@
  */
 #pragma once
 
+#include "skills/registry/VerificationResult.hpp"
+
 #include <cstdint>
 #include <memory>
 #include <span>
@@ -50,6 +52,43 @@ public:
      */
     [[nodiscard]] virtual std::unique_ptr<PayloadBufferBase> create_response_buffer_for_request(
         std::span<const uint8_t> request
+    ) const = 0;
+
+    // =========================================================================
+    // Test/Verification Support
+    // =========================================================================
+
+    /**
+     * @brief Create a test request buffer with predefined test data.
+     *
+     * Used for verification and testing. Each skill defines its own test cases.
+     *
+     * @param case_index Which test case to create (0 = default).
+     * @return A populated request buffer, or nullptr if case_index is invalid.
+     */
+    [[nodiscard]] virtual std::unique_ptr<PayloadBufferBase> create_test_request_buffer(
+        size_t case_index = 0
+    ) const = 0;
+
+    /**
+     * @brief Get the number of available test cases.
+     * @return Number of test cases this skill provides.
+     */
+    [[nodiscard]] virtual size_t get_test_case_count() const noexcept = 0;
+
+    /**
+     * @brief Verify a worker's response against locally computed result.
+     *
+     * Computes the expected result from the request, then compares it with
+     * the worker's response using skill-specific comparison logic.
+     *
+     * @param request The original request payload.
+     * @param worker_response The worker's response payload.
+     * @return VerificationResult indicating pass/fail with optional message.
+     */
+    [[nodiscard]] virtual VerificationResult verify_response(
+        std::span<const uint8_t> request,
+        std::span<const uint8_t> worker_response
     ) const = 0;
 };
 

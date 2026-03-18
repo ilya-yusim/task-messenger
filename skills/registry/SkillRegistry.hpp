@@ -8,6 +8,7 @@
 
 #include "SkillDescriptor.hpp"
 #include "SkillIds.hpp"
+#include "VerificationResult.hpp"
 
 #include <memory>
 #include <mutex>
@@ -134,6 +135,37 @@ public:
     [[nodiscard]] std::unique_ptr<PayloadBufferBase> create_response_buffer(
         uint32_t skill_id,
         std::span<const uint8_t> request
+    ) const;
+
+    /**
+     * @brief Create a test request buffer for a skill.
+     * @param skill_id The skill identifier.
+     * @param case_index Which test case to create (0 = default).
+     * @return Populated test request buffer, or nullptr on error.
+     */
+    [[nodiscard]] std::unique_ptr<PayloadBufferBase> create_test_request_buffer(
+        uint32_t skill_id,
+        size_t case_index = 0
+    ) const;
+
+    /**
+     * @brief Get the number of test cases for a skill.
+     * @param skill_id The skill identifier.
+     * @return Number of test cases, or 0 if skill not found.
+     */
+    [[nodiscard]] size_t get_test_case_count(uint32_t skill_id) const;
+
+    /**
+     * @brief Verify a worker's response against locally computed result.
+     * @param skill_id The skill identifier.
+     * @param request The original request payload.
+     * @param worker_response The worker's response payload.
+     * @return VerificationResult indicating pass/fail with optional message.
+     */
+    [[nodiscard]] VerificationResult verify_response(
+        uint32_t skill_id,
+        std::span<const uint8_t> request,
+        std::span<const uint8_t> worker_response
     ) const;
     
     // =========================================================================

@@ -57,4 +57,8 @@ struct TaskCompletionSource {
     [[nodiscard]] std::span<const std::byte> body_span() const noexcept {
         return {response_body.data(), response_body.size()};
     }
+    
+    [[nodiscard]] std::span<const uint8_t> body_span_u8() const noexcept {
+        return {reinterpret_cast<const uint8_t*>(response_body.data()), response_body.size()};
+    }
 };

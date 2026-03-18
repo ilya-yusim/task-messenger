@@ -6,6 +6,7 @@
  */
 #pragma once
 
+#include "skills/registry/CompareUtils.hpp"
 #include "skills/registry/Skill.hpp"
 #include "skills/registry/PayloadBuffer.hpp"
 #include "skills/registry/SkillIds.hpp"
@@ -25,24 +26,27 @@ class StringReversalSkill;
 /**
  * @brief Decoded pointers for StringReversal request.
  *
- * Stores string view pointing directly into the FlatBuffer.
+ * Uses uniform pointer-based access pattern.
  */
 struct StringReversalRequestPtrs {
-    std::string_view input;  ///< View into the FlatBuffer's input string
+    int8_t* input;       ///< Pointer to input bytes (stored as [int8])
+    size_t input_length; ///< Length of input
 };
 
 /**
  * @brief Decoded pointers for StringReversal response.
  *
- * For strings we can't use direct pointers easily (null-terminated),
- * so we provide the buffer pointer and let compute() write directly.
+ * All fields use uniform pointer-based access.
  * original_length uses scalar-as-vector pattern.
  */
 struct StringReversalResponsePtrs {
-    char* output;             ///< Pointer to output buffer
+    int8_t* output;           ///< Pointer to output buffer (stored as [int8])
     size_t output_length;     ///< Length of output (same as input)
     uint32_t* original_length; ///< Pointer to original_length (single-element vector)
 };
+
+/// @brief Typed payload buffer for StringReversal request.
+using StringReversalPayload = PayloadBuffer<StringReversalRequestPtrs>;
 
 /**
  * @brief StringReversal skill implementation.
@@ -75,13 +79,16 @@ public:
     [[nodiscard]] static std::optional<RequestPtrs> scatter_request(
         std::span<const uint8_t> payload
     ) {
-        auto* request = flatbuffers::GetRoot<StringReversalRequest>(payload.data());
+        auto* request = flatbuffers::GetMutableRoot<StringReversalRequest>(
+            const_cast<uint8_t*>(payload.data()));
         if (!request || !request->input()) {
             return std::nullopt;
         }
 
+        auto* input_vec = request->mutable_input();
         return RequestPtrs{
-            .input = std::string_view(request->input()->c_str(), request->input()->size())
+            .input = input_vec->data(),
+            .input_length = input_vec->size()
         };
     }
 
@@ -94,21 +101,75 @@ public:
         std::span<uint8_t> payload
     ) {
         auto* response = flatbuffers::GetMutableRoot<StringReversalResponse>(payload.data());
-        if (!response || !response->mutable_output() || !response->original_length()) {
+        if (!response || !response->output() || !response->original_length()) {
             return std::nullopt;
         }
 
-        auto* output_str = response->mutable_output();
+        auto* output_vec = response->mutable_output();
         auto* orig_len = response->mutable_original_length();
         if (orig_len->size() != 1) {
             return std::nullopt;
         }
 
         return ResponsePtrs{
-            .output = const_cast<char*>(output_str->c_str()),
-            .output_length = output_str->size(),
+            .output = output_vec->data(),
+            .output_length = output_vec->size(),
             .original_length = orig_len->data()
         };
+    }
+
+    /**
+     * @brief Create a test request with predefined test data.
+     *
+     * @param case_index Test case selection:
+     *   - 0: "Hello, World!" (13 chars)
+     *   - 1: Long string (500 chars)
+     *   - 2: Single char "X"
+     * @return StringReversalPayload populated with test data.
+     */
+    [[nodiscard]] static StringReversalPayload create_test_request(size_t case_index = 0) {
+        std::string_view test_strings[] = {
+            "Hello, World!",                              // Case 0
+            std::string_view{},                           // Case 1 - placeholder for long string
+            "X"                                           // Case 2
+        };
+        
+        // Generate long string for case 1
+        static const std::string long_str = []() {
+            std::string s;
+            s.reserve(500);
+            for (int i = 0; i < 500; ++i) {
+                s.push_back('A' + (i % 26));
+            }
+            return s;
+        }();
+        
+        std::string_view data;
+        if (case_index == 1) {
+            data = long_str;
+        } else if (case_index < std::size(test_strings)) {
+            data = test_strings[case_index];
+        } else {
+            data = test_strings[0];
+        }
+        
+        auto payload = create_request(data.size());
+        auto& ptrs = payload.ptrs();
+        
+        // Copy test string data
+        for (size_t i = 0; i < data.size(); ++i) {
+            ptrs.input[i] = static_cast<int8_t>(data[i]);
+        }
+        
+        return payload;
+    }
+
+    /**
+     * @brief Get the number of available test cases.
+     * @return Number of predefined test cases.
+     */
+    [[nodiscard]] static constexpr size_t get_test_case_count() noexcept {
+        return 3;
     }
 
     /**
@@ -124,7 +185,18 @@ public:
             return nullptr;
         }
         // String reversal output is same length as input
-        return std::make_unique<SimplePayload>(create_response(req_ptrs->input.size()));
+        return std::make_unique<SimplePayload>(create_response(req_ptrs->input_length));
+    }
+
+    /**
+     * @brief Create response buffer sized for the given request (PayloadBufferBase overload).
+     * @param request The request payload to size the response for.
+     * @return Unique pointer to response buffer, or nullptr on failure.
+     */
+    [[nodiscard]] static std::unique_ptr<PayloadBufferBase> create_response_for_request(
+        const PayloadBufferBase& request
+    ) {
+        return create_response_for_request(request.span());
     }
 
     // =========================================================================
@@ -139,7 +211,7 @@ public:
      * @return true on success, false on error.
      */
     bool compute(const RequestPtrs& req, ResponsePtrs& resp) {
-        auto original_length = static_cast<uint32_t>(req.input.size());
+        auto original_length = static_cast<uint32_t>(req.input_length);
 
         if (resp.output_length != original_length) {
             return false;  // Size mismatch
@@ -161,30 +233,42 @@ public:
     // =========================================================================
 
     /**
-     * @brief Create a request payload.
+     * @brief Create a request buffer with typed data access.
      *
-     * @param input The string to reverse.
-     * @return SimplePayload with buffer ownership.
+     * Allocates uninitialized buffer. Caller fills values via ptrs().
+     *
+     * @param string_length Length of the input string.
+     * @return StringReversalPayload with ownership and typed pointers.
      */
-    [[nodiscard]] static SimplePayload create_request(std::string_view input) {
-        flatbuffers::FlatBufferBuilder builder(64 + input.size());
+    [[nodiscard]] static StringReversalPayload create_request(size_t string_length) {
+        flatbuffers::FlatBufferBuilder builder(64 + string_length);
 
-        auto input_offset = builder.CreateString(input);
+        int8_t* input_ptr = nullptr;
+        auto input_offset = builder.CreateUninitializedVector(string_length, &input_ptr);
         auto request = CreateStringReversalRequest(builder, input_offset);
         builder.Finish(request);
 
-        return SimplePayload(builder.Release(), SimpleBufferPtrs{}, kSkillId);
+        auto detached = builder.Release();
+
+        // Extract pointer from the FINISHED buffer by parsing it
+        auto* req = flatbuffers::GetMutableRoot<StringReversalRequest>(detached.data());
+        int8_t* final_input_ptr = const_cast<int8_t*>(req->input()->data());
+
+        RequestPtrs ptrs{
+            .input = final_input_ptr,
+            .input_length = string_length
+        };
+
+        return StringReversalPayload(std::move(detached), ptrs, kSkillId);
     }
 
     /**
-     * @brief Create a response buffer with pre-allocated string.
+     * @brief Create a response buffer with pre-allocated output vector.
      *
      * @param string_length Length of the output string.
      * @return SimplePayload with pre-allocated response buffer.
      */
     [[nodiscard]] static SimplePayload create_response(size_t string_length) {
-        // Create placeholder string of correct length (will be overwritten)
-        std::string placeholder(string_length, '\0');
         flatbuffers::FlatBufferBuilder builder(64 + string_length);
         
         // Create original_length as single-element vector
@@ -192,7 +276,10 @@ public:
         auto orig_len_offset = builder.CreateUninitializedVector(1, &orig_len_ptr);
         *orig_len_ptr = 0;  // Will be set by compute()
         
-        auto output_offset = builder.CreateString(placeholder);
+        // Create output as int8 vector (will be overwritten by compute)
+        int8_t* output_ptr = nullptr;
+        auto output_offset = builder.CreateUninitializedVector(string_length, &output_ptr);
+        
         auto response = CreateStringReversalResponse(builder, output_offset, orig_len_offset);
         builder.Finish(response);
         return SimplePayload(builder.Release(), SimpleBufferPtrs{}, kSkillId);
@@ -210,7 +297,11 @@ public:
         if (!response || !response->output()) {
             return std::nullopt;
         }
-        return std::string_view(response->output()->c_str(), response->output()->size());
+        // int8 vector can be reinterpreted as char*
+        return std::string_view(
+            reinterpret_cast<const char*>(response->output()->data()),
+            response->output()->size()
+        );
     }
 
     /**
@@ -226,6 +317,33 @@ public:
             return 0;
         }
         return response->original_length()->Get(0);
+    }
+
+    // =========================================================================
+    // Verification Support
+    // =========================================================================
+
+    /**
+     * @brief Compare locally computed result with worker's result.
+     *
+     * @param computed Response pointers from local computation.
+     * @param worker Response pointers from worker's response.
+     * @return VerificationResult indicating pass/fail.
+     */
+    [[nodiscard]] static VerificationResult compare_response(
+        const ResponsePtrs& computed,
+        const ResponsePtrs& worker
+    ) {
+        // Check original_length
+        if (auto r = compare_int(*computed.original_length, *worker.original_length, "original_length"); !r.passed) {
+            return r;
+        }
+        // Check output_length
+        if (auto r = compare_int(computed.output_length, worker.output_length, "output_length"); !r.passed) {
+            return r;
+        }
+        // Compare output bytes
+        return compare_bytes(computed.output, worker.output, computed.output_length, "output");
     }
 };
 

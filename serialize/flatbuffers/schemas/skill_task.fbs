@@ -5,12 +5,13 @@
 namespace TaskMessenger.Skills;
 
 // Example: String reversal skill
+// Uses [int8] vectors for uniform pointer-based access pattern
 table StringReversalRequest {
-  input: string;
+  input: [int8];  // String bytes (not null-terminated)
 }
 
 table StringReversalResponse {
-  output: string;
+  output: [int8];  // String bytes (not null-terminated)
   original_length: [uint32];  // Scalar stored as single-element vector for uniform pointer access
 }
 
@@ -20,7 +21,7 @@ enum MathOperation : byte { Add = 0, Subtract, Multiply, Divide }
 table MathOperationRequest {
   operand_a: [double];   // Scalar stored as single-element vector for uniform pointer access
   operand_b: [double];   // Scalar stored as single-element vector for uniform pointer access
-  operation: MathOperation;
+  operation: [int8];     // MathOperation enum as single-element vector for pointer access
 }
 
 table MathOperationResponse {
@@ -33,7 +34,7 @@ table MathOperationResponse {
 table VectorMathRequest {
   operand_a: [double];  // First operand vector
   operand_b: [double];  // Second operand vector
-  operation: MathOperation;
+  operation: [int8];    // MathOperation enum as single-element vector for pointer access
 }
 
 table VectorMathResponse {

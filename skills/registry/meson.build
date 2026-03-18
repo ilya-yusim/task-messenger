@@ -6,6 +6,7 @@
 # Shared between manager (validation) and worker (diagnostics).
 
 skills_registry_sources = files(
+  'CompareUtils.cpp',
   'SkillRegistry.cpp',
 )
 

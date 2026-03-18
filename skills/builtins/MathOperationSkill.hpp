@@ -7,6 +7,7 @@
  */
 #pragma once
 
+#include "skills/registry/CompareUtils.hpp"
 #include "skills/registry/Skill.hpp"
 #include "skills/registry/PayloadBuffer.hpp"
 #include "skills/registry/SkillIds.hpp"
@@ -26,13 +27,13 @@ class MathOperationSkill;
 /**
  * @brief Buffer pointers for MathOperation request.
  *
- * Uses scalar-as-vector pattern: a, b stored as single-element vectors
+ * Uses scalar-as-vector pattern: all fields stored as single-element vectors
  * for uniform pointer-based access.
  */
 struct MathOperationRequestPtrs {
-    double* a;               ///< Pointer to operand a (single-element vector)
-    double* b;               ///< Pointer to operand b (single-element vector)
-    MathOperation operation; ///< Operation type
+    double* a;         ///< Pointer to operand a (single-element vector)
+    double* b;         ///< Pointer to operand b (single-element vector)
+    int8_t* operation; ///< Pointer to operation type (single-element [int8] vector)
 };
 
 /**
@@ -90,16 +91,17 @@ public:
 
         auto* vec_a = request->mutable_operand_a();
         auto* vec_b = request->mutable_operand_b();
+        auto* vec_op = request->mutable_operation();
 
         // Must be single-element vectors (scalar-as-vector pattern)
-        if (vec_a->size() != 1 || vec_b->size() != 1) {
+        if (vec_a->size() != 1 || vec_b->size() != 1 || !vec_op || vec_op->size() != 1) {
             return std::nullopt;
         }
 
         return RequestPtrs{
             .a = vec_a->data(),
             .b = vec_b->data(),
-            .operation = request->operation()
+            .operation = vec_op->data()
         };
     }
 
@@ -129,6 +131,52 @@ public:
     }
 
     /**
+     * @brief Create a test request with predefined test data.
+     *
+     * @param case_index Test case selection:
+     *   - 0: Basic add (a=42.0, b=13.0, op=Add)
+     *   - 1: Overflow test (a=1e308, b=1e308, op=Add)
+     *   - 2: Division by zero (a=10.0, b=0.0, op=Divide)
+     * @return MathOperationPayload populated with test data.
+     */
+    [[nodiscard]] static MathOperationPayload create_test_request(size_t case_index = 0) {
+        auto payload = create_request();
+        auto& ptrs = payload.ptrs();
+
+        switch (case_index) {
+            case 0:  // Basic add
+                *ptrs.a = 42.0;
+                *ptrs.b = 13.0;
+                *ptrs.operation = MathOperation_Add;
+                break;
+            case 1:  // Overflow test
+                *ptrs.a = 1e308;
+                *ptrs.b = 1e308;
+                *ptrs.operation = MathOperation_Add;
+                break;
+            case 2:  // Division by zero
+                *ptrs.a = 10.0;
+                *ptrs.b = 0.0;
+                *ptrs.operation = MathOperation_Divide;
+                break;
+            default:
+                *ptrs.a = 0.0;
+                *ptrs.b = 0.0;
+                *ptrs.operation = MathOperation_Add;
+                break;
+        }
+        return payload;
+    }
+
+    /**
+     * @brief Get the number of available test cases.
+     * @return Number of predefined test cases.
+     */
+    [[nodiscard]] static constexpr size_t get_test_case_count() noexcept {
+        return 3;
+    }
+
+    /**
      * @brief Create response buffer sized for the given request.
      * @param request The request payload to size the response for.
      * @return Unique pointer to response buffer.
@@ -138,6 +186,17 @@ public:
     ) {
         // MathOperation response is fixed size
         return std::make_unique<MathOperationResponseBuffer>(create_response());
+    }
+
+    /**
+     * @brief Create response buffer sized for the given request (PayloadBufferBase overload).
+     * @param request The request payload to size the response for.
+     * @return Unique pointer to response buffer.
+     */
+    [[nodiscard]] static std::unique_ptr<PayloadBufferBase> create_response_for_request(
+        [[maybe_unused]] const PayloadBufferBase& request
+    ) {
+        return create_response_for_request(request.span());
     }
 
     // =========================================================================
@@ -154,7 +213,7 @@ public:
     bool compute(const RequestPtrs& req, ResponsePtrs& resp) {
         double a = *req.a;
         double b = *req.b;
-        MathOperation op = req.operation;
+        MathOperation op = static_cast<MathOperation>(*req.operation);
 
         double result = 0.0;
         bool overflow = false;
@@ -199,28 +258,23 @@ public:
     /**
      * @brief Create a request buffer with typed data access.
      *
-     * @param a Initial operand a value.
-     * @param b Initial operand b value.
-     * @param op Operation type.
+     * Allocates uninitialized buffers. Caller fills values via ptrs().
+     *
      * @return MathOperationPayload with ownership and typed pointers.
      */
-    [[nodiscard]] static MathOperationPayload create_request(
-        double a = 0.0,
-        double b = 0.0,
-        MathOperation op = MathOperation_Add
-    ) {
+    [[nodiscard]] static MathOperationPayload create_request() {
         flatbuffers::FlatBufferBuilder builder(128);
 
         double* ptr_a = nullptr;
         double* ptr_b = nullptr;
+        int8_t* ptr_op = nullptr;
 
         // Create vectors in reverse order (FlatBuffers requirement)
+        auto vec_op = builder.CreateUninitializedVector(1, &ptr_op);
         auto vec_b = builder.CreateUninitializedVector(1, &ptr_b);
         auto vec_a = builder.CreateUninitializedVector(1, &ptr_a);
-        *ptr_a = a;
-        *ptr_b = b;
 
-        auto request = CreateMathOperationRequest(builder, vec_a, vec_b, op);
+        auto request = CreateMathOperationRequest(builder, vec_a, vec_b, vec_op);
         builder.Finish(request);
 
         auto detached = builder.Release();
@@ -229,11 +283,12 @@ public:
         auto* req = flatbuffers::GetMutableRoot<MathOperationRequest>(detached.data());
         double* final_ptr_a = const_cast<double*>(req->operand_a()->data());
         double* final_ptr_b = const_cast<double*>(req->operand_b()->data());
+        int8_t* final_ptr_op = const_cast<int8_t*>(req->operation()->data());
 
         RequestPtrs ptrs{
             .a = final_ptr_a,
             .b = final_ptr_b,
-            .operation = op
+            .operation = final_ptr_op
         };
 
         return MathOperationPayload(std::move(detached), ptrs, kSkillId);
@@ -303,6 +358,29 @@ public:
             return false;
         }
         return response->overflow()->Get(0) != 0;
+    }
+
+    // =========================================================================
+    // Verification Support
+    // =========================================================================
+
+    /**
+     * @brief Compare locally computed result with worker's result.
+     *
+     * @param computed Response pointers from local computation.
+     * @param worker Response pointers from worker's response.
+     * @return VerificationResult indicating pass/fail.
+     */
+    [[nodiscard]] static VerificationResult compare_response(
+        const ResponsePtrs& computed,
+        const ResponsePtrs& worker
+    ) {
+        // Check overflow flag first
+        if (auto r = compare_int(*computed.overflow, *worker.overflow, "overflow"); !r.passed) {
+            return r;
+        }
+        // Compare result with configured epsilon tolerance
+        return compare_scalar(*computed.result, *worker.result, "result");
     }
 };
 

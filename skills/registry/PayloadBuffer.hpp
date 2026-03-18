@@ -57,6 +57,10 @@ public:
     
     /// @brief Check if buffer is empty.
     [[nodiscard]] bool empty() const noexcept { return size() == 0; }
+    
+    /// @brief Clone this buffer as a RawPayload (copies bytes).
+    /// @return New PayloadBufferBase owning a copy of the data.
+    [[nodiscard]] inline std::unique_ptr<PayloadBufferBase> clone() const;
 };
 
 /**
@@ -163,5 +167,13 @@ private:
     std::vector<uint8_t> data_;
     uint32_t skill_id_ = 0;
 };
+
+// Out-of-line definition (after RawPayload is complete)
+inline std::unique_ptr<PayloadBufferBase> PayloadBufferBase::clone() const {
+    return std::make_unique<RawPayload>(
+        std::vector<uint8_t>(data(), data() + size()),
+        skill_id()
+    );
+}
 
 } // namespace TaskMessenger::Skills

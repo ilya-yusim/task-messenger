@@ -27,14 +27,20 @@ GeneratorCoroutine DefaultTaskGenerator::run_async_chain(
 
         auto [request, response] = generate_task_data_typed(skill_id);
         
+        // Clone request for verification after response arrives
+        auto request_copy = request->clone();
+        
         // Submit task and await response
         auto& result = co_await submit_task(pool, response_ctx_, task_id, 
                                              std::move(request), std::move(response));
         
         if (result.is_success()) {
-            // Response received successfully
-            // Process result.body_span() here to decide follow-up actions
-            // For now, just continue to next task
+            // Verify worker's response against locally computed result
+            auto verification = SkillRegistry::instance().verify_response(
+                skill_id, request_copy->span(), result.body_span_u8());
+            // verification.passed indicates success/failure
+            // verification.message contains diagnostic info on failure
+            (void)verification;  // TODO: Log or report verification result
         } else {
             // Task failed - could implement retry logic here
         }
@@ -55,14 +61,20 @@ GeneratorCoroutine DefaultTaskGenerator::process_single_task(
 
     auto [request, response] = generate_task_data_typed(skill_id);
     
+    // Clone request for verification after response arrives
+    auto request_copy = request->clone();
+    
     // Submit task and await response - coroutine suspends here
     auto& result = co_await submit_task(pool, response_ctx_, task_id, 
                                          std::move(request), std::move(response));
     
     if (result.is_success()) {
-        // Response received successfully - process on ResponseContext thread
-        // Access result.body_span() for response data
-        // Can generate follow-up tasks here if needed
+        // Verify worker's response against locally computed result
+        auto verification = SkillRegistry::instance().verify_response(
+            skill_id, request_copy->span(), result.body_span_u8());
+        // verification.passed indicates success/failure
+        // verification.message contains diagnostic info on failure
+        (void)verification;  // TODO: Log or report verification result
     } else {
         // Task failed
     }
@@ -110,57 +122,19 @@ bool DefaultTaskGenerator::all_done(const std::vector<GeneratorCoroutine>& corou
 /** \ingroup task_messenger_manager */
 std::pair<std::unique_ptr<PayloadBufferBase>, std::unique_ptr<PayloadBufferBase>> 
 DefaultTaskGenerator::generate_task_data_typed(uint32_t skill_id) {
-    switch (skill_id) {
-        case SkillIds::StringReversal: {
-            // StringReversal doesn't benefit from typed buffers (variable-length string)
-            auto request = std::make_unique<SimplePayload>(
-                StringReversalSkill::create_request("Hello, World!"));
-            auto response = std::make_unique<SimplePayload>(
-                StringReversalSkill::create_response(13));  // "Hello, World!" is 13 chars
-            return {std::move(request), std::move(response)};
+    auto& registry = SkillRegistry::instance();
+    
+    auto request = registry.create_test_request_buffer(skill_id, 0);
+    if (!request) {
+        // Fallback to MathOperation if skill not found
+        request = registry.create_test_request_buffer(SkillIds::MathOperation, 0);
+        if (!request) {
+            return {nullptr, nullptr};
         }
-        case SkillIds::MathOperation: {
-            // Create typed buffer with initial values
-            auto request = std::make_unique<MathOperationPayload>(
-                MathOperationSkill::create_request(42.0, 13.0, MathOperation_Add));
-            auto response = std::make_unique<MathOperationResponseBuffer>(
-                MathOperationSkill::create_response());
-            return {std::move(request), std::move(response)};
-        }
-        case SkillIds::VectorMath: {
-            // Create typed buffer, write directly into spans
-            auto request = std::make_unique<VectorMathPayload>(
-                VectorMathSkill::create_request(vector_size_));
-            for (size_t i = 0; i < vector_size_; ++i) {
-                request->ptrs().a[i] = static_cast<double>(i + 1);
-                request->ptrs().b[i] = static_cast<double>(i + 4);
-            }
-            // VectorMath operation is set during create_request
-            auto response = std::make_unique<VectorMathResponseBuffer>(
-                VectorMathSkill::create_response(vector_size_));
-            return {std::move(request), std::move(response)};
-        }
-        case SkillIds::FusedMultiplyAdd: {
-            // Create typed buffer, write directly into spans and scalar pointer
-            auto request = std::make_unique<FusedMultiplyAddPayload>(
-                FusedMultiplyAddSkill::create_request(vector_size_));
-            for (size_t i = 0; i < vector_size_; ++i) {
-                request->ptrs().a[i] = static_cast<double>(i + 1);
-                request->ptrs().b[i] = static_cast<double>(i + 4);
-            }
-            *request->ptrs().c = 2.0;
-            auto response = std::make_unique<FusedMultiplyAddResponseBuffer>(
-                FusedMultiplyAddSkill::create_response(vector_size_));
-            return {std::move(request), std::move(response)};
-        }
-        default: {
-            // Fallback: use MathOperation
-            auto request = std::make_unique<MathOperationPayload>(
-                MathOperationSkill::create_request(0.0, 0.0, MathOperation_Add));
-            auto response = std::make_unique<MathOperationResponseBuffer>(
-                MathOperationSkill::create_response());
-            return {std::move(request), std::move(response)};
-        }
+        skill_id = SkillIds::MathOperation;
     }
+    
+    auto response = registry.create_response_buffer(skill_id, request->span());
+    return {std::move(request), std::move(response)};
 }
 

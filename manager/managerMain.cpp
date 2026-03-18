@@ -3,6 +3,7 @@
 #include "TaskGenerator.hpp"
 #include "options/Options.hpp"
 #include "ManagerOptions.hpp"
+#include "skills/registry/CompareUtils.hpp"
 #include "skills/registry/SkillRegistry.hpp"
 
 
@@ -143,6 +144,11 @@ int main(int argc, char* argv[]) {
             logger->error(std::string("Failed to parse options: ") + opts_err);
             return 2;
         }
+
+        // Configure skill verification tolerances from manager options
+        auto& compare_cfg = TaskMessenger::Skills::CompareConfig::defaults();
+        compare_cfg.abs_epsilon = manager_opts::get_verify_epsilon();
+        compare_cfg.rel_epsilon = manager_opts::get_verify_rel_epsilon();
 
         // --- Stage 3: Bring up transport server subsystem ---
         logger->info("Async Transport Server starting...");

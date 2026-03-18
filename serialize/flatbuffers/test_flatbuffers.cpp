@@ -29,7 +29,10 @@ namespace {
  */
 std::vector<uint8_t> create_string_reversal_payload(const std::string& input) {
     flatbuffers::FlatBufferBuilder builder(256);
-    auto input_offset = builder.CreateString(input);
+    
+    // Create input as int8 vector (not string)
+    std::vector<int8_t> input_bytes(input.begin(), input.end());
+    auto input_offset = builder.CreateVector(input_bytes);
     auto request = CreateStringReversalRequest(builder, input_offset);
     builder.Finish(request);
 
@@ -48,17 +51,25 @@ std::vector<uint8_t> create_string_reversal_payload(const std::string& input) {
 std::vector<uint8_t> process_string_reversal(const std::vector<uint8_t>& payload_bytes) {
     auto request = flatbuffers::GetRoot<StringReversalRequest>(payload_bytes.data());
 
-    std::string input = request->input()->str();
+    // Input is now int8 vector
+    auto input_vec = request->input();
+    std::string input(reinterpret_cast<const char*>(input_vec->data()), input_vec->size());
     std::string output(input.rbegin(), input.rend());
 
     std::cout << "  Input: \"" << input << "\" -> Output: \"" << output << "\"\n";
 
-    // Build response
+    // Build response with int8 vector output
     flatbuffers::FlatBufferBuilder builder(256);
-    auto output_offset = builder.CreateString(output);
-    auto response = CreateStringReversalResponse(
-        builder, output_offset, static_cast<uint32_t>(input.length())
-    );
+    
+    // Create original_length as single-element vector
+    std::vector<uint32_t> orig_len_vec = { static_cast<uint32_t>(input.length()) };
+    auto orig_len_offset = builder.CreateVector(orig_len_vec);
+    
+    // Create output as int8 vector
+    std::vector<int8_t> output_bytes(output.begin(), output.end());
+    auto output_offset = builder.CreateVector(output_bytes);
+    
+    auto response = CreateStringReversalResponse(builder, output_offset, orig_len_offset);
     builder.Finish(response);
 
     return std::vector<uint8_t>(
@@ -80,13 +91,17 @@ void test_math_operation() {
     // Create single-element vectors for operands (scalar-as-vector pattern)
     double* a_ptr = nullptr;
     double* b_ptr = nullptr;
+    int8_t* op_ptr = nullptr;
+    
+    auto op_offset = builder.CreateUninitializedVector(1, &op_ptr);
     auto b_offset = builder.CreateUninitializedVector(1, &b_ptr);
     auto a_offset = builder.CreateUninitializedVector(1, &a_ptr);
     
     *a_ptr = 42.0;
     *b_ptr = 8.0;
+    *op_ptr = MathOperation_Multiply;
     
-    auto math_req = CreateMathOperationRequest(builder, a_offset, b_offset, MathOperation_Multiply);
+    auto math_req = CreateMathOperationRequest(builder, a_offset, b_offset, op_offset);
     builder.Finish(math_req);
 
     // Simulate round-trip using flatbuffers::GetRoot<T>
@@ -96,7 +111,7 @@ void test_math_operation() {
     // Access scalars via single-element vector data()
     double a = parsed->operand_a()->Get(0);
     double b = parsed->operand_b()->Get(0);
-    MathOperation op = parsed->operation();
+    MathOperation op = static_cast<MathOperation>(parsed->operation()->Get(0));
 
     double result = 0;
     switch (op) {
@@ -119,9 +134,11 @@ void test_math_operation() {
 void test_zero_copy_access() {
     std::cout << "\n=== Testing Zero-Copy Access ===\n";
 
-    // Create a buffer
+    // Create a buffer with int8 vector
     flatbuffers::FlatBufferBuilder builder(256);
-    auto input = builder.CreateString("Zero-copy test string");
+    std::string test_str = "Zero-copy test string";
+    std::vector<int8_t> input_bytes(test_str.begin(), test_str.end());
+    auto input = builder.CreateVector(input_bytes);
     auto request = CreateStringReversalRequest(builder, input);
     builder.Finish(request);
 
@@ -131,15 +148,15 @@ void test_zero_copy_access() {
 
     std::cout << "  Buffer size: " << buffer_size << " bytes\n";
 
-    // Access data without copying - the string pointer points directly into buffer
+    // Access data without copying - the pointer points directly into buffer
     auto parsed = flatbuffers::GetRoot<StringReversalRequest>(buffer_ptr);
-    const char* str_ptr = parsed->input()->c_str();
+    const int8_t* data_ptr = parsed->input()->data();
 
     // Verify the pointer is within the buffer range (zero-copy)
-    bool is_zero_copy = (reinterpret_cast<const uint8_t*>(str_ptr) >= buffer_ptr) &&
-                        (reinterpret_cast<const uint8_t*>(str_ptr) < buffer_ptr + buffer_size);
+    bool is_zero_copy = (reinterpret_cast<const uint8_t*>(data_ptr) >= buffer_ptr) &&
+                        (reinterpret_cast<const uint8_t*>(data_ptr) < buffer_ptr + buffer_size);
 
-    std::cout << "  String access is zero-copy: " << (is_zero_copy ? "yes" : "no") << "\n";
+    std::cout << "  Data access is zero-copy: " << (is_zero_copy ? "yes" : "no") << "\n";
     assert(is_zero_copy);
     std::cout << "  Zero-copy test passed!\n";
 }
@@ -153,15 +170,24 @@ void test_buffer_sizes() {
     // Small message
     {
         flatbuffers::FlatBufferBuilder builder(64);
-        auto req = CreateMathOperationRequest(builder, 1.0, 2.0, MathOperation_Add);
+        double* a_ptr = nullptr;
+        double* b_ptr = nullptr;
+        int8_t* op_ptr = nullptr;
+        auto op_offset = builder.CreateUninitializedVector(1, &op_ptr);
+        auto b_offset = builder.CreateUninitializedVector(1, &b_ptr);
+        auto a_offset = builder.CreateUninitializedVector(1, &a_ptr);
+        *a_ptr = 1.0; *b_ptr = 2.0; *op_ptr = MathOperation_Add;
+        auto req = CreateMathOperationRequest(builder, a_offset, b_offset, op_offset);
         builder.Finish(req);
         std::cout << "  MathOperationRequest size: " << builder.GetSize() << " bytes\n";
     }
 
-    // String message
+    // String message (using int8 vector)
     {
         flatbuffers::FlatBufferBuilder builder(256);
-        auto input = builder.CreateString("Hello, FlatBuffers!");
+        std::string str = "Hello, FlatBuffers!";
+        std::vector<int8_t> input_bytes(str.begin(), str.end());
+        auto input = builder.CreateVector(input_bytes);
         auto req = CreateStringReversalRequest(builder, input);
         builder.Finish(req);
         std::cout << "  StringReversalRequest (short): " << builder.GetSize() << " bytes\n";
@@ -171,7 +197,8 @@ void test_buffer_sizes() {
     {
         flatbuffers::FlatBufferBuilder builder(1024);
         std::string long_input(500, 'x');
-        auto input = builder.CreateString(long_input);
+        std::vector<int8_t> input_bytes(long_input.begin(), long_input.end());
+        auto input = builder.CreateVector(input_bytes);
         auto req = CreateStringReversalRequest(builder, input);
         builder.Finish(req);
         std::cout << "  StringReversalRequest (500 chars): " << builder.GetSize() << " bytes\n";
@@ -217,7 +244,13 @@ void test_vector_math_direct_write() {
 
     // IMPORTANT: In FlatBuffers, you must create objects in REVERSE order
     // (children before parents, last fields before first fields)
-    // So we create operand_b first, then operand_a
+    // So we create operation first, then operand_b, then operand_a
+
+    int8_t* operation_ptr = nullptr;
+    
+    // Allocate operation vector (single-element for scalar-as-vector)
+    auto operation_offset = builder.CreateUninitializedVector(1, &operation_ptr);
+    *operation_ptr = MathOperation_Add;
 
     // Allocate operand_b vector - get direct write pointer
     auto operand_b_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &operand_b_ptr);
@@ -249,7 +282,7 @@ void test_vector_math_direct_write() {
         builder,
         operand_a_offset,  // Uses the already-written vector
         operand_b_offset,  // Uses the already-written vector
-        MathOperation_Add
+        operation_offset   // Operation as single-element vector
     );
     builder.Finish(request);
 
@@ -291,12 +324,14 @@ void test_vector_math_full_workflow() {
     // =========================================================================
     // SENDER SIDE: Create request with direct write access
     // =========================================================================
-    flatbuffers::FlatBufferBuilder request_builder(64 + 2 * VECTOR_SIZE * sizeof(double));
+    flatbuffers::FlatBufferBuilder request_builder(64 + 2 * VECTOR_SIZE * sizeof(double) + sizeof(int8_t));
 
     double* req_a_ptr = nullptr;
     double* req_b_ptr = nullptr;
+    int8_t* req_op_ptr = nullptr;
 
     // Allocate vectors (reverse order)
+    auto req_op_offset = request_builder.CreateUninitializedVector(1, &req_op_ptr);
     auto req_b_offset = request_builder.CreateUninitializedVector(VECTOR_SIZE, &req_b_ptr);
     auto req_a_offset = request_builder.CreateUninitializedVector(VECTOR_SIZE, &req_a_ptr);
 
@@ -305,9 +340,10 @@ void test_vector_math_full_workflow() {
         req_a_ptr[i] = static_cast<double>(i + 1);      // [1, 2, 3, ...]
         req_b_ptr[i] = static_cast<double>(i + 1) * 10; // [10, 20, 30, ...]
     }
+    *req_op_ptr = MathOperation_Multiply;
 
     auto request = CreateVectorMathRequest(
-        request_builder, req_a_offset, req_b_offset, MathOperation_Multiply
+        request_builder, req_a_offset, req_b_offset, req_op_offset
     );
     request_builder.Finish(request);
 
@@ -327,7 +363,7 @@ void test_vector_math_full_workflow() {
     // Zero-copy read of operands
     auto vec_a = parsed_request->operand_a();
     auto vec_b = parsed_request->operand_b();
-    auto operation = parsed_request->operation();
+    MathOperation operation = static_cast<MathOperation>(parsed_request->operation()->Get(0));
 
     size_t result_size = vec_a->size();
 
@@ -389,7 +425,7 @@ void test_builder_reuse() {
     const int NUM_ITERATIONS = 3;
 
     // Pre-allocate a builder large enough for our messages
-    flatbuffers::FlatBufferBuilder builder(64 + 2 * VECTOR_SIZE * sizeof(double));
+    flatbuffers::FlatBufferBuilder builder(64 + 2 * VECTOR_SIZE * sizeof(double) + sizeof(int8_t));
 
     for (int iter = 0; iter < NUM_ITERATIONS; ++iter) {
         // Clear the builder for reuse (keeps the allocated memory)
@@ -397,7 +433,9 @@ void test_builder_reuse() {
 
         double* a_ptr = nullptr;
         double* b_ptr = nullptr;
+        int8_t* op_ptr = nullptr;
 
+        auto op_offset = builder.CreateUninitializedVector(1, &op_ptr);
         auto b_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &b_ptr);
         auto a_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &a_ptr);
 
@@ -406,8 +444,9 @@ void test_builder_reuse() {
             a_ptr[i] = static_cast<double>(iter * 100 + i);
             b_ptr[i] = static_cast<double>(iter * 100 + i) * 0.5;
         }
+        *op_ptr = MathOperation_Add;
 
-        auto request = CreateVectorMathRequest(builder, a_offset, b_offset, MathOperation_Add);
+        auto request = CreateVectorMathRequest(builder, a_offset, b_offset, op_offset);
         builder.Finish(request);
 
         // Verify this iteration
@@ -443,17 +482,20 @@ void test_buffer_template_pattern() {
     // =========================================================================
     // SETUP PHASE: Build the buffer structure ONCE
     // =========================================================================
-    flatbuffers::FlatBufferBuilder builder(64 + 2 * VECTOR_SIZE * sizeof(double));
+    flatbuffers::FlatBufferBuilder builder(64 + 2 * VECTOR_SIZE * sizeof(double) + sizeof(int8_t));
 
     double* a_ptr = nullptr;
     double* b_ptr = nullptr;
+    int8_t* op_ptr = nullptr;
 
     // Create vectors and get direct-write pointers
+    auto op_offset = builder.CreateUninitializedVector(1, &op_ptr);
     auto b_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &b_ptr);
     auto a_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &a_ptr);
+    *op_ptr = MathOperation_Multiply;
 
     // Build the table structure
-    auto request = CreateVectorMathRequest(builder, a_offset, b_offset, MathOperation_Multiply);
+    auto request = CreateVectorMathRequest(builder, a_offset, b_offset, op_offset);
     builder.Finish(request);
 
     // Record the buffer info (these remain constant!)
@@ -499,11 +541,11 @@ void test_buffer_template_pattern() {
 /**
  * @brief Demonstrates updating the operation field in a buffer template.
  *
- * For scalar fields in the table (not vectors), you need to use FlatBuffers'
- * mutation API or rebuild. But vector DATA can be overwritten directly.
+ * With scalar-as-vector pattern, operation is now a [int8] vector,
+ * so it can be updated via pointer just like other vector data.
  */
 void test_buffer_template_with_operation_change() {
-    std::cout << "\n=== Testing Buffer Template with Scalar Field Updates ===\n";
+    std::cout << "\n=== Testing Buffer Template with Operation Field Updates ===\n";
 
     const size_t VECTOR_SIZE = 10;
 
@@ -511,7 +553,9 @@ void test_buffer_template_with_operation_change() {
 
     double* a_ptr = nullptr;
     double* b_ptr = nullptr;
+    int8_t* op_ptr = nullptr;
 
+    auto op_offset = builder.CreateUninitializedVector(1, &op_ptr);
     auto b_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &b_ptr);
     auto a_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &a_ptr);
 
@@ -520,41 +564,37 @@ void test_buffer_template_with_operation_change() {
         a_ptr[i] = 10.0;
         b_ptr[i] = 2.0;
     }
+    *op_ptr = MathOperation_Add;
 
-    auto request = CreateVectorMathRequest(builder, a_offset, b_offset, MathOperation_Add);
+    auto request = CreateVectorMathRequest(builder, a_offset, b_offset, op_offset);
     builder.Finish(request);
 
     // Parse and check initial operation
     auto parsed = flatbuffers::GetRoot<VectorMathRequest>(builder.GetBufferPointer());
-    std::cout << "  Initial operation: " << static_cast<int>(parsed->operation()) 
+    std::cout << "  Initial operation: " << static_cast<int>(parsed->operation()->Get(0)) 
               << " (Add=0)\n";
 
-    // To change a scalar field like 'operation', you have two options:
-    // 
-    // Option 1: Use mutable API (if you generated with --gen-mutable)
-    //           auto mutable_req = GetMutableVectorMathRequest(buf);
-    //           mutable_req->mutate_operation(MathOperation_Multiply);
-    //
-    // Option 2: Rebuild the structure (what we do in test_builder_reuse)
-    //
-    // For THIS test, we just show that vector DATA can still be updated:
+    // With scalar-as-vector pattern, we CAN change operation via pointer!
+    // No mutable API or rebuild needed - just write to op_ptr[0]
 
-    // Change vector data without rebuilding
+    // Change vector data AND operation without rebuilding
     for (size_t i = 0; i < VECTOR_SIZE; ++i) {
         a_ptr[i] = 100.0;  // Changed from 10.0
         b_ptr[i] = 5.0;    // Changed from 2.0
     }
+    *op_ptr = MathOperation_Multiply;  // Changed from Add!
 
-    // Re-parse and verify data changed but structure intact
+    // Re-parse and verify everything changed
     auto reparsed = flatbuffers::GetRoot<VectorMathRequest>(builder.GetBufferPointer());
     assert(reparsed->operand_a()->Get(0) == 100.0);
     assert(reparsed->operand_b()->Get(0) == 5.0);
-    assert(reparsed->operation() == MathOperation_Add);  // Operation unchanged
+    assert(reparsed->operation()->Get(0) == MathOperation_Multiply);  // Operation changed!
 
     std::cout << "  After data update: a[0]=" << reparsed->operand_a()->Get(0)
               << ", b[0]=" << reparsed->operand_b()->Get(0)
-              << ", operation=" << static_cast<int>(reparsed->operation()) << "\n";
-    std::cout << "  Buffer template with scalar test passed!\n";
+              << ", operation=" << static_cast<int>(reparsed->operation()->Get(0)) 
+              << " (Multiply=2)\n";
+    std::cout << "  Buffer template with operation change test passed!\n";
 }
 
 /**
@@ -676,9 +716,10 @@ int main() {
 
     // Parse and verify response
     auto response = flatbuffers::GetRoot<StringReversalResponse>(response_payload.data());
-    std::cout << "Verified response: \"" << response->output()->str() << "\"\n";
-    assert(response->output()->str() == "!regnesseM ksaT ,olleH");
-    assert(response->original_length() == 22);
+    std::string output_str(reinterpret_cast<const char*>(response->output()->data()), response->output()->size());
+    std::cout << "Verified response: \"" << output_str << "\"\n";
+    assert(output_str == "!regnesseM ksaT ,olleH");
+    assert(response->original_length()->Get(0) == 22);
     std::cout << "String reversal test passed!\n";
 
     // Test 2: Math operation (scalar)

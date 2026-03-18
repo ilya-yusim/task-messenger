@@ -7,11 +7,13 @@
  */
 #pragma once
 
+#include "skills/registry/CompareUtils.hpp"
 #include "skills/registry/Skill.hpp"
 #include "skills/registry/PayloadBuffer.hpp"
 #include "skills/registry/SkillIds.hpp"
 #include "FusedMultiplyAddSkill_generated.h"
 
+#include <array>
 #include <memory>
 #include <optional>
 #include <span>
@@ -129,6 +131,41 @@ public:
     }
 
     /**
+     * @brief Create a test request with predefined test data.
+     *
+     * @param case_index Test case selection:
+     *   - 0: size=100, a=[0,1,2...], b=[1,1,1...], c=2.0
+     *   - 1: size=1000, sequential data, c=0.5
+     *   - 2: size=10, edge cases, c=0.0
+     * @return FusedMultiplyAddPayload populated with test data.
+     */
+    [[nodiscard]] static FusedMultiplyAddPayload create_test_request(size_t case_index = 0) {
+        constexpr std::array<size_t, 3> sizes = {100, 1000, 10};
+        constexpr std::array<double, 3> c_values = {2.0, 0.5, 0.0};
+
+        size_t size = (case_index < sizes.size()) ? sizes[case_index] : sizes[0];
+        double c = (case_index < c_values.size()) ? c_values[case_index] : c_values[0];
+        auto payload = create_request(size, c);
+        auto& ptrs = payload.ptrs();
+
+        // Fill with test data
+        for (size_t i = 0; i < size; ++i) {
+            ptrs.a[i] = static_cast<double>(i);
+            ptrs.b[i] = 1.0;
+        }
+
+        return payload;
+    }
+
+    /**
+     * @brief Get the number of available test cases.
+     * @return Number of predefined test cases.
+     */
+    [[nodiscard]] static constexpr size_t get_test_case_count() noexcept {
+        return 3;
+    }
+
+    /**
      * @brief Create response buffer sized for the given request.
      * @param request The request payload to size the response for.
      * @return Unique pointer to response buffer, or nullptr on failure.
@@ -142,6 +179,17 @@ public:
         }
         return std::make_unique<FusedMultiplyAddResponseBuffer>(
             create_response(req_ptrs->a.size()));
+    }
+
+    /**
+     * @brief Create response buffer sized for the given request (PayloadBufferBase overload).
+     * @param request The request payload to size the response for.
+     * @return Unique pointer to response buffer, or nullptr on failure.
+     */
+    [[nodiscard]] static std::unique_ptr<PayloadBufferBase> create_response_for_request(
+        const PayloadBufferBase& request
+    ) {
+        return create_response_for_request(request.span());
     }
 
     // =========================================================================
@@ -292,6 +340,24 @@ public:
             return std::nullopt;
         }
         return std::span<const double>(response->result()->data(), response->result()->size());
+    }
+
+    // =========================================================================
+    // Verification Support
+    // =========================================================================
+
+    /**
+     * @brief Compare locally computed result with worker's result.
+     *
+     * @param computed Response pointers from local computation.
+     * @param worker Response pointers from worker's response.
+     * @return VerificationResult indicating pass/fail.
+     */
+    [[nodiscard]] static VerificationResult compare_response(
+        const ResponsePtrs& computed,
+        const ResponsePtrs& worker
+    ) {
+        return compare_vector(computed.result, worker.result, "result");
     }
 };
 
