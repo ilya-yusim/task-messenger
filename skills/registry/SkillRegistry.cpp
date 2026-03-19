@@ -6,6 +6,7 @@
  * See SkillRegistration.hpp and skills/builtins/ for examples.
  */
 #include "SkillRegistry.hpp"
+#include "CompareUtils.hpp"
 #include "PayloadBuffer.hpp"
 #include "logger.hpp"
 
@@ -135,6 +136,7 @@ VerificationResult SkillRegistry::verify_response(
     if (!factory) {
         return VerificationResult::failure("Unknown skill_id=" + std::to_string(skill_id));
     }
+    
     return factory->verify_response(request, worker_response);
 }
 

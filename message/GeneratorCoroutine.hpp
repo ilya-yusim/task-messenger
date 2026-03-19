@@ -12,7 +12,7 @@
  * - `final_suspend = suspend_always`: keeps frame alive until destruction
  * - Exceptions are swallowed (project policy)
  * 
- * Used by TaskGenerator::run_async_chain() and similar generator coroutines
+ * Used by TaskGenerator::process_single_task() and similar generator coroutines
  * that submit tasks and await responses.
  */
 struct GeneratorCoroutine {

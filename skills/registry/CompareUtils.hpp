@@ -17,14 +17,16 @@
 namespace TaskMessenger::Skills {
 
 /**
- * @brief Configuration for floating-point comparisons.
+ * @brief Configuration for verification comparisons.
  *
- * Provides default epsilon values that can be configured by the manager
- * at startup without skills depending on manager code.
+ * Provides default epsilon values and testing options that can be configured
+ * by the manager at startup without skills depending on manager code.
  */
 struct CompareConfig {
+    bool enabled = false;        ///< Enable/disable verification globally
     double abs_epsilon = 1e-9;   ///< Absolute tolerance for near-zero values
     double rel_epsilon = 1e-6;   ///< Relative tolerance for larger values
+    bool inject_failure = false; ///< Corrupt response data to test failure paths
 
     /**
      * @brief Access the global default configuration.
@@ -32,8 +34,10 @@ struct CompareConfig {
      * Manager can modify these defaults at startup:
      * @code
      * auto& cfg = CompareConfig::defaults();
+     * cfg.enabled = manager_opts::get_verify_enabled();
      * cfg.abs_epsilon = manager_opts::get_verify_epsilon();
      * cfg.rel_epsilon = manager_opts::get_verify_rel_epsilon();
+     * cfg.inject_failure = manager_opts::get_verify_inject_failure();
      * @endcode
      *
      * @return Reference to the global default configuration.
@@ -145,12 +149,14 @@ template<typename T>
  * @param expected The expected byte sequence.
  * @param actual The actual byte sequence.
  * @param field_name Name of the field for error messages.
+ * @param cfg Comparison configuration.
  * @return VerificationResult with pass/fail and diagnostic message.
  */
 [[nodiscard]] VerificationResult compare_bytes(
     std::span<const int8_t> expected,
     std::span<const int8_t> actual,
-    const char* field_name = "output"
+    const char* field_name = "output",
+    const CompareConfig& cfg = CompareConfig::defaults()
 );
 
 /**
@@ -162,13 +168,15 @@ template<typename T>
  * @param actual Pointer to actual bytes.
  * @param length Number of bytes to compare.
  * @param field_name Name of the field for error messages.
+ * @param cfg Comparison configuration.
  * @return VerificationResult with pass/fail and diagnostic message.
  */
 [[nodiscard]] VerificationResult compare_bytes(
     const int8_t* expected,
     const int8_t* actual,
     size_t length,
-    const char* field_name = "output"
+    const char* field_name = "output",
+    const CompareConfig& cfg = CompareConfig::defaults()
 );
 
 } // namespace TaskMessenger::Skills

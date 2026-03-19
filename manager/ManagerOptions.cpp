@@ -11,6 +11,7 @@ namespace {
     bool g_verify_enabled = false;
     double g_verify_epsilon = 1e-9;
     double g_verify_rel_epsilon = 1e-6;
+    bool g_verify_inject_failure = false;
     std::atomic<bool> g_manager_registered{false};
 }
 
@@ -27,6 +28,7 @@ void register_options() {
         bool verify_default = false;
         double verify_eps_default = 1e-9;
         double verify_rel_eps_default = 1e-6;
+        bool verify_inject_failure_default = false;
         
         // Check JSON config for manager options
         if (j.contains("manager")) {
@@ -43,6 +45,9 @@ void register_options() {
             if (mj.contains("verify_rel_epsilon") && mj["verify_rel_epsilon"].is_number()) {
                 verify_rel_eps_default = mj["verify_rel_epsilon"].get<double>();
             }
+            if (mj.contains("verify_inject_failure") && mj["verify_inject_failure"].is_boolean()) {
+                verify_inject_failure_default = mj["verify_inject_failure"].get<bool>();
+            }
         }
         
         {
@@ -51,6 +56,7 @@ void register_options() {
             g_verify_enabled = verify_default;
             g_verify_epsilon = verify_eps_default;
             g_verify_rel_epsilon = verify_rel_eps_default;
+            g_verify_inject_failure = verify_inject_failure_default;
         }
         
         // Manager-specific CLI flags
@@ -68,6 +74,10 @@ void register_options() {
         
         app.add_option("--verify-rel-epsilon", g_verify_rel_epsilon,
                       "Relative epsilon for numeric comparisons in verification (default: 1e-6)")
+            ->group("Manager");
+        
+        app.add_flag("--verify-inject-failure", g_verify_inject_failure,
+                    "Inject intentional verification failures for testing (corrupts response data)")
             ->group("Manager");
     });
 }
@@ -90,6 +100,11 @@ double get_verify_epsilon() {
 double get_verify_rel_epsilon() {
     std::lock_guard<std::mutex> lk(g_manager_opts_mtx);
     return g_verify_rel_epsilon;
+}
+
+bool get_verify_inject_failure() {
+    std::lock_guard<std::mutex> lk(g_manager_opts_mtx);
+    return g_verify_inject_failure;
 }
 
 } // namespace manager_opts

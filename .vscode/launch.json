@@ -96,7 +96,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/builddir/manager/tm-manager.exe",
-            "args": ["-c", "config/config-manager.json","--interactive"],
+            "args": ["-c", "config/config-manager.json","--interactive","--verify","--verify-inject-failure"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

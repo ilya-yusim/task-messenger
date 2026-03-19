@@ -103,19 +103,6 @@ public:
     std::shared_ptr<ResponseContext> response_context() const { return response_ctx_; }
 
     /**
-     * \brief Coroutine-based async task generator that awaits responses.
-     * \param pool Task message pool to enqueue tasks
-     * \param initial_count Number of tasks to submit in the chain
-     * \return Coroutine task that can be started on ResponseContext
-     * 
-     * This coroutine submits tasks one at a time, awaits each response,
-     * and can process the response to decide on follow-up actions.
-     * Resumes on ResponseContext worker threads.
-     */
-    GeneratorCoroutine run_async_chain(std::shared_ptr<TaskMessagePool> pool,
-                                       uint32_t initial_count);
-
-    /**
      * \brief Dispatch N tasks in parallel, each with its own coroutine.
      * \param pool Task message pool to enqueue tasks
      * \param count Number of tasks to dispatch

@@ -273,13 +273,13 @@ public:
     }
 
     /**
-     * @brief Create a simple request payload (one-off, no typed pointers).
+     * @brief Create a request payload with values copied into it(one-off, no typed pointers).
      * @param a First operand vector.
      * @param b Second operand vector.
      * @param c Scalar multiplier.
      * @return SimplePayload with buffer ownership.
      */
-    [[nodiscard]] static SimplePayload create_simple_request(
+    [[nodiscard]] static SimplePayload create_request_with_values(
         const std::vector<double>& a,
         const std::vector<double>& b,
         double c

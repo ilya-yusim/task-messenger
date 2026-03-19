@@ -36,4 +36,10 @@ double get_verify_epsilon();
  */
 double get_verify_rel_epsilon();
 
+/**
+ * \brief Check if verification failure injection is enabled.
+ * \return true if --verify-inject-failure flag was set, false otherwise.
+ */
+bool get_verify_inject_failure();
+
 } // namespace manager_opts
