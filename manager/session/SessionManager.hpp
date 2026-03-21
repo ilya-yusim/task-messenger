@@ -106,6 +106,12 @@ public:
     std::pair<size_t, size_t> get_task_pool_stats() const;
 
     /**
+     * \brief Get the shared task pool for async task submission.
+     * \return Shared pointer to the TaskMessagePool.
+     */
+    std::shared_ptr<TaskMessagePool> task_pool() const { return task_pool_; }
+
+    /**
     * \brief Print comprehensive statistics for all sessions and the task pool.
      */
     void print_comprehensive_statistics() const;

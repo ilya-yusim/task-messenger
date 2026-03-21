@@ -13,8 +13,6 @@
 #include <chrono>
 #include <utility>
 
-using transport::CoroIoContext;
-
 AsyncRuntime::AsyncRuntime(const std::string& host, int port, std::shared_ptr<Logger> logger)
     : host_(host), port_(port), logger_(std::move(logger)) {}
 
@@ -157,7 +155,7 @@ Task<bool> AsyncRuntime::run_loop_coro(TaskProcessor& processor) {
         }
 
         // Read body
-        std::string payload;
+        std::vector<uint8_t> payload;
         payload.clear();
         if (header.body_size > 0) {
             if (payload.capacity() < header.body_size) {
@@ -174,9 +172,21 @@ Task<bool> AsyncRuntime::run_loop_coro(TaskProcessor& processor) {
         }
 
         // Process task
-        auto result = processor.process(header.task_id, header.task_type, payload);
+        auto& registry = TaskMessenger::Skills::SkillRegistry::instance();
+        auto response_buffer = registry.create_response_buffer(header.skill_id, payload);
+        if (!response_buffer) {
+            if (logger_) logger_->error("Failed to create response buffer for skill_id=" + std::to_string(header.skill_id));
+            co_return false;
+        }
+
+        bool success = processor.process(header.task_id, header.skill_id, payload, response_buffer->mutable_span());
         
-        TaskMessage response(header.task_id, header.task_type, std::move(result));
+        if (!success) {
+            if (logger_) logger_->error("Task processing failed for task_id=" + std::to_string(header.task_id));
+            co_return false;
+        }
+
+        auto response = TaskMessage(header.task_id, std::move(response_buffer));
 
         try {
             // Scatter-send: send header and payload separately (TCP_NODELAY enabled)

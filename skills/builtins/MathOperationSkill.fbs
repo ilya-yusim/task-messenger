@@ -1,0 +1,17 @@
+// Skill 2: Scalar Math Operation
+// Location: skills/builtins/MathOperationSkill.fbs
+
+include "Common.fbs";
+
+namespace TaskMessenger.Skills;
+
+table MathOperationRequest {
+  operand_a: [double];   // Scalar stored as single-element vector for uniform pointer access
+  operand_b: [double];   // Scalar stored as single-element vector for uniform pointer access
+  operation: [int8];     // MathOperation enum as single-element vector for pointer access
+}
+
+table MathOperationResponse {
+  result: [double];      // Scalar stored as single-element vector for uniform pointer access
+  overflow: [bool];      // Scalar stored as single-element vector for uniform pointer access
+}

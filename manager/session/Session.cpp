@@ -1,8 +1,10 @@
 // Session.cpp - Session lifecycle and task handling implementation
 #include "Session.hpp"
+#include "message/ResponseContext.hpp"
 #include <cassert>
 #include <chrono>
 #include <cstring>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -102,7 +104,7 @@ Task<void> Session::run_coroutine() {
                                      std::to_string(task.task_id()) + ", Got: " + std::to_string(response.task_id));
                     record_task_failed();
                     // Requeue the task to shared pool since we didn't get a proper response
-                    shared_task_pool_->add_task(task);
+                    shared_task_pool_->add_task(std::move(task));
                     continue;
                 }
 
@@ -122,29 +124,34 @@ Task<void> Session::run_coroutine() {
                 stats_.timed_tasks += 1;
 
                 // Check response success
-                if (response.task_type == wire_header.task_type) {
+                if (response.skill_id == wire_header.skill_id) {
                     record_task_completed();
                     logger_->debug("Session " + std::to_string(session_id_) +
                                     ": Task " + std::to_string(task.task_id()) + " completed successfully");
+                    
+                    // Signal completion to awaiting coroutine if present
+                    if (task.has_completion_source()) {
+                        task.complete(response, std::as_bytes(std::span{response_body}), true);
+                    }
                 } else {
                     record_task_failed();
                     logger_->warning("Session " + std::to_string(session_id_) + ": Task " + std::to_string(task.task_id()) +
-                                     " received mismatched type (expected " + std::to_string(wire_header.task_type) +
-                                     ", got " + std::to_string(response.task_type) + ")");
+                                     " received mismatched skill_id (expected " + std::to_string(wire_header.skill_id) +
+                                     ", got " + std::to_string(response.skill_id) + ")");
                     // Requeue the task to shared pool for retry
-                    shared_task_pool_->add_task(task);
+                    shared_task_pool_->add_task(std::move(task));
                     continue;
                 }
 
                 logger_->debug("Session " + std::to_string(session_id_) +
-                                ": Worker response type " + std::to_string(response.task_type) +
+                                ": Worker response skill_id " + std::to_string(response.skill_id) +
                                 ", payload " + std::to_string(response.body_size) + " bytes");
             } catch (const std::system_error& e) {
                 // Requeue task to shared pool if we acquired it but failed during I/O
                 if (task_acquired && task.is_valid()) {
                     logger_->warning("Session " + std::to_string(session_id_) + ": I/O error for task " +
                                      std::to_string(task.task_id()) + ", requeuing: " + std::string(e.what()));
-                    shared_task_pool_->add_task(task);
+                    shared_task_pool_->add_task(std::move(task));
                     record_task_failed();
                 }
 
@@ -167,7 +174,7 @@ Task<void> Session::run_coroutine() {
                 if (task_acquired && task.is_valid()) {
                     logger_->warning("Session " + std::to_string(session_id_) + ": Exception for task " +
                                      std::to_string(task.task_id()) + ", requeuing: " + std::string(e.what()));
-                    shared_task_pool_->add_task(task);
+                    shared_task_pool_->add_task(std::move(task));
                     record_task_failed();
                 }
                 logger_->error("Session " + std::to_string(session_id_) + ": Exception processing task: " + std::string(e.what()));

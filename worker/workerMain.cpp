@@ -8,6 +8,7 @@
 #endif
 #include "session/WorkerSession.hpp"
 #include "WorkerOptions.hpp"
+#include "skills/registry/SkillRegistry.hpp"
 #include "logger.hpp"
 #include <options/Options.hpp>
 #include <processUtils.hpp>
@@ -40,7 +41,7 @@ int main(int argc, char* argv[]) {
 
         // Setup logger
         auto logger = std::make_shared<Logger>("Worker");
-     
+        
         // Add vector sink if UI enabled (and UI compiled) for log retrieval
         bool ui_enabled = transport::worker_opts::get_ui_enabled().value_or(false);
     #ifndef HAS_WORKER_UI
@@ -60,6 +61,10 @@ int main(int argc, char* argv[]) {
             logger->add_sink(stdout_sink);
         }
 
+        // Log registered skills (verifies static initialization worked)
+        auto& skill_registry = TaskMessenger::Skills::SkillRegistry::instance();
+        logger->info("Registered skills: " + std::to_string(skill_registry.skill_count()));
+     
         // Start worker session directly
         WorkerOptions opts{mode, manager_host, manager_port};
         auto session = std::make_shared<WorkerSession>(opts, logger);

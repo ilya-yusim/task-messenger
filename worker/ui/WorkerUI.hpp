@@ -279,7 +279,7 @@ public:
                 if (worker_) {
                     task_count_.store(worker_->GetTaskCount(), std::memory_order_relaxed);
                     ProcessUsage usage = worker_->GetProcessUsage();
-                    cpu_usage_.store(usage.cpu_percent, std::memory_order_relaxed);
+                    cpu_usage_.store(static_cast<float>(usage.cpu_percent), std::memory_order_relaxed);
                     mem_usage_.store(usage.memory_bytes / (1024.0f * 1024.0f), std::memory_order_relaxed);
                     auto bytes_sent = worker_->GetBytesSent();      // Already formatted (e.g., 1.5MB)
                     auto bytes_received = worker_->GetBytesReceived();

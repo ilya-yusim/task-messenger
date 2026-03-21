@@ -16,8 +16,24 @@
  *  \ingroup socket_backend
  */
 struct IAsyncStream : public virtual IClientSocket, public virtual IServerSocket {
-    /** \brief Attempt non-blocking read; returns true when completed (success or error). */
+    /**
+     * \brief Attempt non-blocking read.
+     *
+     * Returns true when the operation has fully completed (all requested bytes
+     * transferred, or a terminal error/disconnect has occurred).  Returns false
+     * when no progress is possible yet (would block) **or** when only partial
+     * data was transferred; in the partial case bytes_read > 0 and the caller
+     * must retry with an adjusted buffer pointer and remaining length.
+     */
     virtual bool try_read(void* buffer, size_t size, size_t& bytes_read, std::error_code& error) = 0;
-    /** \brief Attempt non-blocking write; returns true when completed (success or error). */
+    /**
+     * \brief Attempt non-blocking write.
+     *
+     * Returns true when the operation has fully completed (all requested bytes
+     * transferred, or a terminal error has occurred).  Returns false when no
+     * progress is possible yet (would block) **or** when only part of the buffer
+     * was sent; in the partial case bytes_written > 0 and the caller must retry
+     * with an adjusted buffer pointer and remaining length.
+     */
     virtual bool try_write(const void* buffer, size_t size, size_t& bytes_written, std::error_code& error) = 0;
 };

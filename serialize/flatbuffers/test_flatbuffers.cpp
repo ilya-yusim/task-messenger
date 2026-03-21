@@ -1,11 +1,11 @@
 /**
  * @file test_flatbuffers.cpp
- * @brief Demonstrates FlatBuffers serialization for skill-based task messaging.
+ * @brief Demonstrates FlatBuffers serialization for skill payloads.
  *
- * This test demonstrates the "skill" concept where:
- * - Each skill has a unique ID
- * - Skills have associated request/response data structures
- * - The SkillRequest/SkillResponse envelope wraps skill-specific payloads
+ * This test demonstrates FlatBuffers skill serialization where:
+ * - Skill payloads are serialized directly (no envelope wrapper)
+ * - Routing metadata (skill_id, task_id) is provided by TaskHeader
+ * - Each skill has its own request/response data structures
  */
 
 #include "skill_task_generated.h"  // Generated from skill_task.fbs
@@ -22,101 +22,20 @@ using namespace TaskMessenger::Skills;
 namespace {
 
 /**
- * @brief Create a string reversal skill request.
+ * @brief Create a string reversal skill payload.
  *
- * This simulates the task generator creating a skill request that will be
- * sent from manager to worker.
- *
- * @param task_id Unique task identifier
  * @param input String to be reversed
- * @return Serialized request bytes ready for transmission
+ * @return Serialized StringReversalRequest bytes
  */
-std::vector<uint8_t> create_string_reversal_request(uint32_t task_id, const std::string& input) {
-    // First, build the nested StringReversalRequest
-    flatbuffers::FlatBufferBuilder inner_builder(256);
-    auto input_offset = inner_builder.CreateString(input);
-    auto inner_request = CreateStringReversalRequest(inner_builder, input_offset);
-    inner_builder.Finish(inner_request);
+std::vector<uint8_t> create_string_reversal_payload(const std::string& input) {
+    flatbuffers::FlatBufferBuilder builder(256);
+    
+    // Create input as int8 vector (not string)
+    std::vector<int8_t> input_bytes(input.begin(), input.end());
+    auto input_offset = builder.CreateVector(input_bytes);
+    auto request = CreateStringReversalRequest(builder, input_offset);
+    builder.Finish(request);
 
-    // Get the nested payload bytes
-    auto nested_bytes = inner_builder.GetBufferPointer();
-    auto nested_size = inner_builder.GetSize();
-
-    // Now build the outer SkillRequest envelope
-    flatbuffers::FlatBufferBuilder outer_builder(512);
-    auto payload = outer_builder.CreateVector(nested_bytes, nested_size);
-
-    auto skill_request = CreateSkillRequest(
-        outer_builder,
-        1,  // skill_id for string reversal
-        task_id,
-        payload
-    );
-    outer_builder.Finish(skill_request);
-
-    // Return as vector for transmission
-    return std::vector<uint8_t>(
-        outer_builder.GetBufferPointer(),
-        outer_builder.GetBufferPointer() + outer_builder.GetSize()
-    );
-}
-
-/**
- * @brief Process a skill request on the worker side.
- *
- * This simulates the worker receiving a skill request, processing it based
- * on the skill_id, and returning the appropriate response.
- *
- * @param request_bytes Serialized request received from manager
- * @return Serialized response bytes to send back to manager
- */
-std::vector<uint8_t> process_skill_request(const std::vector<uint8_t>& request_bytes) {
-    // Parse the envelope using the generated GetSkillRequest
-    auto skill_request = GetSkillRequest(request_bytes.data());
-
-    uint32_t skill_id = skill_request->skill_id();
-    uint32_t task_id = skill_request->task_id();
-
-    std::cout << "Processing skill_id=" << skill_id << ", task_id=" << task_id << "\n";
-
-    if (skill_id == 1) {  // String reversal
-        // Parse nested payload using flatbuffers::GetRoot<T>
-        auto payload = skill_request->payload();
-        auto inner_request = flatbuffers::GetRoot<StringReversalRequest>(payload->data());
-
-        std::string input = inner_request->input()->str();
-        std::string output(input.rbegin(), input.rend());
-
-        std::cout << "  Input: \"" << input << "\" -> Output: \"" << output << "\"\n";
-
-        // Build response - first the inner StringReversalResponse
-        flatbuffers::FlatBufferBuilder inner_builder(256);
-        auto output_offset = inner_builder.CreateString(output);
-        auto inner_response = CreateStringReversalResponse(
-            inner_builder, output_offset, static_cast<uint32_t>(input.length())
-        );
-        inner_builder.Finish(inner_response);
-
-        // Wrap in envelope
-        flatbuffers::FlatBufferBuilder outer_builder(512);
-        auto response_payload = outer_builder.CreateVector(
-            inner_builder.GetBufferPointer(), inner_builder.GetSize()
-        );
-        auto skill_response = CreateSkillResponse(
-            outer_builder, skill_id, task_id, true, response_payload
-        );
-        outer_builder.Finish(skill_response);
-
-        return std::vector<uint8_t>(
-            outer_builder.GetBufferPointer(),
-            outer_builder.GetBufferPointer() + outer_builder.GetSize()
-        );
-    }
-
-    // Unknown skill - return error response
-    flatbuffers::FlatBufferBuilder builder(128);
-    auto response = CreateSkillResponse(builder, skill_id, task_id, false, 0);
-    builder.Finish(response);
     return std::vector<uint8_t>(
         builder.GetBufferPointer(),
         builder.GetBufferPointer() + builder.GetSize()
@@ -124,24 +43,75 @@ std::vector<uint8_t> process_skill_request(const std::vector<uint8_t>& request_b
 }
 
 /**
- * @brief Test math operation skill serialization.
+ * @brief Process a string reversal skill payload.
  *
- * Demonstrates another skill type with numeric data.
+ * @param payload_bytes Serialized StringReversalRequest
+ * @return Serialized StringReversalResponse bytes
+ */
+std::vector<uint8_t> process_string_reversal(const std::vector<uint8_t>& payload_bytes) {
+    auto request = flatbuffers::GetRoot<StringReversalRequest>(payload_bytes.data());
+
+    // Input is now int8 vector
+    auto input_vec = request->input();
+    std::string input(reinterpret_cast<const char*>(input_vec->data()), input_vec->size());
+    std::string output(input.rbegin(), input.rend());
+
+    std::cout << "  Input: \"" << input << "\" -> Output: \"" << output << "\"\n";
+
+    // Build response with int8 vector output
+    flatbuffers::FlatBufferBuilder builder(256);
+    
+    // Create original_length as single-element vector
+    std::vector<uint32_t> orig_len_vec = { static_cast<uint32_t>(input.length()) };
+    auto orig_len_offset = builder.CreateVector(orig_len_vec);
+    
+    // Create output as int8 vector
+    std::vector<int8_t> output_bytes(output.begin(), output.end());
+    auto output_offset = builder.CreateVector(output_bytes);
+    
+    auto response = CreateStringReversalResponse(builder, output_offset, orig_len_offset);
+    builder.Finish(response);
+
+    return std::vector<uint8_t>(
+        builder.GetBufferPointer(),
+        builder.GetBufferPointer() + builder.GetSize()
+    );
+}
+
+/**
+ * @brief Test math operation task serialization.
+ *
+ * Demonstrates another task type with numeric data using scalar-as-vector pattern.
  */
 void test_math_operation() {
-    std::cout << "\n=== Testing Math Operation Skill ===\n";
+    std::cout << "\n=== Testing Math Operation Task ===\n";
 
     flatbuffers::FlatBufferBuilder builder(256);
-    auto math_req = CreateMathOperationRequest(builder, 42.0, 8.0, MathOperation_Multiply);
+    
+    // Create single-element vectors for operands (scalar-as-vector pattern)
+    double* a_ptr = nullptr;
+    double* b_ptr = nullptr;
+    int8_t* op_ptr = nullptr;
+    
+    auto op_offset = builder.CreateUninitializedVector(1, &op_ptr);
+    auto b_offset = builder.CreateUninitializedVector(1, &b_ptr);
+    auto a_offset = builder.CreateUninitializedVector(1, &a_ptr);
+    
+    *a_ptr = 42.0;
+    *b_ptr = 8.0;
+    *op_ptr = MathOperation_Multiply;
+    
+    auto math_req = CreateMathOperationRequest(builder, a_offset, b_offset, op_offset);
     builder.Finish(math_req);
 
     // Simulate round-trip using flatbuffers::GetRoot<T>
     auto buffer = builder.GetBufferPointer();
     auto parsed = flatbuffers::GetRoot<MathOperationRequest>(buffer);
 
-    double a = parsed->operand_a();
-    double b = parsed->operand_b();
-    MathOperation op = parsed->operation();
+    // Access scalars via single-element vector data()
+    double a = parsed->operand_a()->Get(0);
+    double b = parsed->operand_b()->Get(0);
+    MathOperation op = static_cast<MathOperation>(parsed->operation()->Get(0));
 
     double result = 0;
     switch (op) {
@@ -164,9 +134,11 @@ void test_math_operation() {
 void test_zero_copy_access() {
     std::cout << "\n=== Testing Zero-Copy Access ===\n";
 
-    // Create a buffer
+    // Create a buffer with int8 vector
     flatbuffers::FlatBufferBuilder builder(256);
-    auto input = builder.CreateString("Zero-copy test string");
+    std::string test_str = "Zero-copy test string";
+    std::vector<int8_t> input_bytes(test_str.begin(), test_str.end());
+    auto input = builder.CreateVector(input_bytes);
     auto request = CreateStringReversalRequest(builder, input);
     builder.Finish(request);
 
@@ -176,15 +148,15 @@ void test_zero_copy_access() {
 
     std::cout << "  Buffer size: " << buffer_size << " bytes\n";
 
-    // Access data without copying - the string pointer points directly into buffer
+    // Access data without copying - the pointer points directly into buffer
     auto parsed = flatbuffers::GetRoot<StringReversalRequest>(buffer_ptr);
-    const char* str_ptr = parsed->input()->c_str();
+    const int8_t* data_ptr = parsed->input()->data();
 
     // Verify the pointer is within the buffer range (zero-copy)
-    bool is_zero_copy = (reinterpret_cast<const uint8_t*>(str_ptr) >= buffer_ptr) &&
-                        (reinterpret_cast<const uint8_t*>(str_ptr) < buffer_ptr + buffer_size);
+    bool is_zero_copy = (reinterpret_cast<const uint8_t*>(data_ptr) >= buffer_ptr) &&
+                        (reinterpret_cast<const uint8_t*>(data_ptr) < buffer_ptr + buffer_size);
 
-    std::cout << "  String access is zero-copy: " << (is_zero_copy ? "yes" : "no") << "\n";
+    std::cout << "  Data access is zero-copy: " << (is_zero_copy ? "yes" : "no") << "\n";
     assert(is_zero_copy);
     std::cout << "  Zero-copy test passed!\n";
 }
@@ -198,15 +170,24 @@ void test_buffer_sizes() {
     // Small message
     {
         flatbuffers::FlatBufferBuilder builder(64);
-        auto req = CreateMathOperationRequest(builder, 1.0, 2.0, MathOperation_Add);
+        double* a_ptr = nullptr;
+        double* b_ptr = nullptr;
+        int8_t* op_ptr = nullptr;
+        auto op_offset = builder.CreateUninitializedVector(1, &op_ptr);
+        auto b_offset = builder.CreateUninitializedVector(1, &b_ptr);
+        auto a_offset = builder.CreateUninitializedVector(1, &a_ptr);
+        *a_ptr = 1.0; *b_ptr = 2.0; *op_ptr = MathOperation_Add;
+        auto req = CreateMathOperationRequest(builder, a_offset, b_offset, op_offset);
         builder.Finish(req);
         std::cout << "  MathOperationRequest size: " << builder.GetSize() << " bytes\n";
     }
 
-    // String message
+    // String message (using int8 vector)
     {
         flatbuffers::FlatBufferBuilder builder(256);
-        auto input = builder.CreateString("Hello, FlatBuffers!");
+        std::string str = "Hello, FlatBuffers!";
+        std::vector<int8_t> input_bytes(str.begin(), str.end());
+        auto input = builder.CreateVector(input_bytes);
         auto req = CreateStringReversalRequest(builder, input);
         builder.Finish(req);
         std::cout << "  StringReversalRequest (short): " << builder.GetSize() << " bytes\n";
@@ -216,7 +197,8 @@ void test_buffer_sizes() {
     {
         flatbuffers::FlatBufferBuilder builder(1024);
         std::string long_input(500, 'x');
-        auto input = builder.CreateString(long_input);
+        std::vector<int8_t> input_bytes(long_input.begin(), long_input.end());
+        auto input = builder.CreateVector(input_bytes);
         auto req = CreateStringReversalRequest(builder, input);
         builder.Finish(req);
         std::cout << "  StringReversalRequest (500 chars): " << builder.GetSize() << " bytes\n";
@@ -262,7 +244,13 @@ void test_vector_math_direct_write() {
 
     // IMPORTANT: In FlatBuffers, you must create objects in REVERSE order
     // (children before parents, last fields before first fields)
-    // So we create operand_b first, then operand_a
+    // So we create operation first, then operand_b, then operand_a
+
+    int8_t* operation_ptr = nullptr;
+    
+    // Allocate operation vector (single-element for scalar-as-vector)
+    auto operation_offset = builder.CreateUninitializedVector(1, &operation_ptr);
+    *operation_ptr = MathOperation_Add;
 
     // Allocate operand_b vector - get direct write pointer
     auto operand_b_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &operand_b_ptr);
@@ -294,7 +282,7 @@ void test_vector_math_direct_write() {
         builder,
         operand_a_offset,  // Uses the already-written vector
         operand_b_offset,  // Uses the already-written vector
-        MathOperation_Add
+        operation_offset   // Operation as single-element vector
     );
     builder.Finish(request);
 
@@ -336,12 +324,14 @@ void test_vector_math_full_workflow() {
     // =========================================================================
     // SENDER SIDE: Create request with direct write access
     // =========================================================================
-    flatbuffers::FlatBufferBuilder request_builder(64 + 2 * VECTOR_SIZE * sizeof(double));
+    flatbuffers::FlatBufferBuilder request_builder(64 + 2 * VECTOR_SIZE * sizeof(double) + sizeof(int8_t));
 
     double* req_a_ptr = nullptr;
     double* req_b_ptr = nullptr;
+    int8_t* req_op_ptr = nullptr;
 
     // Allocate vectors (reverse order)
+    auto req_op_offset = request_builder.CreateUninitializedVector(1, &req_op_ptr);
     auto req_b_offset = request_builder.CreateUninitializedVector(VECTOR_SIZE, &req_b_ptr);
     auto req_a_offset = request_builder.CreateUninitializedVector(VECTOR_SIZE, &req_a_ptr);
 
@@ -350,9 +340,10 @@ void test_vector_math_full_workflow() {
         req_a_ptr[i] = static_cast<double>(i + 1);      // [1, 2, 3, ...]
         req_b_ptr[i] = static_cast<double>(i + 1) * 10; // [10, 20, 30, ...]
     }
+    *req_op_ptr = MathOperation_Multiply;
 
     auto request = CreateVectorMathRequest(
-        request_builder, req_a_offset, req_b_offset, MathOperation_Multiply
+        request_builder, req_a_offset, req_b_offset, req_op_offset
     );
     request_builder.Finish(request);
 
@@ -372,7 +363,7 @@ void test_vector_math_full_workflow() {
     // Zero-copy read of operands
     auto vec_a = parsed_request->operand_a();
     auto vec_b = parsed_request->operand_b();
-    auto operation = parsed_request->operation();
+    MathOperation operation = static_cast<MathOperation>(parsed_request->operation()->Get(0));
 
     size_t result_size = vec_a->size();
 
@@ -434,7 +425,7 @@ void test_builder_reuse() {
     const int NUM_ITERATIONS = 3;
 
     // Pre-allocate a builder large enough for our messages
-    flatbuffers::FlatBufferBuilder builder(64 + 2 * VECTOR_SIZE * sizeof(double));
+    flatbuffers::FlatBufferBuilder builder(64 + 2 * VECTOR_SIZE * sizeof(double) + sizeof(int8_t));
 
     for (int iter = 0; iter < NUM_ITERATIONS; ++iter) {
         // Clear the builder for reuse (keeps the allocated memory)
@@ -442,7 +433,9 @@ void test_builder_reuse() {
 
         double* a_ptr = nullptr;
         double* b_ptr = nullptr;
+        int8_t* op_ptr = nullptr;
 
+        auto op_offset = builder.CreateUninitializedVector(1, &op_ptr);
         auto b_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &b_ptr);
         auto a_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &a_ptr);
 
@@ -451,8 +444,9 @@ void test_builder_reuse() {
             a_ptr[i] = static_cast<double>(iter * 100 + i);
             b_ptr[i] = static_cast<double>(iter * 100 + i) * 0.5;
         }
+        *op_ptr = MathOperation_Add;
 
-        auto request = CreateVectorMathRequest(builder, a_offset, b_offset, MathOperation_Add);
+        auto request = CreateVectorMathRequest(builder, a_offset, b_offset, op_offset);
         builder.Finish(request);
 
         // Verify this iteration
@@ -488,17 +482,20 @@ void test_buffer_template_pattern() {
     // =========================================================================
     // SETUP PHASE: Build the buffer structure ONCE
     // =========================================================================
-    flatbuffers::FlatBufferBuilder builder(64 + 2 * VECTOR_SIZE * sizeof(double));
+    flatbuffers::FlatBufferBuilder builder(64 + 2 * VECTOR_SIZE * sizeof(double) + sizeof(int8_t));
 
     double* a_ptr = nullptr;
     double* b_ptr = nullptr;
+    int8_t* op_ptr = nullptr;
 
     // Create vectors and get direct-write pointers
+    auto op_offset = builder.CreateUninitializedVector(1, &op_ptr);
     auto b_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &b_ptr);
     auto a_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &a_ptr);
+    *op_ptr = MathOperation_Multiply;
 
     // Build the table structure
-    auto request = CreateVectorMathRequest(builder, a_offset, b_offset, MathOperation_Multiply);
+    auto request = CreateVectorMathRequest(builder, a_offset, b_offset, op_offset);
     builder.Finish(request);
 
     // Record the buffer info (these remain constant!)
@@ -544,11 +541,11 @@ void test_buffer_template_pattern() {
 /**
  * @brief Demonstrates updating the operation field in a buffer template.
  *
- * For scalar fields in the table (not vectors), you need to use FlatBuffers'
- * mutation API or rebuild. But vector DATA can be overwritten directly.
+ * With scalar-as-vector pattern, operation is now a [int8] vector,
+ * so it can be updated via pointer just like other vector data.
  */
 void test_buffer_template_with_operation_change() {
-    std::cout << "\n=== Testing Buffer Template with Scalar Field Updates ===\n";
+    std::cout << "\n=== Testing Buffer Template with Operation Field Updates ===\n";
 
     const size_t VECTOR_SIZE = 10;
 
@@ -556,7 +553,9 @@ void test_buffer_template_with_operation_change() {
 
     double* a_ptr = nullptr;
     double* b_ptr = nullptr;
+    int8_t* op_ptr = nullptr;
 
+    auto op_offset = builder.CreateUninitializedVector(1, &op_ptr);
     auto b_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &b_ptr);
     auto a_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &a_ptr);
 
@@ -565,41 +564,37 @@ void test_buffer_template_with_operation_change() {
         a_ptr[i] = 10.0;
         b_ptr[i] = 2.0;
     }
+    *op_ptr = MathOperation_Add;
 
-    auto request = CreateVectorMathRequest(builder, a_offset, b_offset, MathOperation_Add);
+    auto request = CreateVectorMathRequest(builder, a_offset, b_offset, op_offset);
     builder.Finish(request);
 
     // Parse and check initial operation
     auto parsed = flatbuffers::GetRoot<VectorMathRequest>(builder.GetBufferPointer());
-    std::cout << "  Initial operation: " << static_cast<int>(parsed->operation()) 
+    std::cout << "  Initial operation: " << static_cast<int>(parsed->operation()->Get(0)) 
               << " (Add=0)\n";
 
-    // To change a scalar field like 'operation', you have two options:
-    // 
-    // Option 1: Use mutable API (if you generated with --gen-mutable)
-    //           auto mutable_req = GetMutableVectorMathRequest(buf);
-    //           mutable_req->mutate_operation(MathOperation_Multiply);
-    //
-    // Option 2: Rebuild the structure (what we do in test_builder_reuse)
-    //
-    // For THIS test, we just show that vector DATA can still be updated:
+    // With scalar-as-vector pattern, we CAN change operation via pointer!
+    // No mutable API or rebuild needed - just write to op_ptr[0]
 
-    // Change vector data without rebuilding
+    // Change vector data AND operation without rebuilding
     for (size_t i = 0; i < VECTOR_SIZE; ++i) {
         a_ptr[i] = 100.0;  // Changed from 10.0
         b_ptr[i] = 5.0;    // Changed from 2.0
     }
+    *op_ptr = MathOperation_Multiply;  // Changed from Add!
 
-    // Re-parse and verify data changed but structure intact
+    // Re-parse and verify everything changed
     auto reparsed = flatbuffers::GetRoot<VectorMathRequest>(builder.GetBufferPointer());
     assert(reparsed->operand_a()->Get(0) == 100.0);
     assert(reparsed->operand_b()->Get(0) == 5.0);
-    assert(reparsed->operation() == MathOperation_Add);  // Operation unchanged
+    assert(reparsed->operation()->Get(0) == MathOperation_Multiply);  // Operation changed!
 
     std::cout << "  After data update: a[0]=" << reparsed->operand_a()->Get(0)
               << ", b[0]=" << reparsed->operand_b()->Get(0)
-              << ", operation=" << static_cast<int>(reparsed->operation()) << "\n";
-    std::cout << "  Buffer template with scalar test passed!\n";
+              << ", operation=" << static_cast<int>(reparsed->operation()->Get(0)) 
+              << " (Multiply=2)\n";
+    std::cout << "  Buffer template with operation change test passed!\n";
 }
 
 /**
@@ -706,384 +701,25 @@ void test_fused_multiply_add_buffer_template() {
     std::cout << "  Fused multiply-add buffer template test passed!\n";
 }
 
-/**
- * @brief Alternative: Using mutable API for true scalar fields.
- *
- * If you prefer scalar_c as a true scalar (not a vector), you need:
- * 1. Generate with: flatc --gen-mutable --cpp skill_task.fbs
- * 2. Use the mutate_*() methods
- *
- * Example (if schema had `scalar_c: double;`):
- *   auto mutable_req = GetMutableFusedMultiplyAddRequest(buffer);
- *   mutable_req->mutate_scalar_c(new_value);
- *
- * Trade-offs:
- * - True scalar: Slightly smaller buffer, requires mutable API
- * - Single-element vector: +8 bytes overhead, but uniform pointer access
- */
-void show_mutable_api_alternative() {
-    std::cout << "\n=== Note: Mutable API Alternative ===\n";
-    std::cout << "  For true scalar fields, you can use FlatBuffers' mutable API:\n";
-    std::cout << "    1. Generate with: flatc --gen-mutable --cpp schema.fbs\n";
-    std::cout << "    2. Use mutate_*() methods: mutable_req->mutate_scalar_c(value);\n";
-    std::cout << "  \n";
-    std::cout << "  Trade-offs:\n";
-    std::cout << "    - True scalar (double): Smaller, needs mutable API generation\n";
-    std::cout << "    - 1-element vector [double]: +8 bytes, uniform pointer pattern\n";
-    std::cout << "  \n";
-    std::cout << "  For buffer template pattern, single-element vector is often cleaner.\n";
-}
-
-/**
- * @brief Demonstrates Fused Multiply-Add with TRUE scalar using mutable API.
- *
- * This uses the --gen-mutable generated code to update a true scalar field
- * without rebuilding the buffer. The mutable API provides mutate_*() methods.
- *
- * Schema:
- *   scalar_c: double;  // TRUE scalar (not a vector)
- *
- * Generated API:
- *   mutate_scalar_c(double value) -> bool
- *
- * Benefits:
- *   - No wasted space (scalar is 8 bytes, not 8 + vector overhead)
- *   - Semantic clarity (it's clearly a scalar in the schema)
- *
- * Requirement:
- *   - Must generate with: flatc --gen-mutable --cpp schema.fbs
- */
-void test_fma_mutable_scalar_buffer_template() {
-    std::cout << "\n=== Testing FMA with Mutable Scalar (Buffer Template) ===\n";
-    std::cout << "  Operation: result[i] = a[i] + c * b[i]\n";
-    std::cout << "  Using mutate_scalar_c() for true scalar field\n\n";
-
-    const size_t VECTOR_SIZE = 10;
-    const int NUM_ITERATIONS = 4;
-
-    // =========================================================================
-    // SETUP PHASE: Build the buffer structure ONCE
-    // =========================================================================
-    flatbuffers::FlatBufferBuilder builder(256 + 2 * VECTOR_SIZE * sizeof(double));
-
-    double* a_ptr = nullptr;
-    double* b_ptr = nullptr;
-
-    // Create vectors in reverse order
-    auto b_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &b_ptr);
-    auto a_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &a_ptr);
-
-    // Initialize vectors
-    for (size_t i = 0; i < VECTOR_SIZE; ++i) {
-        a_ptr[i] = static_cast<double>(i);  // a = [0, 1, 2, 3, ...]
-        b_ptr[i] = 2.0;                      // b = [2, 2, 2, 2, ...]
-    }
-
-    // Initial scalar value
-    double initial_c = 1.0;
-
-    // Build the table with the scalar field
-    auto request = CreateFusedMultiplyAddMutableRequest(
-        builder, a_offset, b_offset, initial_c
-    );
-    builder.Finish(request);
-
-    // Get buffer pointer - this stays constant
-    uint8_t* buffer_ptr = builder.GetBufferPointer();
-    const size_t buffer_size = builder.GetSize();
-
-    std::cout << "  Buffer created: " << buffer_size << " bytes\n";
-    std::cout << "  a_ptr: " << static_cast<void*>(a_ptr) << "\n";
-    std::cout << "  b_ptr: " << static_cast<void*>(b_ptr) << "\n\n";
-
-    // =========================================================================
-    // ITERATION PHASE: Update vectors via pointers, scalar via mutate_*()
-    // =========================================================================
-    std::cout << "  Testing different values of c using mutate_scalar_c():\n";
-
-    for (int iter = 0; iter < NUM_ITERATIONS; ++iter) {
-        // Update vectors directly via pointers (same as before)
-        for (size_t i = 0; i < VECTOR_SIZE; ++i) {
-            a_ptr[i] = static_cast<double>(i);
-            b_ptr[i] = 2.0;
-        }
-
-        // =====================================================================
-        // KEY: Update scalar using mutable API
-        // =====================================================================
-        // flatbuffers::GetMutableRoot<T>() returns a mutable pointer
-        // that allows modifying scalar fields in-place via mutate_*()
-        double new_c = static_cast<double>(iter + 1);
-
-        auto mutable_request = flatbuffers::GetMutableRoot<FusedMultiplyAddMutableRequest>(buffer_ptr);
-        bool success = mutable_request->mutate_scalar_c(new_c);
-
-        if (!success) {
-            std::cerr << "  ERROR: mutate_scalar_c() failed!\n";
-            return;
-        }
-
-        // Buffer is ready to use/send immediately!
-
-        // Verify by parsing (read-only view)
-        auto parsed = flatbuffers::GetRoot<FusedMultiplyAddMutableRequest>(buffer_ptr);
-        double c = parsed->scalar_c();
-
-        // Compute a + c*b for element [5]
-        double result_5 = parsed->operand_a()->Get(5) + c * parsed->operand_b()->Get(5);
-        double expected = 5.0 + new_c * 2.0;
-
-        assert(result_5 == expected);
-        assert(c == new_c);
-
-        std::cout << "    mutate_scalar_c(" << new_c << "): a[5] + c*b[5] = "
-                  << parsed->operand_a()->Get(5) << " + " << c << "*" << parsed->operand_b()->Get(5)
-                  << " = " << result_5 << "\n";
-    }
-
-    std::cout << "\n  Pointers unchanged (no reallocation):\n";
-    std::cout << "  a_ptr: " << static_cast<void*>(a_ptr) << "\n";
-    std::cout << "  b_ptr: " << static_cast<void*>(b_ptr) << "\n";
-    std::cout << "  FMA mutable scalar buffer template test passed!\n";
-}
-
-/**
- * @brief Compare the two approaches side-by-side.
- */
-void compare_scalar_approaches() {
-    std::cout << "\n=== Comparing Scalar Approaches for Buffer Template ===\n\n";
-
-    const size_t VECTOR_SIZE = 100;
-
-    // Approach 1: Single-element vector
-    {
-        flatbuffers::FlatBufferBuilder builder(256 + 2 * VECTOR_SIZE * sizeof(double));
-        double* a_ptr = nullptr;
-        double* b_ptr = nullptr;
-        double* c_ptr = nullptr;
-
-        auto c_offset = builder.CreateUninitializedVector(1, &c_ptr);
-        auto b_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &b_ptr);
-        auto a_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &a_ptr);
-
-        for (size_t i = 0; i < VECTOR_SIZE; ++i) { a_ptr[i] = 1.0; b_ptr[i] = 1.0; }
-        c_ptr[0] = 1.0;
-
-        auto req = CreateFusedMultiplyAddRequest(builder, a_offset, b_offset, c_offset);
-        builder.Finish(req);
-
-        std::cout << "  Approach 1: scalar_c as [double] (1-element vector)\n";
-        std::cout << "    Buffer size: " << builder.GetSize() << " bytes\n";
-        std::cout << "    Update method: c_ptr[0] = new_value;\n\n";
-    }
-
-    // Approach 2: True scalar with mutable API
-    {
-        flatbuffers::FlatBufferBuilder builder(256 + 2 * VECTOR_SIZE * sizeof(double));
-        double* a_ptr = nullptr;
-        double* b_ptr = nullptr;
-
-        auto b_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &b_ptr);
-        auto a_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &a_ptr);
-
-        for (size_t i = 0; i < VECTOR_SIZE; ++i) { a_ptr[i] = 1.0; b_ptr[i] = 1.0; }
-
-        auto req = CreateFusedMultiplyAddMutableRequest(builder, a_offset, b_offset, 1.0);
-        builder.Finish(req);
-
-        std::cout << "  Approach 2: scalar_c as double (true scalar, mutable API)\n";
-        std::cout << "    Buffer size: " << builder.GetSize() << " bytes\n";
-        std::cout << "    Update method: mutable_req->mutate_scalar_c(new_value);\n\n";
-    }
-
-    std::cout << "  Summary:\n";
-    std::cout << "    - 1-element vector: Uniform pointer access, slightly larger\n";
-    std::cout << "    - True scalar + mutable: Smaller, requires GetMutable*() call\n";
-    std::cout << "    - Both allow buffer template pattern without rebuilding!\n";
-}
-
-/**
- * @brief Portable FMA buffer template using WriteScalar and mutable scalar API.
- *
- * This is the RECOMMENDED pattern for maximum portability:
- * 1. Use flatbuffers::WriteScalar() for vector element writes (handles endianness)
- * 2. Use mutate_scalar_c() for true scalar updates (generated mutable API)
- *
- * Performance notes:
- * - On little-endian (x86, x64, most ARM): WriteScalar is a no-op assignment
- * - On big-endian: WriteScalar performs necessary byte swap
- * - mutate_scalar_c() writes directly to a known offset - minimal overhead
- *
- * This ensures the buffer is valid on ANY architecture without code changes.
- */
-void test_portable_fma_buffer_template() {
-    std::cout << "\n=== Testing Portable FMA Buffer Template ===\n";
-    std::cout << "  Using WriteScalar() for vectors + mutate_scalar_c() for scalar\n";
-    std::cout << "  Operation: result[i] = a[i] + c * b[i]\n\n";
-
-    const size_t VECTOR_SIZE = 10;
-    const int NUM_ITERATIONS = 4;
-
-    // =========================================================================
-    // SETUP PHASE: Build the buffer structure ONCE
-    // =========================================================================
-    flatbuffers::FlatBufferBuilder builder(256 + 2 * VECTOR_SIZE * sizeof(double));
-
-    double* a_ptr = nullptr;
-    double* b_ptr = nullptr;
-
-    // Create vectors in reverse order
-    auto b_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &b_ptr);
-    auto a_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &a_ptr);
-
-    // Initialize vectors using WriteScalar for portability
-    for (size_t i = 0; i < VECTOR_SIZE; ++i) {
-        flatbuffers::WriteScalar(&a_ptr[i], static_cast<double>(i));
-        flatbuffers::WriteScalar(&b_ptr[i], 2.0);
-    }
-
-    // Initial scalar value
-    double initial_c = 1.0;
-
-    // Build the table with the true scalar field
-    auto request = CreateFusedMultiplyAddMutableRequest(
-        builder, a_offset, b_offset, initial_c
-    );
-    builder.Finish(request);
-
-    // Get buffer pointer - this stays constant
-    uint8_t* buffer_ptr = builder.GetBufferPointer();
-    const size_t buffer_size = builder.GetSize();
-
-    std::cout << "  Buffer created: " << buffer_size << " bytes\n";
-    std::cout << "  Endianness: " << (FLATBUFFERS_LITTLEENDIAN ? "little" : "big") << "\n";
-    std::cout << "  WriteScalar overhead on this platform: "
-              << (FLATBUFFERS_LITTLEENDIAN ? "none (no-op)" : "byte swap") << "\n\n";
-
-    // =========================================================================
-    // ITERATION PHASE: Update vectors with WriteScalar, scalar with mutate_*()
-    // =========================================================================
-    std::cout << "  Running iterations with portable writes:\n";
-
-    for (int iter = 0; iter < NUM_ITERATIONS; ++iter) {
-        // =====================================================================
-        // PORTABLE VECTOR WRITES: Use WriteScalar for each element
-        // =====================================================================
-        for (size_t i = 0; i < VECTOR_SIZE; ++i) {
-            // WriteScalar handles endian conversion automatically
-            flatbuffers::WriteScalar(&a_ptr[i], static_cast<double>(i));
-            flatbuffers::WriteScalar(&b_ptr[i], 2.0);
-        }
-
-        // =====================================================================
-        // PORTABLE SCALAR UPDATE: Use mutable API
-        // =====================================================================
-        double new_c = static_cast<double>(iter + 1);
-        auto mutable_request = flatbuffers::GetMutableRoot<FusedMultiplyAddMutableRequest>(buffer_ptr);
-        bool mutate_ok = mutable_request->mutate_scalar_c(new_c);
-        assert(mutate_ok);
-
-        // Buffer is now ready to send - properly formatted for any architecture!
-
-        // Verify by parsing (using ReadScalar internally via Get())
-        auto parsed = flatbuffers::GetRoot<FusedMultiplyAddMutableRequest>(buffer_ptr);
-        double c = parsed->scalar_c();
-
-        // Get() uses ReadScalar internally, so this is also portable
-        double a5 = parsed->operand_a()->Get(5);
-        double b5 = parsed->operand_b()->Get(5);
-        double result_5 = a5 + c * b5;
-        double expected = 5.0 + new_c * 2.0;
-
-        assert(result_5 == expected);
-
-        std::cout << "    Iter " << iter << ": a[5]=" << a5 << ", b[5]=" << b5
-                  << ", c=" << c << " -> result=" << result_5 << "\n";
-    }
-
-    std::cout << "\n  Portable FMA buffer template test passed!\n";
-}
-
-/**
- * @brief Benchmark comparing direct writes vs WriteScalar.
- *
- * On little-endian systems, these should be nearly identical.
- * This demonstrates that portability doesn't cost performance.
- */
-void benchmark_write_scalar_overhead() {
-    std::cout << "\n=== Benchmarking WriteScalar Overhead ===\n";
-
-    const size_t VECTOR_SIZE = 10000;
-    const int NUM_ITERATIONS = 100;
-
-    flatbuffers::FlatBufferBuilder builder(64 + VECTOR_SIZE * sizeof(double));
-
-    double* data_ptr = nullptr;
-    auto data_offset = builder.CreateUninitializedVector(VECTOR_SIZE, &data_ptr);
-    (void)data_offset;  // Suppress unused warning
-
-    // Warm up
-    for (size_t i = 0; i < VECTOR_SIZE; ++i) {
-        data_ptr[i] = static_cast<double>(i);
-    }
-
-    // Method 1: Direct assignment
-    auto start1 = std::chrono::high_resolution_clock::now();
-    for (int iter = 0; iter < NUM_ITERATIONS; ++iter) {
-        for (size_t i = 0; i < VECTOR_SIZE; ++i) {
-            data_ptr[i] = static_cast<double>(i + iter);
-        }
-    }
-    auto end1 = std::chrono::high_resolution_clock::now();
-    auto direct_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end1 - start1).count();
-
-    // Method 2: WriteScalar (portable)
-    auto start2 = std::chrono::high_resolution_clock::now();
-    for (int iter = 0; iter < NUM_ITERATIONS; ++iter) {
-        for (size_t i = 0; i < VECTOR_SIZE; ++i) {
-            flatbuffers::WriteScalar(&data_ptr[i], static_cast<double>(i + iter));
-        }
-    }
-    auto end2 = std::chrono::high_resolution_clock::now();
-    auto portable_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(end2 - start2).count();
-
-    double ratio = static_cast<double>(portable_ns) / static_cast<double>(direct_ns);
-
-    std::cout << "  Vector size: " << VECTOR_SIZE << ", Iterations: " << NUM_ITERATIONS << "\n";
-    std::cout << "  Direct assignment: " << direct_ns / 1000000.0 << " ms\n";
-    std::cout << "  WriteScalar:       " << portable_ns / 1000000.0 << " ms\n";
-    std::cout << "  Ratio (portable/direct): " << ratio << "x\n";
-
-    if (FLATBUFFERS_LITTLEENDIAN) {
-        std::cout << "  (On little-endian, WriteScalar compiles to direct assignment)\n";
-    }
-
-    // They should be very close (within 20% typically, often identical)
-    std::cout << "  Benchmark complete - portability has minimal overhead!\n";
-}
-
 }  // namespace
 
 int main() {
     std::cout << "=== FlatBuffers Skill Serialization Test ===\n\n";
 
-    // Test 1: String reversal round-trip (full skill workflow)
+    // Test 1: String reversal round-trip (direct payload - no envelope)
     std::cout << "=== Testing String Reversal Skill ===\n";
-    auto request = create_string_reversal_request(1001, "Hello, Task Messenger!");
-    std::cout << "Request size: " << request.size() << " bytes\n";
+    auto request_payload = create_string_reversal_payload("Hello, Task Messenger!");
+    std::cout << "Request payload size: " << request_payload.size() << " bytes\n";
 
-    auto response = process_skill_request(request);
-    std::cout << "Response size: " << response.size() << " bytes\n";
+    auto response_payload = process_string_reversal(request_payload);
+    std::cout << "Response payload size: " << response_payload.size() << " bytes\n";
 
-    // Parse and verify response using flatbuffers::GetRoot<T>
-    auto skill_response = flatbuffers::GetRoot<SkillResponse>(response.data());
-    assert(skill_response->success());
-    assert(skill_response->task_id() == 1001);
-
-    auto response_payload = skill_response->payload();
-    auto inner_response = flatbuffers::GetRoot<StringReversalResponse>(response_payload->data());
-    std::cout << "Verified response: \"" << inner_response->output()->str() << "\"\n";
-    assert(inner_response->output()->str() == "!regnesseM ksaT ,olleH");
+    // Parse and verify response
+    auto response = flatbuffers::GetRoot<StringReversalResponse>(response_payload.data());
+    std::string output_str(reinterpret_cast<const char*>(response->output()->data()), response->output()->size());
+    std::cout << "Verified response: \"" << output_str << "\"\n";
+    assert(output_str == "!regnesseM ksaT ,olleH");
+    assert(response->original_length()->Get(0) == 22);
     std::cout << "String reversal test passed!\n";
 
     // Test 2: Math operation (scalar)
@@ -1113,22 +749,6 @@ int main() {
     // Test 10: Fused Multiply-Add (a + c*b) with buffer template pattern
     // Demonstrates storing scalar as single-element vector for direct pointer access
     test_fused_multiply_add_buffer_template();
-
-    // Info: Alternative using mutable API
-    show_mutable_api_alternative();
-
-    // Test 11: FMA with mutable scalar (true scalar with mutate_*() method)
-    test_fma_mutable_scalar_buffer_template();
-
-    // Test 12: Compare both scalar approaches
-    compare_scalar_approaches();
-
-    // Test 13: Portable FMA buffer template (WriteScalar + mutable scalar)
-    // This is the RECOMMENDED pattern for portable high-performance code
-    test_portable_fma_buffer_template();
-
-    // Test 14: Benchmark WriteScalar overhead (should be negligible on little-endian)
-    benchmark_write_scalar_overhead();
 
     std::cout << "\n=== All FlatBuffers tests passed! ===\n";
     return 0;

@@ -9,10 +9,6 @@
 #   meson compile -C builddir
 #   meson test -C builddir
 
-# Import cmake module for CMake-based subprojects
-cmake = import('cmake')
-
+# FlatBuffers tests (flatbuffers_dep and flatc_prog defined in root meson.build)
 subdir('flatbuffers')
 
-# Cap'n Proto can be added here later:
-# subdir('capnproto')

@@ -13,6 +13,7 @@
 #pragma once
 
 #include "logger.hpp"
+#include "message/ResponseContext.hpp"
 #include "message/TaskMessagePool.hpp"
 #include "transport/coro/CoroTask.hpp"
 #include "transport/coro/coroIoContext.hpp"
@@ -87,6 +88,18 @@ public:
      */
     void print_transporter_statistics() const noexcept;
 
+    /**
+     * \brief Get the response context for submitting async tasks.
+     * \return Shared pointer to the ResponseContext (never null after start()).
+     */
+    std::shared_ptr<ResponseContext> response_context() const { return response_ctx_; }
+
+    /**
+     * \brief Get the shared task pool for async task submission.
+     * \return Shared pointer to the TaskMessagePool (never null after construction).
+     */
+    std::shared_ptr<TaskMessagePool> task_pool() const;
+
 private:
     // Dedicated acceptor thread replaces coroutine accept loop
     void start_acceptor_thread();
@@ -97,6 +110,7 @@ private:
 private:
     std::shared_ptr<Logger> logger_;
     std::unique_ptr<session::SessionManager> session_manager_;
+    std::shared_ptr<ResponseContext> response_ctx_;
 
     std::atomic<bool> running_;
     std::shared_ptr<transport::CoroIoContext> io_;

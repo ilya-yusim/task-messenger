@@ -14,6 +14,9 @@ if ftxui_dep.found()
   ui_cargs += ['-DHAS_WORKER_UI=1']
 endif
 
+# Note: Skills library (skills_dep) is now built at root level and shared
+# between manager and worker. No local subdir needed.
+
 # =============================================================================
 # Worker Executable
 # =============================================================================
@@ -47,6 +50,7 @@ worker_exe = executable(
     cli11_dep,               # Command-line parsing
     json_dep,                # JSON configuration parsing
     ftxui_dep,               # Optional terminal UI library
+    skills_dep,              # Skill-based FlatBuffers task processing
   ],
   cpp_args: ui_cargs,        # Define HAS_WORKER_UI if FTXUI is available
   install: true,

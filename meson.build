@@ -1,4 +1,4 @@
-project('task-messenger', 'cpp', version: '0.0.1', default_options : ['cpp_std=c++20'])
+project('task-messenger', 'cpp', version: '0.0.1', default_options : ['cpp_std=c++20', 'warning_level=3'])
 
 # =============================================================================
 # Compiler Arguments Configuration
@@ -48,7 +48,8 @@ add_project_arguments('-I' + meson.project_source_root(), language: 'cpp')
 # =============================================================================
 
 # Command-line parsing (CLI11) and JSON parsing (nlohmann_json)
-cli11_sp = subproject('CLI11', required : true)
+# Override CLI11's warning_level to match ours and prevent D9025 warnings
+cli11_sp = subproject('CLI11', required : true, default_options: ['warning_level=3'])
 json_sp = subproject('nlohmann_json', required : true)
 
 # Make CLI11 and nlohmann_json available to all subdirectories
@@ -83,6 +84,20 @@ endif
 # Pass the project version to the shared subproject via default_project_options
 shared_sp = subproject('shared', default_options: ['project_version=' + meson.project_version()])
 shared_dep = shared_sp.get_variable('shared_dep')
+
+# FlatBuffers serialization (native Meson wrap from WrapDB)
+# Used by worker/processor/skills and serialize/flatbuffers tests
+flatbuffers_sp = subproject('flatbuffers', default_options: ['warning_level=3'])
+flatbuffers_dep = flatbuffers_sp.get_variable('flatbuffers_dep')
+flatc_prog = flatbuffers_sp.get_variable('flatc_prog', find_program('flatc', required: true))
+
+# =============================================================================
+# Shared Skills Library
+# =============================================================================
+
+# Skills library provides FlatBuffers-based skill handling for both manager and worker
+# Must be built before manager/worker as they depend on skills_dep
+subdir('skills')
 
 # =============================================================================
 # Build Targets

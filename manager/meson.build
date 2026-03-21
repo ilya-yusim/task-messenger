@@ -32,6 +32,7 @@ dependencies: [
   libzt_dep,       # ZeroTier networking library
   cli11_dep,       # Command-line parsing
   json_dep,        # JSON configuration parsing
+  skills_dep,      # FlatBuffers-based skill payloads
 ],
 install: true,
 build_by_default: true,

@@ -3,6 +3,9 @@
 #include "TaskGenerator.hpp"
 #include "options/Options.hpp"
 #include "ManagerOptions.hpp"
+#include "skills/registry/CompareUtils.hpp"
+#include "skills/registry/SkillRegistry.hpp"
+
 
 #include <atomic>
 #include <csignal>
@@ -16,6 +19,7 @@ static std::atomic<bool> shutdown_requested{false};
 
 // Signal handler for graceful shutdown
 static void signal_handler(int signum) {
+    (void)signum; // Suppress unused parameter warning
     shutdown_requested.store(true, std::memory_order_relaxed);
 }
 
@@ -27,24 +31,40 @@ static void monitoring_thread_func(AsyncTransportServer* server,
     constexpr size_t REFILL_AMOUNT = 100;
     constexpr auto POLL_INTERVAL = std::chrono::seconds(1);
     
+    // Keep coroutines alive across iterations
+    std::vector<GeneratorCoroutine> pending_coroutines;
+    
     while (!shutdown_requested.load(std::memory_order_relaxed)) {
+        // Prune completed coroutines
+        std::erase_if(pending_coroutines, [](const GeneratorCoroutine& coro) {
+            return coro.done();
+        });
+        
         auto [pool_size, waiting_sessions] = server->get_task_pool_stats();
         
         if (pool_size < LOW_THRESHOLD) {
             logger->info("Task pool low (" + std::to_string(pool_size) + 
-                        " tasks), generating " + std::to_string(REFILL_AMOUNT) + " more");
+                        " tasks), dispatching " + std::to_string(REFILL_AMOUNT) + " with async coroutines");
             
-            auto tasks = generator->make_tasks(REFILL_AMOUNT);
-            server->enqueue_tasks(std::move(tasks));
+            // Dispatch tasks - don't wait for completion
+            auto new_coroutines = generator->dispatch_parallel(
+                server->task_pool(), 
+                static_cast<uint32_t>(REFILL_AMOUNT));
             
-            logger->info("Refill complete, pool now has " + 
-                        std::to_string(server->get_task_pool_stats().first) + " tasks");
+            // Move new coroutines into persistent storage
+            pending_coroutines.insert(pending_coroutines.end(),
+                std::make_move_iterator(new_coroutines.begin()),
+                std::make_move_iterator(new_coroutines.end()));
+                
+            logger->info("Dispatched " + std::to_string(REFILL_AMOUNT) + 
+                        " tasks, " + std::to_string(pending_coroutines.size()) + " coroutines pending");
         }
         
         std::this_thread::sleep_for(POLL_INTERVAL);
     }
     
-    logger->info("Monitoring thread received shutdown signal");
+    logger->info("Monitoring thread received shutdown signal, " + 
+                std::to_string(pending_coroutines.size()) + " coroutines still pending");
 }
 
 // Interactive mode function: prompt user for task count, wait for completion, print stats
@@ -53,7 +73,7 @@ static void interactive_mode_func(AsyncTransportServer* server,
                                   std::shared_ptr<Logger> logger) {
     constexpr auto POLL_INTERVAL = std::chrono::milliseconds(100);
     
-    logger->info("=== Interactive Mode ===");
+    logger->info("=== Interactive Mode (Async Coroutine Dispatch) ===");
     logger->info("Enter number of tasks to add to queue (or 0 to quit)");
     
     while (!shutdown_requested.load(std::memory_order_relaxed)) {
@@ -75,30 +95,26 @@ static void interactive_mode_func(AsyncTransportServer* server,
             break;
         }
         
-        // Generate and enqueue tasks
-        logger->info("Generating " + std::to_string(task_count) + " tasks...");
-        auto tasks = generator->make_tasks(static_cast<size_t>(task_count));
-        server->enqueue_tasks(std::move(tasks));
-        logger->info("Tasks enqueued. Waiting for completion...");
+        // Dispatch tasks in parallel using coroutines
+        logger->info("Dispatching " + std::to_string(task_count) + " tasks with async coroutines...");
+        auto pending_coroutines = generator->dispatch_parallel(
+            server->task_pool(), 
+            static_cast<uint32_t>(task_count));
+        logger->info("All tasks submitted. Waiting for responses...");
         
-        // Wait until queue is empty (all tasks consumed)
-        // Note: waiting_sessions may still be > 0 (workers idle, ready for more tasks)
-        bool all_done = false;
-        while (!all_done && !shutdown_requested.load(std::memory_order_relaxed)) {
-            auto [pool_size, waiting_sessions] = server->get_task_pool_stats();
-            
-            if (pool_size == 0) {
-                all_done = true;
-            } else {
-                std::this_thread::sleep_for(POLL_INTERVAL);
-            }
+        // Wait until all coroutines complete (responses received and processed)
+        while (!DefaultTaskGenerator::all_done(pending_coroutines) && 
+               !shutdown_requested.load(std::memory_order_relaxed)) {
+            std::this_thread::sleep_for(POLL_INTERVAL);
         }
         
-        if (all_done) {
-            logger->info("All tasks completed!");
+        if (DefaultTaskGenerator::all_done(pending_coroutines)) {
+            logger->info("All " + std::to_string(task_count) + " tasks completed!");
             logger->info("=== Manager Statistics ===");
             server->print_transporter_statistics();
         }
+        
+        // Coroutines are destroyed when pending_coroutines goes out of scope
     }
 }
 
@@ -110,6 +126,10 @@ int main(int argc, char* argv[]) {
     stdout_sink->set_level(LogLevel::Info); // Set to Info for general output
     logger->add_sink(stdout_sink);
 
+    // Log registered skills (verifies static initialization worked)
+    auto& skill_registry = TaskMessenger::Skills::SkillRegistry::instance();
+    logger->info("Registered skills: " + std::to_string(skill_registry.skill_count()));
+     
     try {
 
         // --- Stage 2: Parse CLI/JSON options ---
@@ -124,6 +144,13 @@ int main(int argc, char* argv[]) {
             logger->error(std::string("Failed to parse options: ") + opts_err);
             return 2;
         }
+
+        // Configure skill verification from manager options
+        auto& compare_cfg = TaskMessenger::Skills::CompareConfig::defaults();
+        compare_cfg.enabled = manager_opts::get_verify_enabled();
+        compare_cfg.abs_epsilon = manager_opts::get_verify_epsilon();
+        compare_cfg.rel_epsilon = manager_opts::get_verify_rel_epsilon();
+        compare_cfg.inject_failure = manager_opts::get_verify_inject_failure();
 
         // --- Stage 3: Bring up transport server subsystem ---
         logger->info("Async Transport Server starting...");
@@ -142,6 +169,8 @@ int main(int argc, char* argv[]) {
         std::signal(SIGINT, signal_handler);
         
         DefaultTaskGenerator generator;
+        // Set up response context for async coroutine dispatch
+        generator.set_response_context(server.response_context());
         
         // Check if interactive mode is enabled
         bool interactive = manager_opts::get_interactive_mode();
@@ -153,12 +182,6 @@ int main(int argc, char* argv[]) {
         } else {
             // Auto-refill monitoring mode
             logger->info("Starting in AUTO-REFILL mode");
-            
-            // Generate initial batch of tasks
-            logger->info("Generating initial batch of 100 tasks");
-            auto initial_tasks = generator.make_tasks(100);
-            server.enqueue_tasks(std::move(initial_tasks));
-            logger->info("Initial task batch enqueued");
             
             // Launch monitoring thread
             std::thread monitor_thread(monitoring_thread_func, &server, &generator, logger);

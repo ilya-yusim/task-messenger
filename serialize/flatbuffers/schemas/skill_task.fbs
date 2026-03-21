@@ -1,53 +1,40 @@
-// Skill-based task messaging schema for FlatBuffers
-// This schema defines the serialization format for skill requests and responses.
+// Skill messaging schema for FlatBuffers
+// This schema defines the serialization format for skill-specific payloads.
+// The TaskHeader (in TaskMessage.hpp) provides routing metadata (skill_id, task_id, body_size).
 
 namespace TaskMessenger.Skills;
 
-// Base skill request envelope
-table SkillRequest {
-  skill_id: uint32;
-  task_id: uint32;
-  payload: [ubyte];  // Nested skill-specific data
-}
-
-// Base skill response envelope
-table SkillResponse {
-  skill_id: uint32;
-  task_id: uint32;
-  success: bool;
-  payload: [ubyte];  // Nested skill-specific result
-}
-
 // Example: String reversal skill
+// Uses [int8] vectors for uniform pointer-based access pattern
 table StringReversalRequest {
-  input: string;
+  input: [int8];  // String bytes (not null-terminated)
 }
 
 table StringReversalResponse {
-  output: string;
-  original_length: uint32;
+  output: [int8];  // String bytes (not null-terminated)
+  original_length: [uint32];  // Scalar stored as single-element vector for uniform pointer access
 }
 
-// Example: Math operation skill (scalar)
+// Example: Math operation task (scalar)
 enum MathOperation : byte { Add = 0, Subtract, Multiply, Divide }
 
 table MathOperationRequest {
-  operand_a: double;
-  operand_b: double;
-  operation: MathOperation;
+  operand_a: [double];   // Scalar stored as single-element vector for uniform pointer access
+  operand_b: [double];   // Scalar stored as single-element vector for uniform pointer access
+  operation: [int8];     // MathOperation enum as single-element vector for pointer access
 }
 
 table MathOperationResponse {
-  result: double;
-  overflow: bool;
+  result: [double];      // Scalar stored as single-element vector for uniform pointer access
+  overflow: [bool];      // Scalar stored as single-element vector for uniform pointer access
 }
 
-// Example: Vector math operation skill (element-wise)
+// Example: Vector math operation task (element-wise)
 // Demonstrates direct buffer write access with CreateUninitializedVector
 table VectorMathRequest {
   operand_a: [double];  // First operand vector
   operand_b: [double];  // Second operand vector
-  operation: MathOperation;
+  operation: [int8];    // MathOperation enum as single-element vector for pointer access
 }
 
 table VectorMathResponse {
@@ -66,14 +53,3 @@ table FusedMultiplyAddRequest {
 table FusedMultiplyAddResponse {
   result: [double];         // result[i] = a[i] + c * b[i]
 }
-
-// Fused Multiply-Add with TRUE scalar (requires --gen-mutable for buffer template)
-// This version uses a real scalar field instead of a single-element vector.
-// Use mutate_scalar_c() to update the value without rebuilding.
-table FusedMultiplyAddMutableRequest {
-  operand_a: [double];      // Vector a
-  operand_b: [double];      // Vector b
-  scalar_c: double;         // TRUE scalar - use mutate_scalar_c() to update
-}
-
-root_type SkillRequest;

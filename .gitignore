@@ -20,3 +20,5 @@ dist-*/
 
 # Downloaded tools
 extras/scripts/makeself/
+subprojects/flatbuffers-24.3.25/
+subprojects/packagecache/
