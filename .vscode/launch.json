@@ -39,11 +39,11 @@
             "console": "externalTerminal"
         },
         {
-            "name": "Worker (UI)",
+            "name": "Worker (async)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/builddir-worker/worker/worker.exe",
-            "args": ["-c", "config/config-worker.json","--mode","blocking"],
+            "program": "${workspaceFolder}/builddir/worker/tm-worker.exe",
+            "args": ["-c", "config/config-worker.json","--mode","async"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
@@ -53,7 +53,7 @@
             "name": "worker (Linux)",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/builddir-worker/worker/worker",
+            "program": "${workspaceFolder}/builddir/worker/tm-worker",
             "args": ["-c", "config/config-worker.json","--mode","blocking"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
@@ -93,6 +93,17 @@
         },
         {
             "name": "Manager",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/builddir/manager/tm-manager.exe",
+            "args": ["-c", "config/config-manager.json","--interactive"],
+            "stopAtEntry": false,
+            "cwd": "${workspaceFolder}",
+            "environment": [],
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "Manager (verify failure)",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/builddir/manager/tm-manager.exe",
