@@ -80,7 +80,7 @@
 		{
 			"label": "Run Manager (Verification + Failure Injection)",
 			"type": "shell",
-			"command": "builddir/manager/tm-manager --interactive -c config/config-manager.json --verify --verify-inject-failure ",
+			"command": "builddir/manager/tm-manager.exe --interactive -c config/config-manager.json --verify --verify-inject-failure",
 			"group": {
 				"kind": "test",
 				"isDefault": false
