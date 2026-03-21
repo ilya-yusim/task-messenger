@@ -17,8 +17,6 @@
 #include <utility>
 #include <vector>
 
-using namespace TaskMessenger::Skills;
-
 // TaskIdGenerator - simple atomic counter for unique task IDs
 /**
  * \ingroup task_messenger_manager
@@ -143,7 +141,7 @@ private:
      * \brief Generate task request and response buffers using typed buffer creation.
      * \return Pair of (request_buffer, response_buffer).
      */
-    std::pair<std::unique_ptr<PayloadBufferBase>, std::unique_ptr<PayloadBufferBase>> 
+    std::pair<std::unique_ptr<TaskMessenger::Skills::PayloadBufferBase>, std::unique_ptr<TaskMessenger::Skills::PayloadBufferBase>> 
     generate_task_data_typed(uint32_t skill_id);
 
     TaskIdGenerator task_id_generator_;
