@@ -89,7 +89,7 @@ shared_dep = shared_sp.get_variable('shared_dep')
 # Used by worker/processor/skills and serialize/flatbuffers tests
 flatbuffers_sp = subproject('flatbuffers', default_options: ['warning_level=3'])
 flatbuffers_dep = flatbuffers_sp.get_variable('flatbuffers_dep')
-flatc_prog = find_program('flatc')
+flatc_prog = flatbuffers_sp.get_variable('flatc_prog', default_value: find_program('flatc', required: true))
 
 # =============================================================================
 # Shared Skills Library
