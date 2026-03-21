@@ -11,6 +11,7 @@
 #include <flatbuffers/flatbuffers.h>
 
 #include <cstdint>
+#include <memory>
 #include <span>
 #include <vector>
 

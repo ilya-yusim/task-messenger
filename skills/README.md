@@ -6,35 +6,41 @@ Shared skill definitions and handlers used by both manager and worker.
 
 ```
 skills/
-├── schemas/         # FlatBuffers schema definitions
-│   └── skill_task.fbs
+├── builtins/        # Built-in skill implementations (FlatBuffers schemas + C++ sources)
+│   ├── Common.fbs
+│   ├── StringReversalSkill.{fbs,hpp,cpp}
+│   ├── MathOperationSkill.{fbs,hpp,cpp}
+│   ├── VectorMathSkill.{fbs,hpp,cpp}
+│   └── FusedMultiplyAddSkill.{fbs,hpp,cpp}
+├── handlers/        # Skill handler interface
+│   └── ISkillHandler.hpp
 ├── registry/        # Skill registration, metadata, and dispatch
 │   ├── SkillRegistry.hpp    # Central registry with dispatch
 │   ├── SkillDescriptor.hpp  # Skill metadata + handler
-│   └── SkillIds.hpp         # Compile-time skill ID constants
-├── handlers/        # Skill handler implementations (header-only)
-│   ├── ISkillHandler.hpp
-│   ├── StringReversalHandler.hpp
-│   ├── MathOperationHandler.hpp
-│   ├── VectorMathHandler.hpp
-│   └── FusedMultiplyAddHandler.hpp
-└── SkillPayloadFactory.hpp  # Manager-side payload creation
+│   ├── SkillIds.hpp         # Compile-time skill ID constants
+│   ├── PayloadBuffer.hpp    # Type-erased owned payload buffers
+│   ├── IPayloadFactory.hpp  # Factory interface for payload creation
+│   ├── CompareUtils.hpp/.cpp# Floating-point comparison helpers
+│   └── VerificationResult.hpp
+└── schemas/         # (reserved for cross-skill shared schemas)
 ```
 
 ## Components
 
-### Schemas (`schemas/`)
-FlatBuffers schema definitions for skill request/response messages. The schema
-defines the serialization format for all skill payloads.
+### Built-ins (`builtins/`)
+Each built-in skill bundles its FlatBuffers `.fbs` schema, a C++ implementation
+(`.cpp`), and a header (`.hpp`) containing the skill's `IPayloadFactory`
+subclass. Schemas are compiled at build time using `flatc`.
 
 ### Registry (`registry/`)
-- **SkillDescriptor**: Complete skill definition (metadata + handler)
-- **SkillRegistry**: Central registry for skills with registration, lookup, and dispatch
-- **SkillIds**: Compile-time constants for skill identifiers
+- **SkillRegistry**: Central registry for skills with registration, lookup, and dispatch.
+  Can be used as a singleton via `instance()` or instantiated directly.
+- **SkillDescriptor**: Binds a skill's metadata, handler, and payload factory.
+- **SkillIds**: Compile-time constants for skill identifiers.
+- **PayloadBuffer**: Type-erased owned buffer with typed pointer access for zero-copy transfer.
 
 ### Handlers (`handlers/`)
-- **ISkillHandler**: Interface for skill handler implementations
-- Handler classes implement actual skill logic (string reversal, math ops, etc.)
+- **ISkillHandler**: Interface for skill handler implementations (worker side).
 
 ## Usage
 
@@ -47,7 +53,11 @@ using namespace TaskMessenger::Skills;
 
 // Check skill validity
 if (SkillRegistry::instance().has_skill(SkillIds::StringReversal)) {
-    // Create task with this skill
+    // Create typed request + pre-allocated response buffers
+    auto request = SkillRegistry::instance().create_test_request_buffer(SkillIds::StringReversal);
+    auto response = SkillRegistry::instance().create_response_buffer(
+        SkillIds::StringReversal, request->span());
+    // Wrap in a TaskMessage and submit
 }
 ```
 
@@ -57,10 +67,10 @@ if (SkillRegistry::instance().has_skill(SkillIds::StringReversal)) {
 
 using namespace TaskMessenger::Skills;
 
-// Create registry instance with logger
-SkillRegistry registry(logger);
+// Use the global singleton (or construct with a logger)
+SkillRegistry& registry = SkillRegistry::instance();
 
-// Dispatch payload to appropriate handler
-std::vector<uint8_t> response;
-registry.dispatch(skill_id, task_id, payload, response);
+// Dispatch request payload to the appropriate handler.
+// 'response' must be a pre-allocated writable span sized for the expected output.
+bool ok = registry.dispatch(skill_id, task_id, request_span, response_span);
 ```

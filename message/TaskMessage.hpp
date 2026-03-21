@@ -63,15 +63,13 @@ public:
      * 
      * Use this constructor with factory.create_payload() or create_payload_buffer()
      * for zero-copy buffer transfer. The skill_id is extracted from the buffer.
+     * \throws std::invalid_argument if buffer is null.
+     * \throws std::length_error if buffer size exceeds protocol limits.
      */
     TaskMessage(uint32_t id, std::unique_ptr<PayloadBufferBase> buffer)
-        : header_{id, static_cast<uint32_t>(buffer->size()), buffer->skill_id()}
+        : header_{id, validated_payload_size(buffer), buffer->skill_id()}
         , payload_buffer_(std::move(buffer))
-        , created_time_(std::chrono::steady_clock::now()) {
-        if (payload_buffer_->size() > std::numeric_limits<uint32_t>::max()) {
-            throw std::length_error("TaskMessage payload exceeds protocol limits");
-        }
-    }
+        , created_time_(std::chrono::steady_clock::now()) {}
 
     /**
      * \brief Construct a TaskMessage with both request and pre-allocated response buffers.
@@ -81,18 +79,16 @@ public:
      * 
      * Use this constructor when pre-allocating response buffers for zero-copy
      * skill processing. The response buffer will be passed to the skill handler.
+     * \throws std::invalid_argument if request_buffer is null.
+     * \throws std::length_error if request_buffer size exceeds protocol limits.
      */
     TaskMessage(uint32_t id, 
                 std::unique_ptr<PayloadBufferBase> request_buffer,
                 std::unique_ptr<PayloadBufferBase> response_buffer)
-        : header_{id, static_cast<uint32_t>(request_buffer->size()), request_buffer->skill_id()}
+        : header_{id, validated_payload_size(request_buffer), request_buffer->skill_id()}
         , payload_buffer_(std::move(request_buffer))
         , response_buffer_(std::move(response_buffer))
-        , created_time_(std::chrono::steady_clock::now()) {
-        if (payload_buffer_->size() > std::numeric_limits<uint32_t>::max()) {
-            throw std::length_error("TaskMessage payload exceeds protocol limits");
-        }
-    }
+        , created_time_(std::chrono::steady_clock::now()) {}
 
     [[nodiscard]] bool is_valid() const noexcept { return header_.task_id != 0; }
 
@@ -275,6 +271,19 @@ public:
     }
 
 private:
+    /// \brief Validate a payload buffer is non-null and fits in the protocol's uint32_t body_size.
+    /// \throws std::invalid_argument if buf is null.
+    /// \throws std::length_error if buf->size() exceeds uint32_t max.
+    static uint32_t validated_payload_size(const std::unique_ptr<PayloadBufferBase>& buf) {
+        if (!buf) {
+            throw std::invalid_argument("TaskMessage: null payload buffer");
+        }
+        if (buf->size() > std::numeric_limits<uint32_t>::max()) {
+            throw std::length_error("TaskMessage payload exceeds protocol limits");
+        }
+        return static_cast<uint32_t>(buf->size());
+    }
+
     TaskHeader header_;
     std::unique_ptr<PayloadBufferBase> payload_buffer_;
     std::unique_ptr<PayloadBufferBase> response_buffer_;  ///< Pre-allocated response buffer (optional)
