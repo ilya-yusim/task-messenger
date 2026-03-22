@@ -37,9 +37,9 @@
 			"problemMatcher": []
 		},
 		{
-			"label": "Run Manager (linux)",
+			"label": "Run Interactive Generator (linux)",
 			"type": "shell",
-			"command": "builddir/manager/tm-manager --interactive -c config/config-manager.json",
+			"command": "builddir/generators/interactive/tm-generator-interactive -c config/config-manager.json",
 			"group": {
 				"kind": "test",
 				"isDefault": false
@@ -78,9 +78,9 @@
 			}
 		},
 		{
-			"label": "Run Manager (Verification + Failure Injection)",
+			"label": "Run Interactive Generator (Verification + Failure Injection)",
 			"type": "shell",
-			"command": "builddir/manager/tm-manager.exe --interactive -c config/config-manager.json --verify --verify-inject-failure",
+			"command": "builddir/generators/interactive/tm-generator-interactive.exe -c config/config-manager.json --verify --verify-inject-failure",
 			"group": {
 				"kind": "test",
 				"isDefault": false
@@ -91,9 +91,9 @@
 			"isBackground": true
 		},
 		{
-			"label": "Run Manager",
+			"label": "Run Interactive Generator",
 			"type": "shell",
-			"command": "builddir/manager/tm-manager.exe --interactive -c config/config-manager.json",
+			"command": "builddir/generators/interactive/tm-generator-interactive.exe -c config/config-manager.json",
 			"group": {
 				"kind": "test",
 				"isDefault": false

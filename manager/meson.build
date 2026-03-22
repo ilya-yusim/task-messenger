@@ -1,73 +1,40 @@
 # =============================================================================
-# Manager Build Configuration
+# Manager Library Build Configuration
 # =============================================================================
 
-# =============================================================================
-# Manager Executable
-# =============================================================================
+# Manager infrastructure library providing transport server, session management,
+# task message pool, and the ManagerApp harness. Generators link this library
+# to get the full manager runtime without duplicating plumbing code.
 
-# Coroutine-based manager using CoroSocketAdapter architecture
-# Handles task distribution, worker connections, and session management
-manager_exe = executable(
-  'tm-manager', 
-sources: [
-  'managerMain.cpp',
-  'ManagerOptions.cpp',
-  'transport/AsyncTransportOptions.cpp',
-  'transport/AsyncTransportServer.hpp',
-  'transport/AsyncTransportServer.cpp',
-  '../message/TaskMessagePool.cpp',
-  'TaskGenerator.cpp',
-  'session/Session.cpp',
-  'session/SessionManager.cpp',
-  '../transport/socket/SocketFactory.cpp',
-  '../transport/coro/coroSocketAdapter.cpp',
-  '../transport/socket/zerotier/ZeroTierSocket.cpp',
-  '../transport/coro/coroIoContext.cpp',
-  '../transport/socket/zerotier/ZeroTierNodeService.cpp',
-  '../transport/socket/SocketTypeOptions.cpp',
-],
-dependencies: [
-  shared_dep,      # Shared utilities (logger, protocol, etc.)
-  libzt_dep,       # ZeroTier networking library
-  cli11_dep,       # Command-line parsing
-  json_dep,        # JSON configuration parsing
-  skills_dep,      # FlatBuffers-based skill payloads
-],
-install: true,
-build_by_default: true,
+tm_manager_lib = static_library(
+  'tm-manager',
+  sources: [
+    'ManagerApp.cpp',
+    'transport/AsyncTransportOptions.cpp',
+    'transport/AsyncTransportServer.hpp',
+    'transport/AsyncTransportServer.cpp',
+    '../message/TaskMessagePool.cpp',
+    'session/Session.cpp',
+    'session/SessionManager.cpp',
+  ],
+  dependencies: [
+    tm_transport_dep,   # Shared transport library (coro IO, sockets, ZeroTier)
+    shared_dep,         # Shared utilities (logger, protocol, etc.)
+    libzt_dep,          # ZeroTier networking library
+    cli11_dep,          # Command-line parsing
+    json_dep,           # JSON configuration parsing
+    flatbuffers_dep,    # FlatBuffers (transitively needed by PayloadBuffer.hpp)
+  ],
+  build_by_default: true,
 )
 
-# =============================================================================
-# Development Build: Copy Shared Library to Build Directory
-# =============================================================================
+# Dependency for generators and other consumers of the manager library.
+# Note: does NOT include skills_dep — generators must link skills_dep
+# directly with link_whole to ensure static skill registration works.
+tm_manager_dep = declare_dependency(
+  link_with: tm_manager_lib,
+  dependencies: [tm_transport_dep, shared_dep, libzt_dep, cli11_dep, json_dep, flatbuffers_dep],
+)
 
-# Copy shared library next to the manager executable for development builds
-# This allows running the executable directly from the build directory without installation
-# Note: When compiling specific targets (meson compile manager/manager), the DLL copy
-# may not execute. Use `meson compile` without arguments to build everything.
-if host_machine.system() == 'windows'
-  # Windows: Copy zt-shared.dll
-  custom_target('copy-zt-dll-manager',
-    output: 'zt-shared.dll',
-    command: ['powershell', '-Command', 'Copy-Item', '-Path', libzt_dll_file, '-Destination', '@OUTPUT@', '-Force'],
-    build_by_default: true,
-    install: false,
-  )
-elif host_machine.system() == 'linux'
-  # Linux: Copy libzt.so
-  custom_target('copy-zt-so-manager',
-    output: 'libzt.so',
-    command: ['cp', libzt_so_file, '@OUTPUT@'],
-    build_by_default: true,
-    install: false,
-  )
-elif host_machine.system() == 'darwin'
-  # macOS: Copy libzt.dylib
-  custom_target('copy-zt-dylib-manager',
-    output: 'libzt.dylib',
-    command: ['cp', libzt_dylib_file, '@OUTPUT@'],
-    build_by_default: true,
-    install: false,
-  )
-endif
+# Note: DLL/shared library copies are handled by generator executables,
+# not by the manager library.

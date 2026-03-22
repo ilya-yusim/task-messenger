@@ -100,6 +100,14 @@ flatc_prog = flatbuffers_sp.get_variable('flatc_prog', find_program('flatc', req
 subdir('skills')
 
 # =============================================================================
+# Shared Transport Library
+# =============================================================================
+
+# Transport library provides coroutine I/O, socket adapters, and ZeroTier
+# integration shared by both manager and worker.
+subdir('transport')
+
+# =============================================================================
 # Build Targets
 # =============================================================================
 
@@ -109,6 +117,10 @@ endif
 
 if get_option('build_worker')
   subdir('worker')
+endif
+
+if get_option('build_generators')
+  subdir('generators')
 endif
 
 # Serialization tests (optional, for evaluating FlatBuffers/Cap'n Proto)

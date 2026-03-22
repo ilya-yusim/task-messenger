@@ -36,21 +36,16 @@ worker_exe = executable(
     'session/WorkerSession.cpp',
     'processor/TaskProcessor.hpp',
     'processor/TaskProcessor.cpp',
-    '../transport/coro/coroIoContext.cpp',
-    '../transport/coro/coroSocketAdapter.cpp',
-    '../transport/socket/zerotier/ZeroTierSocket.cpp',
-    '../transport/socket/zerotier/ZeroTierNodeService.cpp',
-    '../transport/socket/SocketFactory.cpp',
-    '../transport/socket/SocketTypeOptions.cpp',
     'WorkerOptions.cpp',
   ],
   dependencies: [
-    shared_dep,              # Shared utilities (logger, protocol, etc.)
-    libzt_dep,               # ZeroTier networking library
-    cli11_dep,               # Command-line parsing
-    json_dep,                # JSON configuration parsing
-    ftxui_dep,               # Optional terminal UI library
-    skills_dep,              # Skill-based FlatBuffers task processing
+    tm_transport_dep,          # Shared transport library (coro IO, sockets, ZeroTier)
+    shared_dep,                # Shared utilities (logger, protocol, etc.)
+    libzt_dep,                 # ZeroTier networking library
+    cli11_dep,                 # Command-line parsing
+    json_dep,                  # JSON configuration parsing
+    ftxui_dep,                 # Optional terminal UI library
+    skills_dep,                # Skill-based FlatBuffers task processing
   ],
   cpp_args: ui_cargs,        # Define HAS_WORKER_UI if FTXUI is available
   install: true,

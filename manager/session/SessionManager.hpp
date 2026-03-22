@@ -4,7 +4,6 @@
 #include "Session.hpp"
 #include "SessionStats.hpp"
 #include "../../message/TaskMessagePool.hpp"
-#include "manager/TaskGenerator.hpp"
 #include "transport/coro/CoroSocketAdapter.hpp"
 #include "transport/coro/CoroTask.hpp"
 #include "logger.hpp"
