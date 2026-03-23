@@ -27,7 +27,7 @@ namespace TaskMessenger::Skills {
  *
  * Thread-safe registry that stores skill descriptors (including handlers)
  * and provides dispatch functionality. Used by:
- * - Manager: Validate skill IDs, query metadata
+ * - Dispatcher: Validate skill IDs, query metadata
  * - Worker: Dispatch payloads to handlers, provide diagnostics
  *
  * Can be used as a singleton via instance() or instantiated directly for testing.

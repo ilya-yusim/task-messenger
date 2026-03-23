@@ -1,20 +1,20 @@
 # Task Messenger
 
-Task Messenger is a manager/worker platform for streaming computational tasks from a central coordinator to a dynamic fleet of workers. It links directly against ZeroTier (`libzt`), so all transport flows through ZeroTier sockets and workers reach the manager over a secure virtual network. The platform exposes asynchronous networking, coroutine-friendly session orchestration, and an optional worker UI that lets operators monitor and pause/resume work in real time.
+Task Messenger is a dispatcher/worker platform for streaming computational tasks from a central coordinator to a dynamic fleet of workers. It links directly against ZeroTier (`libzt`), so all transport flows through ZeroTier sockets and workers reach the dispatcher over a secure virtual network. The platform exposes asynchronous networking, coroutine-friendly session orchestration, and an optional worker UI that lets operators monitor and pause/resume work in real time.
 
 ## Subsystems
 
-- **Manager** (`manager/`): Accepts worker connections, runs coroutine sessions, and coordinates task fan-out via `AsyncTransportServer`, `SessionManager`, and mock `TaskGenerator` integrations.
-- **Workers** (`worker/`): Connect back to the manager, execute tasks under pluggable runtimes (`BlockingRuntime`/`AsyncRuntime`), track metrics, and optionally expose a terminal UI using FTXUI.
+- **Dispatcher** (`dispatcher/`): Accepts worker connections, runs coroutine sessions, and coordinates task fan-out via `AsyncTransportServer`, `SessionManager`, and mock `TaskGenerator` integrations.
+- **Workers** (`worker/`): Connect back to the dispatcher, execute tasks under pluggable runtimes (`BlockingRuntime`/`AsyncRuntime`), track metrics, and optionally expose a terminal UI using FTXUI.
 - **Messaging Primitives** (`message/`): Defines `TaskMessage`, `TaskMessagePool`, and helpers that serialize payloads, enforce framing, and provide coroutine-friendly hand-off between producers and sessions.
-- **Transport Layer** (`transport/`): Shared networking stack (coroutines, ZeroTier adapters, socket factories) powering both manager and worker runtimes.
+- **Transport Layer** (`transport/`): Shared networking stack (coroutines, ZeroTier adapters, socket factories) powering both dispatcher and worker runtimes.
 
 ## System Flow (Mermaid)
 ```mermaid
 graph LR
     App[Domain App / TaskGenerator] --> Pool[TaskMessagePool]
-    Pool --> Manager[Manager Sessions]
-    Manager --> Transport[Async Transport Layer]
+    Pool --> Dispatcher[Dispatcher Sessions]
+    Dispatcher --> Transport[Async Transport Layer]
     Transport --> WorkerFleet[Workers]
     WorkerFleet --> Metrics[Metrics / UI / Logs]
     Workers[Workers] --> Results[Result Channels]
@@ -25,12 +25,12 @@ graph LR
 ```
 task-messenger/
 ├── config/                     # Configuration files
-│   ├── config-manager.json     # Manager configuration
+│   ├── config-dispatcher.json     # Dispatcher configuration
 │   ├── config-worker.json      # Worker configuration
-│   └── vn-manager-identity/    # Manager ZeroTier identity files
+│   └── vn-dispatcher-identity/    # Dispatcher ZeroTier identity files
 │       ├── identity.public     # Public identity key
 │       └── identity.secret     # Private identity key (secret)
-├── manager/                    # Manager component
+├── dispatcher/                    # Dispatcher component
 ├── worker/                     # Worker component
 ├── message/                    # Messaging primitives
 ├── transport/                  # Transport layer
@@ -42,30 +42,30 @@ task-messenger/
 
 Task Messenger uses Meson as its build system.
 
-### Build All Components (Manager + Worker)
+### Build All Components (Dispatcher + Worker)
 
 ```bash
 meson setup builddir --buildtype=release
 meson compile -C builddir
 ```
 
-### Build Only Manager (no FTXUI dependency)
+### Build Only Dispatcher (no FTXUI dependency)
 
 ```bash
-meson setup builddir-manager -Dbuild_worker=false --buildtype=release
-meson compile -C builddir-manager
+meson setup builddir-dispatcher -Dbuild_worker=false --buildtype=release
+meson compile -C builddir-dispatcher
 ```
 
 ### Build Only Worker
 
 ```bash
-meson setup builddir-worker -Dbuild_manager=false --buildtype=release
+meson setup builddir-worker -Dbuild_dispatcher=false --buildtype=release
 meson compile -C builddir-worker
 ```
 
 ### Build Options
 
-- `-Dbuild_manager=true|false`: Build the manager component (default: true)
+- `-Dbuild_dispatcher=true|false`: Build the dispatcher component (default: true)
 - `-Dbuild_worker=true|false`: Build the worker component (default: true)
 - `-Ddebug_logging=true|false`: Enable debug logging (default: false)
 - `-Dprofiling_unwind=true|false`: Enable profiling-friendly unwind flags (default: false)
@@ -77,14 +77,14 @@ Task Messenger provides automated scripts to build distribution packages for dep
 ### Windows Distributions
 
 ```powershell
-# Build manager distribution (ZIP + self-extracting installer)
-.\extras\scripts\build_distribution.ps1 -Component manager
+# Build dispatcher distribution (ZIP + self-extracting installer)
+.\extras\scripts\build_distribution.ps1 -Component dispatcher
 
 # Build worker distribution (ZIP + self-extracting installer)
 .\extras\scripts\build_distribution.ps1 -Component worker
 
 # Build both
-.\extras\scripts\build_distribution.ps1 -Component manager
+.\extras\scripts\build_distribution.ps1 -Component dispatcher
 .\extras\scripts\build_distribution.ps1 -Component worker
 ```
 
@@ -97,14 +97,14 @@ The self-extracting installer automatically extracts and runs the installation s
 ### Linux Distributions
 
 ```bash
-# Build manager distribution
-./extras/scripts/build_distribution.sh --component manager
+# Build dispatcher distribution
+./extras/scripts/build_distribution.sh --component dispatcher
 
 # Build worker distribution
 ./extras/scripts/build_distribution.sh --component worker
 
 # Build both
-./extras/scripts/build_distribution.sh --component manager
+./extras/scripts/build_distribution.sh --component dispatcher
 ./extras/scripts/build_distribution.sh --component worker
 ```
 
@@ -115,23 +115,23 @@ The self-extracting installer automatically extracts and runs the installation s
 ## Configuration
 
 Configuration files are located in the `config/` directory:
-- `config-manager.json`: Manager settings including ZeroTier network ID and identity path
+- `config-dispatcher.json`: Dispatcher settings including ZeroTier network ID and identity path
 - `config-worker.json`: Worker settings
-- `vn-manager-identity/`: Manager's ZeroTier identity directory (only identity.public and identity.secret are version-controlled)
+- `vn-dispatcher-identity/`: Dispatcher's ZeroTier identity directory (only identity.public and identity.secret are version-controlled)
 
 ## Installation
 
-Task Messenger provides distribution packages for both manager and worker components. Installation scripts follow XDG directory standards:
+Task Messenger provides distribution packages for both dispatcher and worker components. Installation scripts follow XDG directory standards:
 
 ### Windows Installation Paths
 
 **Binaries** (in `%LOCALAPPDATA%`):
-- Manager: `%LOCALAPPDATA%\TaskMessenger\tm-manager\tm-manager.exe`
+- Dispatcher: `%LOCALAPPDATA%\TaskMessenger\tm-dispatcher\tm-dispatcher.exe`
 - Worker: `%LOCALAPPDATA%\TaskMessenger\tm-worker\tm-worker.exe`
 
 **Configuration and Identity** (in `%APPDATA%` - roaming):
-- Manager config: `%APPDATA%\TaskMessenger\tm-manager\config-manager.json`
-- Manager identity: `%APPDATA%\TaskMessenger\tm-manager\vn-manager-identity\`
+- Dispatcher config: `%APPDATA%\TaskMessenger\tm-dispatcher\config-dispatcher.json`
+- Dispatcher identity: `%APPDATA%\TaskMessenger\tm-dispatcher\vn-dispatcher-identity\`
 - Worker config: `%APPDATA%\TaskMessenger\tm-worker\config-worker.json`
 
 **Installation:**
@@ -140,7 +140,7 @@ Task Messenger provides distribution packages for both manager and worker compon
 .\extras\scripts\install_windows.ps1
 
 # Or specify archive manually:
-.\extras\scripts\install_windows.ps1 -Archive tm-manager-v1.0.0-windows-x64.zip
+.\extras\scripts\install_windows.ps1 -Archive tm-dispatcher-v1.0.0-windows-x64.zip
 ```
 
 **Uninstallation:**
@@ -149,18 +149,18 @@ Task Messenger provides distribution packages for both manager and worker compon
 .\uninstall_windows.ps1
 
 # Or run from extras/scripts:
-.\extras\scripts\uninstall_windows.ps1 -Component manager
+.\extras\scripts\uninstall_windows.ps1 -Component dispatcher
 ```
 
 ### Linux Installation Paths
 
 **Binaries** (in `~/.local/share`):
-- Manager: `~/.local/share/task-messenger/tm-manager/bin/tm-manager`
+- Dispatcher: `~/.local/share/task-messenger/tm-dispatcher/bin/tm-dispatcher`
 - Worker: `~/.local/share/task-messenger/tm-worker/bin/tm-worker`
 
 **Configuration and Identity** (in `~/.config` - XDG standard):
-- Manager config: `~/.config/task-messenger/tm-manager/config-manager.json`
-- Manager identity: `~/.config/task-messenger/tm-manager/vn-manager-identity/`
+- Dispatcher config: `~/.config/task-messenger/tm-dispatcher/config-dispatcher.json`
+- Dispatcher identity: `~/.config/task-messenger/tm-dispatcher/vn-dispatcher-identity/`
 - Worker config: `~/.config/task-messenger/tm-worker/config-worker.json`
 
 **Installation:**
@@ -169,14 +169,14 @@ Task Messenger provides distribution packages for both manager and worker compon
 ./extras/scripts/install_linux.sh
 
 # Or specify archive manually:
-./extras/scripts/install_linux.sh --archive tm-manager-v1.0.0-linux-x64.tar.gz
+./extras/scripts/install_linux.sh --archive tm-dispatcher-v1.0.0-linux-x64.tar.gz
 ```
 
 **Uninstallation:**
 ```bash
-./extras/scripts/uninstall_linux.sh --component manager
+./extras/scripts/uninstall_linux.sh --component dispatcher
 ```
 
 ## Documentation
-- Generated API/user docs: `meson compile -C builddir-manager docs` then open `builddir-manager/doxygen/html/index.html`.
-- High-level modules: see `docs/TaskMessenger.md`, `manager/README.md`, `worker/README.md`, and the README files inside `message/` and `transport/`.
+- Generated API/user docs: `meson compile -C builddir-dispatcher docs` then open `builddir-dispatcher/doxygen/html/index.html`.
+- High-level modules: see `docs/TaskMessenger.md`, `dispatcher/README.md`, `worker/README.md`, and the README files inside `message/` and `transport/`.

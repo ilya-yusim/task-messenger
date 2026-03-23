@@ -1,13 +1,17 @@
 #include "TaskGenerator.hpp"
-#include "manager/ManagerApp.hpp"
+#include "dispatcher/DispatcherApp.hpp"
 #include "skills/registry/SkillRegistry.hpp"
-#include "skills/registry/SkillIds.hpp"
 #include "skills/registry/CompareUtils.hpp"
 
 #include <iostream>
 #include <utility>
 
 using namespace TaskMessenger::Skills;
+
+void TaskGenerator::set_app(DispatcherApp* app) {
+    app_ = app;
+    available_skills_ = SkillRegistry::instance().skill_ids();
+}
 
 void TaskGenerator::stop() {
     stopped_.store(true);
@@ -61,8 +65,8 @@ std::vector<GeneratorCoroutine> TaskGenerator::dispatch_parallel(
 
     for (uint32_t i = 0; i < count && !stopped_.load(); ++i) {
         uint32_t task_id = task_id_generator_.get_next_id();
-        // Cycle through all available skills (1 to MaxSkillId)
-        uint32_t skill_id = (i % SkillIds::Count) + 1;
+        // Cycle through all available skills at runtime
+        uint32_t skill_id = available_skills_[i % available_skills_.size()];
 
         // Launch coroutine - starts immediately, submits task, then suspends
         coroutines.emplace_back(process_single_task(task_id, skill_id));
@@ -86,12 +90,16 @@ TaskGenerator::generate_task_data_typed(uint32_t skill_id) {
 
     auto request = registry.create_test_request_buffer(skill_id, 0);
     if (!request) {
-        // Fallback to MathOperation if skill not found
-        request = registry.create_test_request_buffer(SkillIds::MathOperation, 0);
-        if (!request) {
+        // Fallback to first available skill if skill not found
+        if (!available_skills_.empty()) {
+            request = registry.create_test_request_buffer(available_skills_[0], 0);
+            if (!request) {
+                return {nullptr, nullptr};
+            }
+            skill_id = available_skills_[0];
+        } else {
             return {nullptr, nullptr};
         }
-        skill_id = SkillIds::MathOperation;
     }
 
     auto response = registry.create_response_buffer(skill_id, request->span());

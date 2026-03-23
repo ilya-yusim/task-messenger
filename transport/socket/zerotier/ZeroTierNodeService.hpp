@@ -1,6 +1,6 @@
 /**
  * \file ZeroTierNodeService.hpp
- * \brief Shared ZeroTier node lifecycle and network join manager.
+ * \brief Shared ZeroTier node lifecycle and network join service.
  * \ingroup socket_backend
  * \details Provides a singleton service to start/stop the libzt node, manage
  *  network join reference counts, expose address queries, and integrate with

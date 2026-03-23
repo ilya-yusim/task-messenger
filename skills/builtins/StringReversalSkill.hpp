@@ -229,7 +229,7 @@ public:
     }
 
     // =========================================================================
-    // Factory methods (used by manager for creating payloads)
+    // Factory methods (used by dispatcher for creating payloads)
     // =========================================================================
 
     /**

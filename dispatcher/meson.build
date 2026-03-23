@@ -1,15 +1,15 @@
 # =============================================================================
-# Manager Library Build Configuration
+# Dispatcher Library Build Configuration
 # =============================================================================
 
-# Manager infrastructure library providing transport server, session management,
-# task message pool, and the ManagerApp harness. Generators link this library
-# to get the full manager runtime without duplicating plumbing code.
+# Dispatcher infrastructure library providing transport server, session management,
+# task message pool, and the DispatcherApp harness. Generators link this library
+# to get the full dispatcher runtime without duplicating plumbing code.
 
-tm_manager_lib = static_library(
-  'tm-manager',
+tm_dispatcher_lib = static_library(
+  'tm-dispatcher',
   sources: [
-    'ManagerApp.cpp',
+    'DispatcherApp.cpp',
     'transport/AsyncTransportOptions.cpp',
     'transport/AsyncTransportServer.hpp',
     'transport/AsyncTransportServer.cpp',
@@ -28,13 +28,13 @@ tm_manager_lib = static_library(
   build_by_default: true,
 )
 
-# Dependency for generators and other consumers of the manager library.
+# Dependency for generators and other consumers of the dispatcher library.
 # Note: does NOT include skills_dep — generators must link skills_dep
 # directly with link_whole to ensure static skill registration works.
-tm_manager_dep = declare_dependency(
-  link_with: tm_manager_lib,
+tm_dispatcher_dep = declare_dependency(
+  link_with: tm_dispatcher_lib,
   dependencies: [tm_transport_dep, shared_dep, libzt_dep, cli11_dep, json_dep, flatbuffers_dep],
 )
 
 # Note: DLL/shared library copies are handled by generator executables,
-# not by the manager library.
+# not by the dispatcher library.

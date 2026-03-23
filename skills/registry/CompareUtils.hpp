@@ -20,7 +20,7 @@ namespace TaskMessenger::Skills {
  * @brief Configuration for verification comparisons.
  *
  * Provides default epsilon values and testing options that can be configured
- * by the manager at startup without skills depending on manager code.
+ * by the dispatcher at startup without skills depending on dispatcher code.
  */
 struct CompareConfig {
     bool enabled = false;        ///< Enable/disable verification globally
@@ -31,7 +31,7 @@ struct CompareConfig {
     /**
      * @brief Access the global default configuration.
      *
-     * Manager can modify these defaults at startup:
+     * Dispatcher can modify these defaults at startup:
      * @code
      * auto& cfg = CompareConfig::defaults();
      * cfg.enabled = manager_opts::get_verify_enabled();

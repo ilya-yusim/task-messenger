@@ -10,7 +10,7 @@ Currently we ship two implementations:
 Both implementations share common responsibilities:
 
 1. Establish the transport connection (using factories from `transport/`).
-2. Pump control/messages between the manager and `WorkerSession`.
+2. Pump control/messages between the dispatcher and `WorkerSession`.
 3. Track byte counters in atomic `uint64_t` members.
 4. Surface status back to the session through callbacks or futures.
 

@@ -17,12 +17,12 @@ namespace session {
 
 /**
  * \defgroup session_module Session Management Module
- * \ingroup task_messenger_manager
- * \brief Session lifecycle coordination running inside the Manager process.
+ * \ingroup task_messenger_dispatcher
+ * \brief Session lifecycle coordination running inside the Dispatcher process.
  */
 
 /**
- * \file manager/session/SessionManager.hpp
+ * \file dispatcher/session/SessionManager.hpp
  * \brief Declares the manager for concurrent coroutine sessions.
  * \ingroup session_module
  */

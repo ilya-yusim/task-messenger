@@ -14,7 +14,7 @@
 
 class Logger;
 
-/** \brief Minimal handler for manager-supplied tasks. */
+/** \brief Minimal handler for dispatcher-supplied tasks. */
 class TaskProcessor {
 public:
 	explicit TaskProcessor(std::shared_ptr<Logger> logger) 
@@ -26,7 +26,7 @@ public:
 
 	/**
 	 * \brief Execute a task payload into a pre-allocated response buffer.
-	 * \param task_id Manager-provided identifier for correlation.
+   * \param task_id Dispatcher-provided identifier for correlation.
 	 * \param skill_id Skill identifier for dispatch.
 	 * \param request Serialized task data (FlatBuffers payload).
 	 * \param response Pre-allocated response buffer for skill output.

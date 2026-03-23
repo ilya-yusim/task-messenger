@@ -1,4 +1,4 @@
-// ManagerApp.hpp - Application harness for manager infrastructure startup
+// DispatcherApp.hpp - Application harness for dispatcher infrastructure startup
 #pragma once
 
 #include "transport/AsyncTransportServer.hpp"
@@ -10,19 +10,19 @@
 #include <memory>
 
 /**
- * \brief Application harness that encapsulates common manager startup.
+ * \brief Application harness that encapsulates common dispatcher startup.
  *
  * Handles logger setup, CLI/JSON option parsing, AsyncTransportServer lifecycle,
- * and signal handler installation. Generators create a ManagerApp, call start(),
+ * and signal handler installation. Generators create a DispatcherApp, call start(),
  * run their own loop using submit_task(), then call stop() for clean shutdown.
  */
-class ManagerApp {
+class DispatcherApp {
 public:
-    ManagerApp();
-    ~ManagerApp();
+    DispatcherApp();
+    ~DispatcherApp();
 
-    ManagerApp(const ManagerApp&) = delete;
-    ManagerApp& operator=(const ManagerApp&) = delete;
+    DispatcherApp(const DispatcherApp&) = delete;
+    DispatcherApp& operator=(const DispatcherApp&) = delete;
 
     /**
      * \brief Initialize logging, parse options, and start the transport server.

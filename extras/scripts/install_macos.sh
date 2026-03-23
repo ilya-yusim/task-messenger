@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # TaskMessenger macOS Installation Script
-# This script installs TaskMessenger (manager or worker) for the current user
+# This script installs TaskMessenger (dispatcher or worker) for the current user
 
 set -e
 
@@ -39,16 +39,16 @@ show_usage() {
 Usage: $0 [OPTIONS]
 
 Options:
-  --install-dir PATH     Custom installation directory (default: ~/Library/Application Support/TaskMessenger/tm-{manager|worker})
+  --install-dir PATH     Custom installation directory (default: ~/Library/Application Support/TaskMessenger/tm-{dispatcher|worker})
   --archive PATH         Path to distribution archive (auto-detected if not provided)
   --help                 Show this help message
 
-Note: The component (manager or worker) is automatically detected from the extracted files.
+Note: The component (dispatcher or worker) is automatically detected from the extracted files.
 
 Examples:
   $0
   $0 --install-dir /custom/path
-  $0 --archive tm-manager-v1.0.0-macos-universal.tar.gz
+  $0 --archive tm-dispatcher-v1.0.0-macos-universal.tar.gz
 
 EOF
 }
@@ -62,11 +62,11 @@ detect_extracted_files() {
     
     if [ -f "$lib_path" ]; then
         # Detect component by checking which executable exists
-        local manager_path="$extracted_root/bin/tm-manager"
+        local manager_path="$extracted_root/bin/tm-dispatcher"
         local worker_path="$extracted_root/bin/tm-worker"
         
         if [ -f "$manager_path" ]; then
-            echo "manager:$extracted_root"
+            echo "dispatcher:$extracted_root"
             return 0
         elif [ -f "$worker_path" ]; then
             echo "worker:$extracted_root"
@@ -94,7 +94,7 @@ detect_archive() {
 
 extract_version() {
     local archive=$1
-    # Extract version from filename: tm-manager-v1.0.0-macos-universal.tar.gz -> 1.0.0
+    # Extract version from filename: tm-dispatcher-v1.0.0-macos-universal.tar.gz -> 1.0.0
     echo "$archive" | sed -n 's/.*-v\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/p'
 }
 
@@ -216,16 +216,16 @@ install_component() {
         print_success "Installed config: $config_dir/config-$component.json"
     fi
     
-    # Copy identity directory for manager
-    if [ "$component" = "manager" ]; then
-        local identity_dir="$config_source_dir/vn-manager-identity"
+    # Copy identity directory for dispatcher
+    if [ "$component" = "dispatcher" ]; then
+        local identity_dir="$config_source_dir/vn-dispatcher-identity"
         
         if [ -d "$identity_dir" ]; then
             mkdir -p "$config_dir"
             cp -r "$identity_dir" "$config_dir/"
             
             # Set restrictive permissions on secret file
-            local secret_path="$config_dir/vn-manager-identity/identity.secret"
+            local secret_path="$config_dir/vn-dispatcher-identity/identity.secret"
             if [ -f "$secret_path" ]; then
                 chmod 600 "$secret_path"
                 print_success "Installed identity files with restricted permissions"
@@ -278,8 +278,8 @@ create_placeholder_icon() {
     
     # Choose color based on component
     local color="#4A90E2"  # Blue for default
-    if [ "$component" = "manager" ]; then
-        color="#50C878"  # Emerald green for manager
+    if [ "$component" = "dispatcher" ]; then
+        color="#50C878"  # Emerald green for dispatcher
     else
         color="#5B9BD5"  # Steel blue for worker
     fi
@@ -527,7 +527,7 @@ main() {
             print_error "Could not detect component from extracted files"
             print_error ""
             print_error "Solutions:"
-            print_error "  1. Extract a TaskMessenger distribution archive (manager or worker)"
+            print_error "  1. Extract a TaskMessenger distribution archive (dispatcher or worker)"
             print_error "     and run this script from the extracted directory"
             print_error ""
             print_error "  2. Specify the archive path manually:"
@@ -545,19 +545,19 @@ main() {
         local temp_dir=$(mktemp -d)
         tar -xzf "$ARCHIVE" -C "$temp_dir"
         
-        # Detect archive structure: tm-{manager|worker}/
-        extracted_dir=$(find "$temp_dir" -maxdepth 1 -type d \( -name "tm-manager" -o -name "tm-worker" \) 2>/dev/null | head -n 1)
+        # Detect archive structure: tm-{dispatcher|worker}/
+        extracted_dir=$(find "$temp_dir" -maxdepth 1 -type d \( -name "tm-dispatcher" -o -name "tm-worker" \) 2>/dev/null | head -n 1)
         
         if [ -z "$extracted_dir" ]; then
-            print_error "Unexpected archive structure. Expected tm-manager/ or tm-worker/ directory."
+            print_error "Unexpected archive structure. Expected tm-dispatcher/ or tm-worker/ directory."
             rm -rf "$temp_dir"
             exit 1
         fi
         
         # Detect component from directory name
         local dir_name=$(basename "$extracted_dir")
-        if [[ "$dir_name" == "tm-manager" ]]; then
-            COMPONENT="manager"
+        if [[ "$dir_name" == "tm-dispatcher" ]]; then
+            COMPONENT="dispatcher"
         else
             COMPONENT="worker"
         fi
@@ -617,8 +617,8 @@ main() {
     print_info "You can now run: tm-$COMPONENT"
     print_info "Or use the full path: $INSTALL_DIR/bin/tm-$COMPONENT"
     print_info "Config file: $CONFIG_DIR/config-$COMPONENT.json"
-    if [ "$COMPONENT" = "manager" ]; then
-        print_info "Identity files: $CONFIG_DIR/vn-manager-identity/"
+    if [ "$COMPONENT" = "dispatcher" ]; then
+        print_info "Identity files: $CONFIG_DIR/vn-dispatcher-identity/"
     fi
     echo ""
 }

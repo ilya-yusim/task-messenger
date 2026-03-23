@@ -2,7 +2,7 @@
  * @file skills/registry/SkillIds.hpp
  * @brief Compile-time skill identifier constants.
  *
- * Central location for skill IDs ensures consistency between manager and worker.
+ * Central location for skill IDs ensures consistency between dispatcher and worker.
  */
 #pragma once
 

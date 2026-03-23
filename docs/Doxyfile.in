@@ -2,7 +2,7 @@
 
 # Project
 PROJECT_NAME           = "Task Messenger"
-PROJECT_BRIEF          = "Manager/worker async task distribution platform"
+PROJECT_BRIEF          = "Dispatcher/worker async task distribution platform"
 OUTPUT_DIRECTORY       = @OUT_DIR@
 CREATE_SUBDIRS         = YES
 FULL_PATH_NAMES        = NO
@@ -19,7 +19,7 @@ JAVADOC_AUTOBRIEF      = YES
 
 # Input
 INPUT                  = @SRC_DIR@/docs/TaskMessenger.md \
-                         @SRC_DIR@/manager \
+                         @SRC_DIR@/dispatcher \
                          @SRC_DIR@/worker \
                          @SRC_DIR@/message \
                          @SRC_DIR@/transport

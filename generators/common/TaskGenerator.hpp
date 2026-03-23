@@ -3,8 +3,8 @@
  * \brief Shared task generation logic for generator executables.
  *
  * Provides dispatch_parallel(), process_single_task(), and task data generation.
- * Generators create a TaskGenerator, set the ManagerApp, and call
- * dispatch_parallel() to submit batches of tasks via ManagerApp::submit_task().
+ * Generators create a TaskGenerator, set the DispatcherApp, and call
+ * dispatch_parallel() to submit batches of tasks via DispatcherApp::submit_task().
  */
 #pragma once
 
@@ -18,7 +18,7 @@
 #include <utility>
 #include <vector>
 
-class ManagerApp;
+class DispatcherApp;
 
 class TaskGenerator {
 public:
@@ -31,7 +31,7 @@ public:
     void set_vector_size(size_t size) { vector_size_ = size; }
     size_t vector_size() const { return vector_size_; }
 
-    void set_app(ManagerApp* app) { app_ = app; }
+    void set_app(DispatcherApp* app);
 
     /**
      * \brief Dispatch N tasks in parallel, each with its own coroutine.
@@ -57,5 +57,6 @@ private:
     TaskIdGenerator task_id_generator_;
     std::atomic<bool> stopped_{false};
     size_t vector_size_ = 1024;
-    ManagerApp* app_ = nullptr;
+    DispatcherApp* app_ = nullptr;
+    std::vector<uint32_t> available_skills_;
 };

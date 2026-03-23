@@ -10,7 +10,7 @@
 #include <system_error>
 
 /**
- * \file manager/session/Session.cpp
+ * \file dispatcher/session/Session.cpp
  * \brief Implements coroutine-driven session state machine.
  * \ingroup session_module
  */

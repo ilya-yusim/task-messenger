@@ -15,14 +15,14 @@ if ftxui_dep.found()
 endif
 
 # Note: Skills library (skills_dep) is now built at root level and shared
-# between manager and worker. No local subdir needed.
+# between dispatcher and worker. No local subdir needed.
 
 # =============================================================================
 # Worker Executable
 # =============================================================================
 
 # Unified worker application supporting both blocking and async runtime modes
-# Handles task processing, manager connection, and optional interactive UI
+# Handles task processing, dispatcher connection, and optional interactive UI
 worker_exe = executable(
   'tm-worker',
   sources: [

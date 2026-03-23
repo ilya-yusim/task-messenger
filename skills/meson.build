@@ -2,7 +2,7 @@
 # Skills Library Build Configuration
 # =============================================================================
 #
-# Shared skills library used by both manager and worker.
+# Shared skills library used by both dispatcher and worker.
 #
 # Components:
 # - builtins/  : Built-in skill implementations with FlatBuffers schemas
@@ -50,7 +50,7 @@ skills_lib = static_library(
 # Skills Dependency
 # =============================================================================
 
-# Use this dependency in manager and worker to access skills functionality
+# Use this dependency in dispatcher and worker to access skills functionality
 # NOTE: link_whole is required because builtin skills use static initialization
 # for self-registration. Without it, the linker discards unreferenced object files.
 skills_dep = declare_dependency(

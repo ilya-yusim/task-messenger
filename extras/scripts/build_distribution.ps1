@@ -1,9 +1,9 @@
 # build_distribution.ps1 - Create distributable packages for task-messenger on Windows
-# Usage: .\build_distribution.ps1 [manager|worker|all]
+# Usage: .\build_distribution.ps1 [dispatcher|worker|all]
 
 param(
     [Parameter(Position=0)]
-    [ValidateSet("manager", "worker", "all")]
+    [ValidateSet("dispatcher", "worker", "all")]
     [string]$Component = "all"
 )
 
@@ -57,11 +57,11 @@ function Build-Component {
     
     # Determine build options based on component
     $BuildOptions = @()
-    if ($Comp -eq "manager") {
+    if ($Comp -eq "dispatcher") {
         $BuildOptions += "-Dbuild_worker=false"
-        Write-Host "Building manager only (FTXUI disabled for faster build)"
+        Write-Host "Building dispatcher only (FTXUI disabled for faster build)"
     } elseif ($Comp -eq "worker") {
-        $BuildOptions += "-Dbuild_manager=false"
+        $BuildOptions += "-Dbuild_dispatcher=false"
         Write-Host "Building worker only"
     }
     
@@ -113,7 +113,7 @@ function Create-Archive {
     }
     
     # Create component-specific directory structure
-    $ComponentName = if ($Comp -eq "manager") { "tm-manager" } else { "tm-worker" }
+    $ComponentName = if ($Comp -eq "dispatcher") { "tm-dispatcher" } else { "tm-worker" }
     $TaskMessengerDir = Join-Path $TempArchiveDir $ComponentName
     New-Item -ItemType Directory -Force -Path $TaskMessengerDir | Out-Null
     
@@ -122,9 +122,9 @@ function Create-Archive {
     New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
     
     # Copy files based on component
-    if ($Comp -eq "manager") {
-        # Manager: executable, DLL
-        Copy-Item (Join-Path $CompStagingPrefix "bin\tm-manager.exe") $BinDir
+    if ($Comp -eq "dispatcher") {
+        # Dispatcher: executable, DLL
+        Copy-Item (Join-Path $CompStagingPrefix "bin\tm-dispatcher.exe") $BinDir
         Copy-Item (Join-Path $CompStagingPrefix "bin\zt-shared.dll") $BinDir
     } else {
         # Worker: executable, DLL
@@ -137,9 +137,9 @@ function Create-Archive {
     New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
     Copy-Item (Join-Path $CompStagingPrefix "etc\task-messenger\config-$Comp.json") $ConfigDir
     
-    # Copy manager identity directory (only for manager component)
-    if ($Comp -eq "manager") {
-        Copy-Item (Join-Path $CompStagingPrefix "etc\task-messenger\vn-manager-identity") $ConfigDir -Recurse
+    # Copy dispatcher identity directory (only for dispatcher component)
+    if ($Comp -eq "dispatcher") {
+        Copy-Item (Join-Path $CompStagingPrefix "etc\task-messenger\vn-dispatcher-identity") $ConfigDir -Recurse
     }
     
     # Copy documentation
@@ -156,8 +156,8 @@ function Create-Archive {
     # Copy launchers
     $LaunchersDir = Join-Path $TaskMessengerDir "launchers"
     New-Item -ItemType Directory -Force -Path $LaunchersDir | Out-Null
-    if ($Comp -eq "manager") {
-        Copy-Item (Join-Path $ProjectRoot "extras\launchers\start-tm-manager.bat") $LaunchersDir
+    if ($Comp -eq "dispatcher") {
+        Copy-Item (Join-Path $ProjectRoot "extras\launchers\start-tm-dispatcher.bat") $LaunchersDir
     } else {
         Copy-Item (Join-Path $ProjectRoot "extras\launchers\start-tm-worker.bat") $LaunchersDir
     }
@@ -192,7 +192,7 @@ For help:
 function Create-SelfExtractingInstaller {
     param([string]$Comp)
     
-    $ComponentName = if ($Comp -eq "manager") { "tm-manager" } else { "tm-worker" }
+    $ComponentName = if ($Comp -eq "dispatcher") { "tm-dispatcher" } else { "tm-worker" }
     $InstallerName = "tm-$Comp-v$Version-$Platform-$Arch-installer.exe"
     $InstallerPath = Join-Path $OutputDir $InstallerName
     $ZipArchive = Join-Path $OutputDir "tm-$Comp-v$Version-$Platform-$Arch.zip"
@@ -263,7 +263,7 @@ exit /b %INSTALL_EXIT_CODE%
     # Build strings with explicit variable expansion to avoid here-string issues
     $InstallPromptText = "Install TaskMessenger $Comp v${Version}?"
     $FriendlyNameText = "TaskMessenger $Comp v${Version} Installer"
-    $ShortcutName = if ($Comp -eq "manager") { "TMManager" } else { "TMWorker" }
+    $ShortcutName = if ($Comp -eq "dispatcher") { "TMDispatcher" } else { "TMWorker" }
     $FinishMessageText = "Installed! You can now run it from the Start Menu under $ShortcutName or by typing 'tm-$Comp' in a terminal."
     
     $SedContent = @"
@@ -419,7 +419,7 @@ New-Item -ItemType Directory -Force -Path $StagingDir | Out-Null
 
 # Build and package based on component selection
 if ($Component -eq "all") {
-    foreach ($Comp in @("manager", "worker")) {
+    foreach ($Comp in @("dispatcher", "worker")) {
         Build-Component -Comp $Comp
         Create-Archive -Comp $Comp
         Create-SelfExtractingInstaller -Comp $Comp

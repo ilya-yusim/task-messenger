@@ -6,11 +6,12 @@ tm_generator_auto_refill = executable(
   'tm-generator-auto-refill',
   sources: [
     'autoRefillMain.cpp',
+    'AutoRefillGenerator.cpp',
     '../common/TaskGenerator.cpp',
     '../common/GeneratorOptions.cpp',
   ],
   dependencies: [
-    tm_manager_dep,
+    tm_dispatcher_dep,
     skills_dep,       # link_whole for static skill registration
     shared_dep,
     cli11_dep,

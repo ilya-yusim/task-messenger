@@ -26,7 +26,7 @@ void register_options() {
         int port_default = 8080;
         int io_threads_default = 1; // DEFAULT: single thread unless explicitly configured
 
-        // Prefer transporter section; fallback to manager section for backward compatibility
+        // Prefer transporter section; fallback to dispatcher section for backward compatibility
         if (j.contains("transport_server")) {
             const auto& tj = j["transport_server"];
             if (tj.contains("listen_host") && tj["listen_host"].is_string()) host_default = tj["listen_host"].get<std::string>();

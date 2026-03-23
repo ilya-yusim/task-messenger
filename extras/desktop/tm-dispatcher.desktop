@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=TaskMessenger Dispatcher
+Comment=TaskMessenger task dispatcher
+Exec=/path/to/tm-dispatcher
+Icon=applications-system
+Terminal=false
+Categories=Network;System;
+Keywords=task;dispatcher;distributed;zerotier;

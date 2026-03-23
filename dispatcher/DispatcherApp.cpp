@@ -1,23 +1,23 @@
-// ManagerApp.cpp - Application harness for manager infrastructure startup
-#include "ManagerApp.hpp"
+// DispatcherApp.cpp - Application harness for dispatcher infrastructure startup
+#include "DispatcherApp.hpp"
 #include "options/Options.hpp"
 
 #include <csignal>
 #include <string>
 
-std::atomic<bool> ManagerApp::s_shutdown_requested{false};
+std::atomic<bool> DispatcherApp::s_shutdown_requested{false};
 
-void ManagerApp::signal_handler(int signum) {
+void DispatcherApp::signal_handler(int signum) {
     (void)signum;
     s_shutdown_requested.store(true, std::memory_order_relaxed);
 }
 
-ManagerApp::ManagerApp() = default;
-ManagerApp::~ManagerApp() = default;
+DispatcherApp::DispatcherApp() = default;
+DispatcherApp::~DispatcherApp() = default;
 
-int ManagerApp::start(int argc, char* argv[]) {
+int DispatcherApp::start(int argc, char* argv[]) {
     // --- Stage 1: Build logging pipeline ---
-    logger_ = std::make_shared<Logger>("ManagerApp");
+    logger_ = std::make_shared<Logger>("DispatcherApp");
     auto stdout_sink = std::make_shared<StdoutSink>();
     stdout_sink->set_level(LogLevel::Info);
     logger_->add_sink(stdout_sink);
@@ -52,7 +52,7 @@ int ManagerApp::start(int argc, char* argv[]) {
     return 0;
 }
 
-void ManagerApp::stop() {
+void DispatcherApp::stop() {
     if (server_) {
         logger_->info("Shutting down server...");
         server_->stop();
@@ -60,15 +60,15 @@ void ManagerApp::stop() {
     }
 }
 
-bool ManagerApp::shutdown_requested() const {
+bool DispatcherApp::shutdown_requested() const {
     return s_shutdown_requested.load(std::memory_order_relaxed);
 }
 
-void ManagerApp::request_shutdown() {
+void DispatcherApp::request_shutdown() {
     s_shutdown_requested.store(true, std::memory_order_relaxed);
 }
 
-TaskSubmitAwaitable ManagerApp::submit_task(
+TaskSubmitAwaitable DispatcherApp::submit_task(
     uint32_t task_id,
     std::unique_ptr<TaskMessenger::Skills::PayloadBufferBase> request,
     std::unique_ptr<TaskMessenger::Skills::PayloadBufferBase> response_buffer) {
@@ -76,21 +76,21 @@ TaskSubmitAwaitable ManagerApp::submit_task(
                          task_id, std::move(request), std::move(response_buffer));
 }
 
-size_t ManagerApp::task_pool_size() const {
+size_t DispatcherApp::task_pool_size() const {
     return server_ ? server_->task_pool()->size() : 0;
 }
 
-void ManagerApp::print_statistics() const {
+void DispatcherApp::print_statistics() const {
     if (server_) {
         server_->print_transporter_statistics();
     }
 }
 
-std::shared_ptr<Logger> ManagerApp::logger() const {
+std::shared_ptr<Logger> DispatcherApp::logger() const {
     return logger_;
 }
 
-void ManagerApp::install_signal_handlers() {
+void DispatcherApp::install_signal_handlers() {
     std::signal(SIGTERM, signal_handler);
     std::signal(SIGINT, signal_handler);
 }

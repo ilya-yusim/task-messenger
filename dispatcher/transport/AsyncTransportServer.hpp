@@ -1,13 +1,13 @@
 /**
- * \defgroup transport_module Manager Transport Module
- * \ingroup task_messenger_manager
+ * \defgroup transport_module Dispatcher Transport Module
+ * \ingroup task_messenger_dispatcher
  * \brief Accepts inbound worker connections, spins up coroutine IO, and hands
  *        sockets to the session subsystem.
  *
  * AsyncTransportServer owns the coroutine-aware IO context, the listening
  * socket, and the housekeeping thread that keeps inactive connections tidy.
  * The module exposes statistics helpers plus the enqueue API used by the
- * manager's task generators.
+ * dispatcher's task generators.
  * @{ 
  */
 #pragma once
@@ -41,7 +41,7 @@ namespace session {  class SessionManager; } // forward declaration
  * \brief Coroutine-friendly TCP acceptor that routes sockets into sessions.
  *
  * The server boots a configurable `transport::CoroIoContext`, launches a
- * blocking acceptor thread, and acts as the façade that other manager
+ * blocking acceptor thread, and acts as the façade that other dispatcher
  * components use to enqueue new work or inspect runtime statistics.
  */
 class AsyncTransportServer {

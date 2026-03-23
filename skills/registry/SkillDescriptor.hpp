@@ -23,7 +23,7 @@ namespace TaskMessenger::Skills {
  * 2. Separate: Separate ISkillHandler and IPayloadFactory (legacy)
  *
  * - handler: Used by worker to process incoming requests
- * - payload_factory: Used by manager to create request payloads
+ * - payload_factory: Used by dispatcher to create request payloads
  */
 struct SkillDescriptor {
     uint32_t id{0};                           ///< Unique skill identifier

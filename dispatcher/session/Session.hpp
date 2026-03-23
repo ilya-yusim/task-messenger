@@ -14,11 +14,11 @@ namespace session {
 
 /**
  * \defgroup session_module Session Management Module
- * \brief Coordinates manager-side session lifecycles and task delivery.
+ * \brief Coordinates dispatcher-side session lifecycles and task delivery.
  */
 
 /**
- * \file manager/session/Session.hpp
+ * \file dispatcher/session/Session.hpp
  * \brief Defines the per-connection coroutine session wrapper.
  * \ingroup session_module
  */

@@ -1,6 +1,6 @@
 # Skills Library
 
-Shared skill definitions and handlers used by both manager and worker.
+Shared skill definitions and handlers used by both dispatcher and worker.
 
 ## Directory Structure
 
@@ -44,7 +44,7 @@ subclass. Schemas are compiled at build time using `flatc`.
 
 ## Usage
 
-### Manager Side
+### Dispatcher Side
 ```cpp
 #include "skills/registry/SkillRegistry.hpp"
 #include "skills/registry/SkillIds.hpp"

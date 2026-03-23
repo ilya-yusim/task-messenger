@@ -3,7 +3,7 @@
 # =============================================================================
 #
 # Skill metadata and registration infrastructure.
-# Shared between manager (validation) and worker (diagnostics).
+# Shared between dispatcher (validation) and worker (diagnostics).
 
 skills_registry_sources = files(
   'CompareUtils.cpp',

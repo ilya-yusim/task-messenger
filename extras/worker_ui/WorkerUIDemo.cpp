@@ -17,7 +17,7 @@
 #include "worker/ui/WorkerUI.hpp"
 #include "logger.hpp"
 
-// Minimal mock that exercises the UI without connecting to a real manager
+// Minimal mock that exercises the UI without connecting to a real dispatcher
 class WorkerModel : public IWorkerService {
 public:
     WorkerModel() = default;

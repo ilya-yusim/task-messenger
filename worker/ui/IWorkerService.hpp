@@ -20,7 +20,7 @@ public:
     virtual void start_runtime() = 0;
     /** \brief Pause the runtime loop while keeping transport resources. */
     virtual void pause_runtime() = 0;
-    /** \brief Disconnect the runtime from the manager. */
+    /** \brief Disconnect the runtime from the dispatcher. */
     virtual void disconnect_runtime() = 0;
     
     // Metrics

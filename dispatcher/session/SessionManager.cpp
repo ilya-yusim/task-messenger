@@ -3,7 +3,7 @@
 #include <algorithm>
 
 /**
- * \file manager/session/SessionManager.cpp
+ * \file dispatcher/session/SessionManager.cpp
  * \brief Implements session orchestration and task pool fan-out.
  * \ingroup session_module
  */

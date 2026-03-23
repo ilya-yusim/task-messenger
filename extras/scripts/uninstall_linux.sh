@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # TaskMessenger Linux Uninstallation Script
-# This script removes TaskMessenger (manager or worker) for the current user
+# This script removes TaskMessenger (dispatcher or worker) for the current user
 
 set -e
 
@@ -40,20 +40,20 @@ show_usage() {
 Usage: $0 [component] [OPTIONS]
 
 Arguments:
-  component              Either 'manager' or 'worker' (auto-detected if not specified)
+  component              Either 'dispatcher' or 'worker' (auto-detected if not specified)
 
 Options:
-  --install-dir PATH     Custom installation directory (default: ~/.local/share/task-message-{manager|worker})
-  --remove-config        Also remove configuration files from ~/.config/task-message-{manager|worker}
+  --install-dir PATH     Custom installation directory (default: ~/.local/share/task-message-{dispatcher|worker})
+  --remove-config        Also remove configuration files from ~/.config/task-message-{dispatcher|worker}
   --help                 Show this help message
 
 Note: If component is not specified, the script will attempt to detect it from the script location.
 
 Examples:
   $0
-  $0 manager
+  $0 dispatcher
   $0 worker --remove-config
-  $0 manager --install-dir /custom/path
+  $0 dispatcher --install-dir /custom/path
 
 EOF
 }
@@ -86,8 +86,8 @@ get_component_from_script_location() {
     local dir_name="$(basename "$parent_dir")"
     
     # Check if parent directory matches component pattern
-    if [[ "$dir_name" == "tm-manager" ]]; then
-        echo "manager:$parent_dir"
+    if [[ "$dir_name" == "tm-dispatcher" ]]; then
+        echo "dispatcher:$parent_dir"
         return 0
     elif [[ "$dir_name" == "tm-worker" ]]; then
         echo "worker:$parent_dir"
@@ -179,8 +179,8 @@ main() {
                 shift
                 
                 # Validate component if specified
-                if [ "$COMPONENT" != "manager" ] && [ "$COMPONENT" != "worker" ]; then
-                    print_error "Invalid component: $COMPONENT. Must be 'manager' or 'worker'"
+                if [ "$COMPONENT" != "dispatcher" ] && [ "$COMPONENT" != "worker" ]; then
+                    print_error "Invalid component: $COMPONENT. Must be 'dispatcher' or 'worker'"
                     show_usage
                     exit 1
                 fi
@@ -222,7 +222,7 @@ main() {
             fi
             print_info "Auto-detected component: $COMPONENT"
         else
-            print_error "Could not auto-detect component. Please specify 'manager' or 'worker'."
+            print_error "Could not auto-detect component. Please specify 'dispatcher' or 'worker'."
             show_usage
             exit 1
         fi

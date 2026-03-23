@@ -15,12 +15,12 @@ using TaskMessenger::Skills::PayloadBufferBase;
 
 /**
  * \defgroup message_module Task Message Module
- * \brief Serialization helpers and coroutine-friendly pools for manager/worker communication.
+ * \brief Serialization helpers and coroutine-friendly pools for dispatcher/worker communication.
  */
 
 /**
  * \file message/TaskMessage.hpp
- * \brief In-memory task framing utilities shared between manager and worker.
+ * \brief In-memory task framing utilities shared between dispatcher and worker.
  * \ingroup message_module
  */
 

@@ -39,7 +39,7 @@
 		{
 			"label": "Run Interactive Generator (linux)",
 			"type": "shell",
-			"command": "builddir/generators/interactive/tm-generator-interactive -c config/config-manager.json",
+			"command": "builddir/generators/interactive/tm-generator-interactive -c config/config-dispatcher.json",
 			"group": {
 				"kind": "test",
 				"isDefault": false
@@ -50,9 +50,9 @@
 			"isBackground": true
 		},
 		{
-			"label": "Perf: Record Manager",
+			"label": "Perf: Record Dispatcher",
 			"type": "shell",
-			"command": "${workspaceFolder}/scripts/perf_record_all_threads.sh --dwarf -d 20 -F max --out ${workspaceFolder}/perf_output manager",
+			"command": "${workspaceFolder}/scripts/perf_record_all_threads.sh --dwarf -d 20 -F max --out ${workspaceFolder}/perf_output dispatcher",
 			"group": {
 				"kind": "test",
 				"isDefault": false
@@ -80,7 +80,7 @@
 		{
 			"label": "Run Interactive Generator (Verification + Failure Injection)",
 			"type": "shell",
-			"command": "builddir/generators/interactive/tm-generator-interactive.exe -c config/config-manager.json --verify --verify-inject-failure",
+			"command": "builddir/generators/interactive/tm-generator-interactive.exe -c config/config-dispatcher.json --verify --verify-inject-failure",
 			"group": {
 				"kind": "test",
 				"isDefault": false
@@ -93,7 +93,7 @@
 		{
 			"label": "Run Interactive Generator",
 			"type": "shell",
-			"command": "builddir/generators/interactive/tm-generator-interactive.exe -c config/config-manager.json",
+			"command": "builddir/generators/interactive/tm-generator-interactive.exe -c config/config-dispatcher.json",
 			"group": {
 				"kind": "test",
 				"isDefault": false
@@ -151,9 +151,9 @@
 			}
 		},
 		{
-			"label": "Run Manager and Async Worker",
+			"label": "Run Dispatcher and Async Worker",
 			"dependsOn": [
-				"Run Manager",
+				"Run Dispatcher",
 				"Run Async Worker"
 			],
 			"dependsOrder": "parallel",
@@ -164,9 +164,9 @@
 		}
 		,
 		{
-			"label": "Run Manager and Blocking Worker",
+			"label": "Run Dispatcher and Blocking Worker",
 			"dependsOn": [
-				"Run Manager",
+				"Run Dispatcher",
 				"Run Blocking Worker"
 			],
 			"dependsOrder": "parallel",

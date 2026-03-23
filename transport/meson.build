@@ -2,7 +2,7 @@
 # Transport Library Build Configuration
 # =============================================================================
 
-# Shared transport library used by both manager and worker.
+# Shared transport library used by both dispatcher and worker.
 # Contains coroutine I/O context, socket adapters, and ZeroTier integration.
 
 tm_transport_lib = static_library(
