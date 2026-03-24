@@ -8,6 +8,8 @@ tm_generator_auto_refill = executable(
     'autoRefillMain.cpp',
     'AutoRefillGenerator.cpp',
     '../common/TaskGenerator.cpp',
+    '../common/SkillTestIterator.cpp',
+    '../common/VerificationHelper.cpp',
     '../common/GeneratorOptions.cpp',
   ],
   dependencies: [

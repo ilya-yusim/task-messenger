@@ -1,21 +1,21 @@
 /**
  * \file TaskGenerator.hpp
- * \brief Shared task generation logic for generator executables.
+ * \brief Common task dispatch logic for generator executables.
  *
- * Provides dispatch_parallel(), process_single_task(), and task data generation.
+ * Provides dispatch_tasks() and coroutine lifecycle management.
  * Generators create a TaskGenerator, set the DispatcherApp, and call
- * dispatch_parallel() to submit batches of tasks via DispatcherApp::submit_task().
+ * dispatch_tasks() with pre-built TestTaskData to submit batches of tasks.
  */
 #pragma once
 
+#include "SkillTestIterator.hpp"
 #include "TaskIdGenerator.hpp"
+#include "VerificationHelper.hpp"
 
 #include "message/GeneratorCoroutine.hpp"
-#include "skills/registry/PayloadBuffer.hpp"
 
 #include <atomic>
 #include <cstdint>
-#include <utility>
 #include <vector>
 
 class DispatcherApp;
@@ -28,17 +28,21 @@ public:
     void stop();
     bool is_stopped() const { return stopped_.load(); }
 
-    void set_vector_size(size_t size) { vector_size_ = size; }
-    size_t vector_size() const { return vector_size_; }
-
     void set_app(DispatcherApp* app);
 
     /**
-     * \brief Dispatch N tasks in parallel, each with its own coroutine.
-     * \param count Number of tasks to dispatch
-     * \return Vector of coroutine handles (must be kept alive until all complete)
+     * \brief Dispatch pre-built tasks, each with its own coroutine.
+     *
+     * Assigns task IDs, optionally clones requests for verification,
+     * and launches one coroutine per task.
+     *
+     * \param tasks  Pre-built request/response pairs (consumed via move).
+     * \param verifier  Optional verification helper (nullptr to skip verification).
+     * \return Vector of coroutine handles (must be kept alive until all complete).
      */
-    std::vector<GeneratorCoroutine> dispatch_parallel(uint32_t count);
+    std::vector<GeneratorCoroutine> dispatch_tasks(
+        std::vector<TestTaskData> tasks,
+        VerificationHelper* verifier = nullptr);
 
     /**
      * \brief Check if all coroutines in a batch have completed.
@@ -48,15 +52,12 @@ public:
 private:
     GeneratorCoroutine process_single_task(
         uint32_t task_id,
-        uint32_t skill_id);
-
-    std::pair<std::unique_ptr<TaskMessenger::Skills::PayloadBufferBase>,
-              std::unique_ptr<TaskMessenger::Skills::PayloadBufferBase>>
-    generate_task_data_typed(uint32_t skill_id);
+        uint32_t skill_id,
+        std::unique_ptr<TaskMessenger::Skills::PayloadBufferBase> request,
+        std::unique_ptr<TaskMessenger::Skills::PayloadBufferBase> response,
+        std::unique_ptr<TaskMessenger::Skills::PayloadBufferBase> request_copy);
 
     TaskIdGenerator task_id_generator_;
     std::atomic<bool> stopped_{false};
-    size_t vector_size_ = 1024;
     DispatcherApp* app_ = nullptr;
-    std::vector<uint32_t> available_skills_;
 };

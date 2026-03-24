@@ -1,7 +1,11 @@
 #pragma once
 
 #include "generators/common/IGenerator.hpp"
+#include "generators/common/SkillTestIterator.hpp"
 #include "generators/common/TaskGenerator.hpp"
+#include "generators/common/VerificationHelper.hpp"
+
+#include <memory>
 
 class AutoRefillGenerator : public IGenerator {
 public:
@@ -11,4 +15,6 @@ public:
 
 private:
     TaskGenerator task_gen_;
+    std::unique_ptr<SkillTestIterator> iterator_;
+    VerificationHelper verifier_;
 };

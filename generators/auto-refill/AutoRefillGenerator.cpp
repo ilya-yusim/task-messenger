@@ -8,6 +8,7 @@
 
 bool AutoRefillGenerator::initialize(DispatcherApp& app) {
     task_gen_.set_app(&app);
+    iterator_ = std::make_unique<SkillTestIterator>();
     return true;
 }
 
@@ -19,6 +20,7 @@ int AutoRefillGenerator::run(DispatcherApp& app) {
     constexpr auto POLL_INTERVAL = std::chrono::seconds(1);
 
     logger->info("Starting in AUTO-REFILL mode");
+    logger->info("Test combinations: " + std::to_string(iterator_->total_combinations()));
 
     // Keep coroutines alive across iterations
     std::vector<GeneratorCoroutine> pending_coroutines;
@@ -35,8 +37,9 @@ int AutoRefillGenerator::run(DispatcherApp& app) {
             logger->info("Task pool low (" + std::to_string(pool_size) +
                         " tasks), dispatching " + std::to_string(REFILL_AMOUNT) + " with async coroutines");
 
-            auto new_coroutines = task_gen_.dispatch_parallel(
-                static_cast<uint32_t>(REFILL_AMOUNT));
+            auto tasks = iterator_->next(static_cast<uint32_t>(REFILL_AMOUNT));
+            auto new_coroutines = task_gen_.dispatch_tasks(
+                std::move(tasks), &verifier_);
 
             pending_coroutines.insert(pending_coroutines.end(),
                 std::make_move_iterator(new_coroutines.begin()),

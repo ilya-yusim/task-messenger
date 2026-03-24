@@ -1,16 +1,10 @@
 #include "TaskGenerator.hpp"
 #include "dispatcher/DispatcherApp.hpp"
-#include "skills/registry/SkillRegistry.hpp"
-#include "skills/registry/CompareUtils.hpp"
-
-#include <iostream>
-#include <utility>
 
 using namespace TaskMessenger::Skills;
 
 void TaskGenerator::set_app(DispatcherApp* app) {
     app_ = app;
-    available_skills_ = SkillRegistry::instance().skill_ids();
 }
 
 void TaskGenerator::stop() {
@@ -19,18 +13,13 @@ void TaskGenerator::stop() {
 
 GeneratorCoroutine TaskGenerator::process_single_task(
     uint32_t task_id,
-    uint32_t skill_id)
+    uint32_t skill_id,
+    std::unique_ptr<PayloadBufferBase> request,
+    std::unique_ptr<PayloadBufferBase> response,
+    std::unique_ptr<PayloadBufferBase> request_copy)
 {
     if (!app_) {
         co_return;
-    }
-
-    auto [request, response] = generate_task_data_typed(skill_id);
-
-    // Clone request for verification (only if enabled)
-    std::unique_ptr<PayloadBufferBase> request_copy;
-    if (CompareConfig::defaults().enabled) {
-        request_copy = request->clone();
     }
 
     // Submit task and await response - coroutine suspends here
@@ -38,38 +27,44 @@ GeneratorCoroutine TaskGenerator::process_single_task(
                                                std::move(request), std::move(response));
 
     if (result.is_success() && request_copy) {
-        // Verify worker's response against locally computed result
-        auto verification = SkillRegistry::instance().verify_response(
-            skill_id, request_copy->span(), result.body_span_u8());
-
-        if (!verification.passed) {
-            std::cerr << "[VERIFY FAIL] Task " << task_id
-                      << " (skill " << skill_id << "): "
-                      << verification.message << "\n";
-        }
+        (void)VerificationHelper::verify(
+            task_id, skill_id, request_copy->span(), result.body_span_u8());
     }
 
     co_return;
 }
 
-std::vector<GeneratorCoroutine> TaskGenerator::dispatch_parallel(
-    uint32_t count)
+std::vector<GeneratorCoroutine> TaskGenerator::dispatch_tasks(
+    std::vector<TestTaskData> tasks,
+    VerificationHelper* verifier)
 {
     std::vector<GeneratorCoroutine> coroutines;
 
-    if (!app_ || count == 0) {
+    if (!app_ || tasks.empty()) {
         return coroutines;
     }
 
-    coroutines.reserve(count);
+    coroutines.reserve(tasks.size());
 
-    for (uint32_t i = 0; i < count && !stopped_.load(); ++i) {
+    for (auto& task : tasks) {
+        if (stopped_.load()) {
+            break;
+        }
+
         uint32_t task_id = task_id_generator_.get_next_id();
-        // Cycle through all available skills at runtime
-        uint32_t skill_id = available_skills_[i % available_skills_.size()];
 
-        // Launch coroutine - starts immediately, submits task, then suspends
-        coroutines.emplace_back(process_single_task(task_id, skill_id));
+        // Clone request for verification at the dispatch site
+        std::unique_ptr<PayloadBufferBase> request_copy;
+        if (verifier && task.request) {
+            request_copy = verifier->clone_request(*task.request);
+        }
+
+        coroutines.emplace_back(process_single_task(
+            task_id,
+            task.skill_id,
+            std::move(task.request),
+            std::move(task.response),
+            std::move(request_copy)));
     }
 
     return coroutines;
@@ -82,26 +77,4 @@ bool TaskGenerator::all_done(const std::vector<GeneratorCoroutine>& coroutines) 
         }
     }
     return true;
-}
-
-std::pair<std::unique_ptr<PayloadBufferBase>, std::unique_ptr<PayloadBufferBase>>
-TaskGenerator::generate_task_data_typed(uint32_t skill_id) {
-    auto& registry = SkillRegistry::instance();
-
-    auto request = registry.create_test_request_buffer(skill_id, 0);
-    if (!request) {
-        // Fallback to first available skill if skill not found
-        if (!available_skills_.empty()) {
-            request = registry.create_test_request_buffer(available_skills_[0], 0);
-            if (!request) {
-                return {nullptr, nullptr};
-            }
-            skill_id = available_skills_[0];
-        } else {
-            return {nullptr, nullptr};
-        }
-    }
-
-    auto response = registry.create_response_buffer(skill_id, request->span());
-    return {std::move(request), std::move(response)};
 }

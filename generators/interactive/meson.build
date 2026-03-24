@@ -8,6 +8,8 @@ tm_generator_interactive = executable(
     'interactiveMain.cpp',
     'InteractiveGenerator.cpp',
     '../common/TaskGenerator.cpp',
+    '../common/SkillTestIterator.cpp',
+    '../common/VerificationHelper.cpp',
     '../common/GeneratorOptions.cpp',
   ],
   dependencies: [
