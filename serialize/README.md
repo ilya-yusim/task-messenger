@@ -55,11 +55,11 @@ meson test -C builddir flatbuffers_skill_test
 
 ### Example Skills Defined
 
-1. **StringReversalSkill** (skill_id=1)
+1. **StringReversalSkill** (`builtin.StringReversal`)
    - Request: `{ input: string }`
    - Response: `{ output: string, original_length: uint32 }`
 
-2. **MathOperationSkill** (skill_id=2)
+2. **MathOperationSkill** (`builtin.MathOperation`)
    - Request: `{ operand_a: double, operand_b: double, operation: enum }`
    - Response: `{ result: double, overflow: bool }`
 
@@ -73,6 +73,6 @@ After evaluation, the chosen library will be integrated with:
 ## Adding New Skills
 
 1. Define request/response tables in the `.fbs` schema
-2. Assign a unique `skill_id`
+2. Declare a namespaced `kSkillName` (e.g., `"mynamespace.MySkill"`)
 3. Update the worker's skill dispatcher to handle the new skill
 4. Regenerate the `_generated.h` file (done automatically by meson)

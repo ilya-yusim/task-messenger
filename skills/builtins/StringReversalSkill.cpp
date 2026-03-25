@@ -11,11 +11,6 @@
 namespace TaskMessenger::Skills {
 
 // Self-registration: runs before main()
-REGISTER_SKILL_CLASS(
-    StringReversalSkill,
-    "StringReversal",
-    "Reverses the input string",
-    1, 256, 256
-);
+REGISTER_SKILL_CLASS(StringReversalSkill);
 
 } // namespace TaskMessenger::Skills

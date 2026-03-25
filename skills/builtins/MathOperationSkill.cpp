@@ -11,11 +11,6 @@
 namespace TaskMessenger::Skills {
 
 // Self-registration: runs before main()
-REGISTER_SKILL_CLASS(
-    MathOperationSkill,
-    "MathOperation",
-    "Performs scalar math operations (add, subtract, multiply, divide)",
-    1, 64, 64
-);
+REGISTER_SKILL_CLASS(MathOperationSkill);
 
 } // namespace TaskMessenger::Skills

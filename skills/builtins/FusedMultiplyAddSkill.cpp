@@ -11,11 +11,6 @@
 namespace TaskMessenger::Skills {
 
 // Self-registration: runs before main()
-REGISTER_SKILL_CLASS(
-    FusedMultiplyAddSkill,
-    "FusedMultiplyAdd",
-    "Computes result[i] = a[i] + c * b[i] with scalar-as-vector pattern",
-    1, 4096, 4096
-);
+REGISTER_SKILL_CLASS(FusedMultiplyAddSkill);
 
 } // namespace TaskMessenger::Skills

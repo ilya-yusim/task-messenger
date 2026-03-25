@@ -9,7 +9,6 @@
 #include "skills/registry/CompareUtils.hpp"
 #include "skills/registry/Skill.hpp"
 #include "skills/registry/PayloadBuffer.hpp"
-#include "skills/registry/SkillIds.hpp"
 #include "StringReversalSkill_generated.h"
 
 #include <memory>
@@ -64,8 +63,10 @@ public:
     using RequestPtrs = StringReversalRequestPtrs;
     using ResponsePtrs = StringReversalResponsePtrs;
     
-    /// Skill identifier
-    static constexpr uint32_t kSkillId = SkillIds::StringReversal;
+    /// Namespaced skill name (single source of truth for identity)
+    static constexpr std::string_view kSkillName = "builtin.StringReversal";
+    static constexpr std::string_view kSkillDescription = "Reverses the input string";
+    static constexpr uint32_t kSkillVersion = 1;
 
     // =========================================================================
     // Scatter methods (required by Skill base class)
@@ -259,7 +260,7 @@ public:
             .input_length = string_length
         };
 
-        return StringReversalPayload(std::move(detached), ptrs, kSkillId);
+        return StringReversalPayload(std::move(detached), ptrs, kSkillId());
     }
 
     /**
@@ -282,7 +283,7 @@ public:
         
         auto response = CreateStringReversalResponse(builder, output_offset, orig_len_offset);
         builder.Finish(response);
-        return SimplePayload(builder.Release(), SimpleBufferPtrs{}, kSkillId);
+        return SimplePayload(builder.Release(), SimpleBufferPtrs{}, kSkillId());
     }
 
     /**

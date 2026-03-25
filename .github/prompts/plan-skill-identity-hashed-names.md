@@ -125,84 +125,69 @@ static constexpr uint32_t kSkillId = SkillKey::from_name("builtin.StringReversal
 
 **Recommendation:** Option A (clean break) is preferred. Since both generator and worker are recompiled together today, there is no wire-compatibility concern with existing deployments. The transition happens once and eliminates the legacy path.
 
-### SkillDescriptor Changes
+### SkillDescriptor: Eliminated
 
-`SkillDescriptor` already has a `name` field. The change is making `name` the **primary identity** rather than the `id` field:
+`SkillDescriptor` has been removed. All metadata (name, description, version) and behavior (handler, factory) now live on the `ISkill` interface:
 
 ```cpp
-struct SkillDescriptor {
-    std::string name;          // PRIMARY KEY — e.g., "builtin.StringReversal"
-    uint32_t id{0};            // DERIVED — computed from name via SkillKey::from_name()
-    std::string description;
-    uint32_t version{1};
-    // ... rest unchanged
+class ISkill : public IPayloadFactory {
+public:
+    [[nodiscard]] virtual std::string_view skill_name() const noexcept = 0;
+    [[nodiscard]] virtual std::string_view skill_description() const noexcept = 0;
+    [[nodiscard]] virtual uint32_t skill_version() const noexcept = 0;
+    // skill_id() inherited from IPayloadFactory
 };
 ```
 
-Factory methods compute the ID from the name:
+The `Skill<Derived>` CRTP base implements these by reading static constexpr members from the derived class:
 
 ```cpp
-static SkillDescriptor create(
-    std::unique_ptr<ISkill> skill_impl,
-    std::string_view name,      // e.g., "builtin.MathOperation"
-    std::string_view description,
-    uint32_t version = 1,
-    size_t req_size = 256,
-    size_t resp_size = 256
-) {
-    SkillDescriptor desc;
-    desc.name = name;
-    desc.id = SkillKey::from_name(name);  // derived, not assigned
-    desc.description = description;
-    desc.version = version;
-    desc.skill = std::move(skill_impl);
-    desc.typical_request_size = req_size;
-    desc.typical_response_size = resp_size;
-    return desc;
-}
-```
-
-### SkillRegistry: Collision Detection and Name Lookup
-
-```cpp
-class SkillRegistry {
+class MathOperationSkill : public Skill<MathOperationSkill> {
 public:
-    // Existing
-    void register_skill(SkillDescriptor descriptor);
-    [[nodiscard]] bool has_skill(uint32_t skill_id) const;
-
-    // New: name-based lookup
-    [[nodiscard]] bool has_skill(std::string_view name) const;
-    [[nodiscard]] uint32_t get_skill_id(std::string_view name) const;
-
+    static constexpr std::string_view kSkillName = "builtin.MathOperation";
+    static constexpr std::string_view kSkillDescription = "Performs scalar math operations";
+    static constexpr uint32_t kSkillVersion = 1;
     // ...
 };
 ```
 
-`register_skill()` gains collision detection:
+### SkillRegistry: Direct ISkill Storage
+
+The registry stores `unique_ptr<ISkill>` directly (no intermediary descriptor):
 
 ```cpp
-void SkillRegistry::register_skill(SkillDescriptor descriptor) {
-    std::lock_guard<std::mutex> lock(mutex_);
-
-    auto it = skills_.find(descriptor.id);
-    if (it != skills_.end() && it->second.name != descriptor.name) {
-        // Hash collision between different skills — reject registration
-        log_error("Skill ID collision: \"" + descriptor.name +
-                  "\" and \"" + it->second.name +
-                  "\" both hash to " + std::to_string(descriptor.id));
-        return;
-    }
-
-    skills_[descriptor.id] = std::move(descriptor);
-}
+class SkillRegistry {
+public:
+    void register_skill(std::unique_ptr<ISkill> skill);
+    [[nodiscard]] bool has_skill(uint32_t skill_id) const;
+    [[nodiscard]] bool has_skill(std::string_view name) const;
+    [[nodiscard]] uint32_t get_skill_id(std::string_view name) const;
+    // ...
+private:
+    std::unordered_map<uint32_t, std::unique_ptr<ISkill>> skills_;
+    std::unordered_map<std::string, uint32_t> name_to_id_;
+};
 ```
 
-Additionally, add an index by name for O(1) name-based lookups:
+`register_skill()` detects collisions and aborts:
 
 ```cpp
-// In SkillRegistry private:
-std::unordered_map<std::string, uint32_t> name_to_id_;
+void SkillRegistry::register_skill(std::unique_ptr<ISkill> skill) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const uint32_t id = skill->skill_id();
+    const auto name = skill->skill_name();
+
+    auto it = skills_.find(id);
+    if (it != skills_.end() && it->second->skill_name() != name) {
+        std::cerr << "FATAL: Skill ID collision: \"" << name
+                  << "\" and \"" << it->second->skill_name()
+                  << "\" both hash to " << id << std::endl;
+        std::abort();
+    }
+
+    name_to_id_[std::string(name)] = id;
+    skills_[id] = std::move(skill);
+}
 ```
 
 ### Skill Class Changes
@@ -219,7 +204,10 @@ class MathOperationSkill : public Skill<MathOperationSkill> {
 **After:**
 ```cpp
 class MathOperationSkill : public Skill<MathOperationSkill> {
-    static constexpr uint32_t kSkillId = SkillKey::from_name("builtin.MathOperation");
+    static constexpr std::string_view kSkillName = "builtin.MathOperation";
+    static constexpr std::string_view kSkillDescription = "Performs scalar math operations";
+    static constexpr uint32_t kSkillVersion = 1;
+    // kSkillId() is inherited from Skill<Derived>
 };
 ```
 
@@ -233,11 +221,10 @@ REGISTER_SKILL_CLASS(MathOperationSkill, "MathOperation",
 
 **After:**
 ```cpp
-REGISTER_SKILL_CLASS(MathOperationSkill, "builtin.MathOperation",
-    "Performs scalar math operations", 1, 64, 64);
+REGISTER_SKILL_CLASS(MathOperationSkill);
 ```
 
-The name passed to `REGISTER_SKILL_CLASS` must match the name used in `kSkillId = SkillKey::from_name(...)`. A `static_assert` in the `Skill<Derived>` base class can catch mismatches at compile time (see Phase 2).
+All metadata (name, description, version) is read from the class itself.
 
 ### Power User Skill Example
 
@@ -249,15 +236,15 @@ public:
     using ResponsePtrs = MonteCarloResponsePtrs;
 
     // No need to edit any central header — name is self-contained
-    static constexpr uint32_t kSkillId =
-        SkillKey::from_name("alice.MonteCarloSample");
+    static constexpr std::string_view kSkillName = "alice.MonteCarloSample";
+    static constexpr std::string_view kSkillDescription = "Monte Carlo sampling for simulation";
+    static constexpr uint32_t kSkillVersion = 1;
 
     // ... scatter_request, scatter_response, compute ...
 };
 
 // alice/MonteCarloSkill.cpp
-REGISTER_SKILL_CLASS(MonteCarloSkill, "alice.MonteCarloSample",
-    "Monte Carlo sampling for simulation", 1, 1024, 512);
+REGISTER_SKILL_CLASS(MonteCarloSkill);
 ```
 
 Alice doesn't touch `SkillIds.hpp`. Bob doesn't touch `SkillIds.hpp`. Their skills coexist because `"alice.MonteCarloSample"` and `"bob.ImageResize"` hash to different IDs.
@@ -304,16 +291,16 @@ If a hash collision ever occurs between two skills that both need to coexist in 
 7. **Update `FusedMultiplyAddSkill`** — change `kSkillId` to `SkillKey::from_name("builtin.FusedMultiplyAdd")`
 8. **Update all `REGISTER_SKILL_CLASS` calls** — use namespaced names (e.g., `"builtin.MathOperation"`)
 
-### Phase 3: Update SkillDescriptor Factory Methods
+### Phase 3: Remove SkillDescriptor
 
-9. **Update `SkillDescriptor::create()` overloads** — derive `id` from `name` via `SkillKey::from_name()` instead of accepting an explicit ID parameter
-10. **Update `REGISTER_SKILL` and `REGISTER_SKILL_CLASS` macros** — remove explicit `id` parameter; derive from name
+9. **Eliminate `SkillDescriptor`** — move `description` and `version` to `ISkill` virtual methods, registry stores `unique_ptr<ISkill>` directly
+10. **Simplify `REGISTER_SKILL_CLASS`** — single-argument macro, all metadata lives in the class
 
 ### Phase 4: Remove SkillIds.hpp
 
 11. **Remove `skills/registry/SkillIds.hpp`** — no longer needed
-12. **Update all references to `SkillIds::` constants** — replace with `SkillKey::from_name("builtin.X")` or registry name-based lookup
-13. **Remove `SkillIds::Count` and `SkillIds::MaxSkillId`** — these are meaningless with hashed IDs; use `SkillRegistry::skill_count()` and `SkillRegistry::skill_ids()` instead
+12. **Remove legacy `REGISTER_SKILL` macro** — no call sites exist
+13. **Remove `SkillIds::Count` and `SkillIds::MaxSkillId`** — use `SkillRegistry::skill_count()` and `SkillRegistry::skill_ids()` instead
 
 ### Phase 5: Validation and Documentation
 
@@ -330,23 +317,25 @@ If a hash collision ever occurs between two skills that both need to coexist in 
 - `skills/registry/SkillKey.hpp`
 
 **Modified:**
-- `skills/registry/SkillRegistry.hpp` — add name-based lookup, `name_to_id_` index
-- `skills/registry/SkillRegistry.cpp` — collision detection, name index maintenance
-- `skills/registry/SkillDescriptor.hpp` — factory methods derive ID from name
-- `skills/registry/SkillRegistration.hpp` — macros derive ID from name
-- `skills/builtins/MathOperationSkill.hpp` — `kSkillId` uses `SkillKey::from_name()`
+- `skills/registry/ISkill.hpp` — add `skill_name()`, `skill_description()`, `skill_version()` pure virtuals
+- `skills/registry/Skill.hpp` — implement new virtuals from `Derived::kSkillName`, `kSkillDescription`, `kSkillVersion`
+- `skills/registry/SkillRegistry.hpp` — store `unique_ptr<ISkill>`, name-based lookup
+- `skills/registry/SkillRegistry.cpp` — collision detection, direct ISkill dispatch
+- `skills/registry/SkillRegistration.hpp` — simplified single-arg `REGISTER_SKILL_CLASS` macro
+- `skills/builtins/MathOperationSkill.hpp` — `kSkillName`, `kSkillDescription`, `kSkillVersion`
 - `skills/builtins/StringReversalSkill.hpp` — same
 - `skills/builtins/VectorMathSkill.hpp` — same
 - `skills/builtins/FusedMultiplyAddSkill.hpp` — same
-- `skills/builtins/MathOperationSkill.cpp` — namespaced name in `REGISTER_SKILL_CLASS`
+- `skills/builtins/MathOperationSkill.cpp` — `REGISTER_SKILL_CLASS(MathOperationSkill)`
 - `skills/builtins/StringReversalSkill.cpp` — same
 - `skills/builtins/VectorMathSkill.cpp` — same
 - `skills/builtins/FusedMultiplyAddSkill.cpp` — same
-- `generators/common/TaskGenerator.cpp` — remove `SkillIds::` references (already done if IGenerator plan was applied)
+- `skills/handlers/ISkillHandler.hpp` — **deleted** (process() moved into ISkill)
 - `skills/README.md` — document naming convention
 
 **Deleted:**
 - `skills/registry/SkillIds.hpp`
+- `skills/registry/SkillDescriptor.hpp`
 
 ---
 

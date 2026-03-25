@@ -10,7 +10,6 @@
 #include "skills/registry/CompareUtils.hpp"
 #include "skills/registry/Skill.hpp"
 #include "skills/registry/PayloadBuffer.hpp"
-#include "skills/registry/SkillIds.hpp"
 #include "MathOperationSkill_generated.h"
 
 #include <cmath>
@@ -68,8 +67,10 @@ public:
     using RequestPtrs = MathOperationRequestPtrs;
     using ResponsePtrs = MathOperationResponsePtrs;
     
-    /// Skill identifier
-    static constexpr uint32_t kSkillId = SkillIds::MathOperation;
+    /// Namespaced skill name (single source of truth for identity)
+    static constexpr std::string_view kSkillName = "builtin.MathOperation";
+    static constexpr std::string_view kSkillDescription = "Performs scalar math operations (add, subtract, multiply, divide)";
+    static constexpr uint32_t kSkillVersion = 1;
 
     // =========================================================================
     // Scatter methods (required by Skill base class)
@@ -291,7 +292,7 @@ public:
             .operation = final_ptr_op
         };
 
-        return MathOperationPayload(std::move(detached), ptrs, kSkillId);
+        return MathOperationPayload(std::move(detached), ptrs, kSkillId());
     }
 
     /**
@@ -331,7 +332,7 @@ public:
             .overflow = final_overflow_ptr
         };
 
-        return MathOperationResponseBuffer(std::move(detached), ptrs, kSkillId);
+        return MathOperationResponseBuffer(std::move(detached), ptrs, kSkillId());
     }
 
     /**

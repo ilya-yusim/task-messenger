@@ -2,13 +2,16 @@
  * @file skills/registry/SkillRegistry.cpp
  * @brief Implementation of the unified SkillRegistry.
  *
- * Skills self-register via static initialization using REGISTER_SKILL macro.
+ * Skills self-register via static initialization using REGISTER_SKILL_CLASS.
  * See SkillRegistration.hpp and skills/builtins/ for examples.
  */
 #include "SkillRegistry.hpp"
 #include "CompareUtils.hpp"
 #include "PayloadBuffer.hpp"
 #include "logger.hpp"
+
+#include <cstdlib>
+#include <iostream>
 
 namespace TaskMessenger::Skills {
 
@@ -22,9 +25,24 @@ SkillRegistry::SkillRegistry(std::shared_ptr<Logger> logger)
 {
 }
 
-void SkillRegistry::register_skill(SkillDescriptor descriptor) {
+void SkillRegistry::register_skill(std::unique_ptr<ISkill> skill) {
     std::lock_guard<std::mutex> lock(mutex_);
-    skills_[descriptor.id] = std::move(descriptor);
+
+    const uint32_t id = skill->skill_id();
+    const auto name = skill->skill_name();
+
+    auto it = skills_.find(id);
+    if (it != skills_.end() && it->second->skill_name() != name) {
+        // Hash collision between different skills — fatal error.
+        // Registration runs during static init (before main), logger may be null.
+        std::cerr << "FATAL: Skill ID collision: \"" << name
+                  << "\" and \"" << it->second->skill_name()
+                  << "\" both hash to " << id << std::endl;
+        std::abort();
+    }
+
+    name_to_id_[std::string(name)] = id;
+    skills_[id] = std::move(skill);
 }
 
 bool SkillRegistry::has_skill(uint32_t skill_id) const {
@@ -32,11 +50,25 @@ bool SkillRegistry::has_skill(uint32_t skill_id) const {
     return skills_.find(skill_id) != skills_.end();
 }
 
+bool SkillRegistry::has_skill(std::string_view name) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return name_to_id_.find(std::string(name)) != name_to_id_.end();
+}
+
+uint32_t SkillRegistry::get_skill_id(std::string_view name) const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto it = name_to_id_.find(std::string(name));
+    if (it != name_to_id_.end()) {
+        return it->second;
+    }
+    return 0;
+}
+
 std::string SkillRegistry::get_skill_name(uint32_t skill_id) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = skills_.find(skill_id);
     if (it != skills_.end()) {
-        return it->second.name;
+        return std::string(it->second->skill_name());
     }
     return "";
 }
@@ -45,7 +77,7 @@ std::vector<uint32_t> SkillRegistry::skill_ids() const {
     std::lock_guard<std::mutex> lock(mutex_);
     std::vector<uint32_t> result;
     result.reserve(skills_.size());
-    for (const auto& [id, desc] : skills_) {
+    for (const auto& [id, skill] : skills_) {
         result.push_back(id);
     }
     return result;
@@ -62,29 +94,29 @@ bool SkillRegistry::dispatch(
     std::span<const uint8_t> request,
     std::span<uint8_t> response
 ) {
-    // Find skill under lock, get handler pointer
-    ISkillHandler* handler = nullptr;
-    std::string skill_name;
+    // Find skill under lock, get raw pointer for processing outside lock
+    ISkill* skill = nullptr;
+    std::string name;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         auto it = skills_.find(skill_id);
-        if (it == skills_.end() || !it->second.get_handler()) {
+        if (it == skills_.end()) {
             log_debug("Unknown skill_id=" + std::to_string(skill_id) +
                       " for task_id=" + std::to_string(task_id));
             return false;
         }
-        handler = it->second.get_handler();
-        skill_name = it->second.name;
+        skill = it->second.get();
+        name = std::string(skill->skill_name());
     }
     
     // Process outside lock (handler execution may be slow)
-    bool success = handler->process(request, response);
+    bool success = skill->process(request, response);
     
     if (success) {
-        log_debug("Processed skill=" + skill_name +
+        log_debug("Processed skill=" + name +
                   " task_id=" + std::to_string(task_id));
     } else {
-        log_debug("Failed to process skill=" + skill_name +
+        log_debug("Failed to process skill=" + name +
                   " task_id=" + std::to_string(task_id));
     }
     
@@ -95,7 +127,7 @@ IPayloadFactory* SkillRegistry::get_payload_factory(uint32_t skill_id) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = skills_.find(skill_id);
     if (it != skills_.end()) {
-        return it->second.get_factory();
+        return it->second.get();
     }
     return nullptr;
 }
@@ -143,6 +175,7 @@ VerificationResult SkillRegistry::verify_response(
 void SkillRegistry::clear() {
     std::lock_guard<std::mutex> lock(mutex_);
     skills_.clear();
+    name_to_id_.clear();
 }
 
 void SkillRegistry::set_logger(std::shared_ptr<Logger> logger) {

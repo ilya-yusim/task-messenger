@@ -7,8 +7,7 @@
 # Components:
 # - builtins/  : Built-in skill implementations with FlatBuffers schemas
 # - schemas/   : Schema dependency aggregation
-# - registry/  : Skill metadata and registration infrastructure  
-# - handlers/  : ISkillHandler interface
+# - registry/  : Skill metadata, registration, and interface infrastructure
 #
 # Dependencies: flatbuffers_dep, flatc_prog (from root meson.build)
 
@@ -21,7 +20,6 @@ subdir('builtins')
 # Process schemas - aggregates schema dependencies
 subdir('schemas')
 subdir('registry')
-subdir('handlers')
 
 # =============================================================================
 # Skills Static Library
@@ -31,7 +29,6 @@ skills_lib = static_library(
   'skills',
   sources: [
     skills_registry_sources,
-    skills_handler_sources,
     skills_builtin_sources,
   ],
   dependencies: [
@@ -41,7 +38,6 @@ skills_lib = static_library(
   include_directories: [
     include_directories('.'),
     skills_registry_inc,
-    skills_handler_inc,
     skills_builtin_inc,
   ],
 )
@@ -59,6 +55,5 @@ skills_dep = declare_dependency(
   include_directories: [
     include_directories('.'),
     skills_registry_inc,
-    skills_handler_inc,
   ],
 )

@@ -10,7 +10,6 @@
 #include "skills/registry/CompareUtils.hpp"
 #include "skills/registry/Skill.hpp"
 #include "skills/registry/PayloadBuffer.hpp"
-#include "skills/registry/SkillIds.hpp"
 #include "FusedMultiplyAddSkill_generated.h"
 
 #include <array>
@@ -69,8 +68,10 @@ public:
     using RequestPtrs = FusedMultiplyAddRequestPtrs;
     using ResponsePtrs = FusedMultiplyAddResponsePtrs;
     
-    /// Skill identifier
-    static constexpr uint32_t kSkillId = SkillIds::FusedMultiplyAdd;
+    /// Namespaced skill name (single source of truth for identity)
+    static constexpr std::string_view kSkillName = "builtin.FusedMultiplyAdd";
+    static constexpr std::string_view kSkillDescription = "Computes result[i] = a[i] + c * b[i] with scalar-as-vector pattern";
+    static constexpr uint32_t kSkillVersion = 1;
 
     // =========================================================================
     // Scatter methods (required by Skill base class)
@@ -269,7 +270,7 @@ public:
             .c = final_ptr_c
         };
 
-        return FusedMultiplyAddPayload(std::move(detached), ptrs, kSkillId);
+        return FusedMultiplyAddPayload(std::move(detached), ptrs, kSkillId());
     }
 
     /**
@@ -294,7 +295,7 @@ public:
         auto request = CreateFusedMultiplyAddRequest(builder, vec_a, vec_b, scalar_c);
         builder.Finish(request);
 
-        return SimplePayload(builder.Release(), SimpleBufferPtrs{}, kSkillId);
+        return SimplePayload(builder.Release(), SimpleBufferPtrs{}, kSkillId());
     }
 
     /**
@@ -324,7 +325,7 @@ public:
             .result = std::span<double>(final_result_ptr, vector_size)
         };
 
-        return FusedMultiplyAddResponseBuffer(std::move(detached), ptrs, kSkillId);
+        return FusedMultiplyAddResponseBuffer(std::move(detached), ptrs, kSkillId());
     }
 
     /**

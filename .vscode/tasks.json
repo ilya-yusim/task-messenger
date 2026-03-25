@@ -104,6 +104,19 @@
 			"isBackground": true
 		},
 		{
+			"label": "Run Auto-Refill Generator",
+			"type": "shell",
+			"command": "builddir/generators/auto-refill/tm-generator-auto-refill -c config/config-dispatcher.json",
+			"group": {
+				"kind": "test",
+				"isDefault": false
+			},
+			"presentation": {
+				"panel": "new"
+			},
+			"isBackground": true
+		},
+		{
 			"label": "Run Blocking Worker (Linux)",
 			"type": "shell",
 			"command": "builddir/worker/tm-worker -c config/config-worker.json --mode blocking",
@@ -114,6 +127,18 @@
 				"reveal": "always",
 				"focus": false,
 				"showReuseMessage": false
+			}
+		},
+		{
+			"label": "Run Blocking Worker and Async Worker",
+			"dependsOn": [
+				"Run Blocking Worker",
+				"Run Async Worker"
+			],
+			"dependsOrder": "parallel",
+			"group": {
+				"kind": "test",
+				"isDefault": false
 			}
 		},
 		{
