@@ -88,9 +88,9 @@ public:
     /**
      * @brief Get skill ID by name.
      * @param name The namespaced skill name.
-     * @return Skill ID, or 0 if not found.
+     * @return Skill ID, or std::nullopt if not found.
      */
-    [[nodiscard]] uint32_t get_skill_id(std::string_view name) const;
+    [[nodiscard]] std::optional<uint32_t> get_skill_id(std::string_view name) const;
 
     /**
      * @brief Get skill name by ID.
@@ -137,9 +137,12 @@ public:
     /**
      * @brief Get the payload factory for a skill.
      * @param skill_id The skill identifier.
-     * @return Pointer to the factory or nullptr if skill not found or has no factory.
+     * @return Shared pointer to the skill (as factory), or nullptr if not found.
+     *
+     * Returns a shared_ptr so the caller keeps the skill alive even if
+     * it is concurrently unregistered.
      */
-    [[nodiscard]] IPayloadFactory* get_payload_factory(uint32_t skill_id) const;
+    [[nodiscard]] std::shared_ptr<IPayloadFactory> get_payload_factory(uint32_t skill_id) const;
 
     /**
      * @brief Create a pre-allocated response buffer for a request.
@@ -203,7 +206,7 @@ private:
     
     std::shared_ptr<Logger> logger_;
     mutable std::mutex mutex_;
-    std::unordered_map<uint32_t, std::unique_ptr<ISkill>> skills_;
+    std::unordered_map<uint32_t, std::shared_ptr<ISkill>> skills_;
     std::unordered_map<std::string, uint32_t> name_to_id_;
 };
 

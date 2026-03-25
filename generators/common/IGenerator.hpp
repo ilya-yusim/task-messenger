@@ -26,6 +26,7 @@ class DispatcherApp;
  * MyGenerator gen;
  * if (!gen.initialize(app)) return 1;
  * int result = gen.run(app);
+ * gen.on_shutdown();
  * app.stop();
  * return result;
  * \endcode
@@ -57,14 +58,15 @@ public:
     virtual int run(DispatcherApp& app) = 0;
 
     /**
-     * \brief Called when a shutdown signal is received.
+     * \brief Called during the shutdown path, after run() returns.
      *
-     * Must be thread-safe (called from signal handler context via
-     * DispatcherApp::request_shutdown). Use this to set internal flags
-     * that cause run() to exit its loop.
+     * Invoked by run_generator() after the main loop finishes and before
+     * the dispatcher is stopped.  Use this to release resources, join
+     * background threads, or stop internal dispatch loops.
      *
-     * Default implementation does nothing (generators can check
-     * app.shutdown_requested() in their run loop instead).
+     * Must be safe to call even if run() returned early or was never
+     * called.  Default implementation does nothing (generators can
+     * perform all cleanup in run() instead).
      */
     virtual void on_shutdown() {}
 };

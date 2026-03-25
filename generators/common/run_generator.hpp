@@ -57,6 +57,8 @@ inline int run_generator(int argc, char* argv[], IGenerator& generator) {
 
     int result = generator.run(app);
 
+    generator.on_shutdown();
+
     app.stop();
     return result;
 }

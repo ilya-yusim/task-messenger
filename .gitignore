@@ -22,3 +22,7 @@ dist-*/
 extras/scripts/makeself/
 subprojects/flatbuffers-24.3.25/
 subprojects/packagecache/
+
+# Meson downloaded subprojects
+subprojects/CLI11/
+subprojects/nlohmann_json/

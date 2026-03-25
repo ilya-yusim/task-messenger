@@ -2,6 +2,7 @@
 #include "dispatcher/DispatcherApp.hpp"
 #include "message/GeneratorCoroutine.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <thread>
 #include <vector>

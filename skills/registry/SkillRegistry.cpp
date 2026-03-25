@@ -55,13 +55,13 @@ bool SkillRegistry::has_skill(std::string_view name) const {
     return name_to_id_.find(std::string(name)) != name_to_id_.end();
 }
 
-uint32_t SkillRegistry::get_skill_id(std::string_view name) const {
+std::optional<uint32_t> SkillRegistry::get_skill_id(std::string_view name) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = name_to_id_.find(std::string(name));
     if (it != name_to_id_.end()) {
         return it->second;
     }
-    return 0;
+    return std::nullopt;
 }
 
 std::string SkillRegistry::get_skill_name(uint32_t skill_id) const {
@@ -94,8 +94,8 @@ bool SkillRegistry::dispatch(
     std::span<const uint8_t> request,
     std::span<uint8_t> response
 ) {
-    // Find skill under lock, get raw pointer for processing outside lock
-    ISkill* skill = nullptr;
+    // Find skill under lock, copy shared_ptr to keep it alive outside lock
+    std::shared_ptr<ISkill> skill;
     std::string name;
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -105,7 +105,7 @@ bool SkillRegistry::dispatch(
                       " for task_id=" + std::to_string(task_id));
             return false;
         }
-        skill = it->second.get();
+        skill = it->second;
         name = std::string(skill->skill_name());
     }
     
@@ -123,11 +123,11 @@ bool SkillRegistry::dispatch(
     return success;
 }
 
-IPayloadFactory* SkillRegistry::get_payload_factory(uint32_t skill_id) const {
+std::shared_ptr<IPayloadFactory> SkillRegistry::get_payload_factory(uint32_t skill_id) const {
     std::lock_guard<std::mutex> lock(mutex_);
     auto it = skills_.find(skill_id);
     if (it != skills_.end()) {
-        return it->second.get();
+        return it->second;
     }
     return nullptr;
 }
@@ -136,7 +136,7 @@ std::unique_ptr<PayloadBufferBase> SkillRegistry::create_response_buffer(
     uint32_t skill_id,
     std::span<const uint8_t> request
 ) const {
-    auto* factory = get_payload_factory(skill_id);
+    auto factory = get_payload_factory(skill_id);
     if (!factory) {
         return nullptr;
     }
@@ -147,7 +147,7 @@ std::unique_ptr<PayloadBufferBase> SkillRegistry::create_test_request_buffer(
     uint32_t skill_id,
     size_t case_index
 ) const {
-    auto* factory = get_payload_factory(skill_id);
+    auto factory = get_payload_factory(skill_id);
     if (!factory) {
         return nullptr;
     }
@@ -155,7 +155,7 @@ std::unique_ptr<PayloadBufferBase> SkillRegistry::create_test_request_buffer(
 }
 
 size_t SkillRegistry::get_test_case_count(uint32_t skill_id) const {
-    auto* factory = get_payload_factory(skill_id);
+    auto factory = get_payload_factory(skill_id);
     return factory ? factory->get_test_case_count() : 0;
 }
 
@@ -164,7 +164,7 @@ VerificationResult SkillRegistry::verify_response(
     std::span<const uint8_t> request,
     std::span<const uint8_t> worker_response
 ) const {
-    auto* factory = get_payload_factory(skill_id);
+    auto factory = get_payload_factory(skill_id);
     if (!factory) {
         return VerificationResult::failure("Unknown skill_id=" + std::to_string(skill_id));
     }

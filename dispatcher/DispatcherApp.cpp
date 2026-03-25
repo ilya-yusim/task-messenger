@@ -16,6 +16,9 @@ DispatcherApp::DispatcherApp() = default;
 DispatcherApp::~DispatcherApp() = default;
 
 int DispatcherApp::start(int argc, char* argv[]) {
+    // Reset shutdown flag so re-starts (e.g., in tests) don't exit immediately
+    s_shutdown_requested.store(false, std::memory_order_relaxed);
+
     // --- Stage 1: Build logging pipeline ---
     logger_ = std::make_shared<Logger>("DispatcherApp");
     auto stdout_sink = std::make_shared<StdoutSink>();
