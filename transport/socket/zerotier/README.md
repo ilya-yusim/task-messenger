@@ -152,9 +152,9 @@ To add features:
 
 Regenerate Doxygen documentation:
 ```powershell
-meson compile -C builddir-manager docs
+meson compile -C builddir docs
 ```
-Output resides under `builddir-manager/doxygen/`.
+Output resides under `builddir/doxygen/`.
 
 ---
 For questions on extending the backend or integrating new protocols over ZeroTier, encapsulate logic in separate adapters while reusing `ZeroTierNodeService` for node lifecycle.

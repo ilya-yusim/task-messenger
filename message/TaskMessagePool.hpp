@@ -14,7 +14,7 @@
 
 /**
  * \file message/TaskMessagePool.hpp
- * \brief Awaitable task queue shared by manager sessions.
+ * \brief Awaitable task queue shared by dispatcher sessions.
  * \ingroup message_module
  */
 
@@ -51,7 +51,7 @@ public:
 };
 
 /**
- * \brief Thread-safe task pool consumed by manager sessions.
+ * \brief Thread-safe task pool consumed by dispatcher sessions.
  * \ingroup message_module
  *
  * Provides an awaitable interface for getting tasks. Sessions can call

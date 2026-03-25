@@ -14,7 +14,7 @@ class IRuntimeMode {
 public:
     virtual ~IRuntimeMode() = default;
 
-    /** \brief Create or reconnect a socket to the manager. */
+    /** \brief Create or reconnect a socket to the dispatcher. */
     virtual bool connect() = 0;
     /** \brief Close the active socket while keeping resources available. */
     virtual void disconnect() = 0;

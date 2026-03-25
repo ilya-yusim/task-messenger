@@ -66,7 +66,7 @@ void WorkerSession::start() {
             
             if (logger_) {
                 std::string local_ep = runtime_->get_local_endpoint();
-                logger_->info("Runtime: connected to manager at " + local_ep);
+                logger_->info("Runtime: connected to dispatcher at " + local_ep);
             }
         }
 

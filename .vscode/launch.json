@@ -6,10 +6,10 @@
     "configurations": [
                 
         {
-                "name": "Attach to Manager Process",
+                "name": "Attach to Dispatcher Process",
                 "type": "cppdbg",
                 "request": "attach",
-                "program": "/usr/src/app/manager-executable", // Path to the executable in the container
+                "program": "/usr/src/app/dispatcher-executable", // Path to the executable in the container
                 "processId": "${command:pickProcess}", // Allows you to select the process
                 "MIMode": "gdb",
                 "miDebuggerPath": "/usr/bin/gdb", // Path to gdb in the container
@@ -81,44 +81,44 @@
             }
         },
         {
-            "name": "Manager (Python wrapper)",
+            "name": "Dispatcher (Python wrapper)",
             "type": "python",
             "request": "launch",
-            "program": "${workspaceFolder}/builddir-manager/manager/startManagerAndVN.py",
+            "program": "${workspaceFolder}/builddir-dispatcher/dispatcher/startDispatcherAndVN.py",
             "console": "integratedTerminal",
-            "cwd": "${workspaceFolder}/builddir-manager/manager",
+            "cwd": "${workspaceFolder}/builddir-dispatcher/dispatcher",
             "env": {
                 "MANAGER_PORT": "8080"
             }
         },
         {
-            "name": "Manager",
+            "name": "Interactive Generator",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/builddir/manager/tm-manager.exe",
-            "args": ["-c", "config/config-manager.json","--interactive"],
+            "program": "${workspaceFolder}/builddir/generators/interactive/tm-generator-interactive.exe",
+            "args": ["-c", "config/config-dispatcher.json"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "integratedTerminal"
         },
         {
-            "name": "Manager (verify failure)",
+            "name": "Interactive Generator (verify failure)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/builddir/manager/tm-manager.exe",
-            "args": ["-c", "config/config-manager.json","--interactive","--verify","--verify-inject-failure"],
+            "program": "${workspaceFolder}/builddir/generators/interactive/tm-generator-interactive.exe",
+            "args": ["-c", "config/config-dispatcher.json","--verify","--verify-inject-failure"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "integratedTerminal"
         },
         {
-            "name": "Manager (Linux)",
+            "name": "Interactive Generator (Linux)",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/builddir/manager/tm-manager",
-            "args": ["-c", "config/config-manager.json","--interactive"],
+            "program": "${workspaceFolder}/builddir/generators/interactive/tm-generator-interactive",
+            "args": ["-c", "config/config-dispatcher.json"],
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],

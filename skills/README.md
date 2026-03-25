@@ -1,6 +1,6 @@
 # Skills Library
 
-Shared skill definitions and handlers used by both manager and worker.
+Shared skill definitions and handlers used by both dispatcher and worker.
 
 ## Directory Structure
 
@@ -12,12 +12,11 @@ skills/
 │   ├── MathOperationSkill.{fbs,hpp,cpp}
 │   ├── VectorMathSkill.{fbs,hpp,cpp}
 │   └── FusedMultiplyAddSkill.{fbs,hpp,cpp}
-├── handlers/        # Skill handler interface
-│   └── ISkillHandler.hpp
 ├── registry/        # Skill registration, metadata, and dispatch
 │   ├── SkillRegistry.hpp    # Central registry with dispatch
-│   ├── SkillDescriptor.hpp  # Skill metadata + handler
-│   ├── SkillIds.hpp         # Compile-time skill ID constants
+│   ├── ISkill.hpp           # Complete skill interface (processing + factory + identity)
+│   ├── Skill.hpp            # CRTP base class for skill implementations
+│   ├── SkillKey.hpp         # Deterministic skill ID derivation from names
 │   ├── PayloadBuffer.hpp    # Type-erased owned payload buffers
 │   ├── IPayloadFactory.hpp  # Factory interface for payload creation
 │   ├── CompareUtils.hpp/.cpp# Floating-point comparison helpers
@@ -35,28 +34,32 @@ subclass. Schemas are compiled at build time using `flatc`.
 ### Registry (`registry/`)
 - **SkillRegistry**: Central registry for skills with registration, lookup, and dispatch.
   Can be used as a singleton via `instance()` or instantiated directly.
-- **SkillDescriptor**: Binds a skill's metadata, handler, and payload factory.
-- **SkillIds**: Compile-time constants for skill identifiers.
+- **ISkill / Skill\<Derived\>**: Combined interface and CRTP base class providing identity
+  (name, description, version, ID), handler, and payload factory in a single object.
+- **SkillKey**: Derives deterministic 32-bit skill IDs from namespaced string names via FNV-1a hash.
 - **PayloadBuffer**: Type-erased owned buffer with typed pointer access for zero-copy transfer.
 
-### Handlers (`handlers/`)
-- **ISkillHandler**: Interface for skill handler implementations (worker side).
+### Handlers
+Task processing is defined by the `ISkill::process()` virtual method.
+The `Skill<Derived>` CRTP base implements it by delegating to
+`scatter_request()` / `scatter_response()` / `compute()` on the derived class.
 
 ## Usage
 
-### Manager Side
+### Dispatcher Side
 ```cpp
 #include "skills/registry/SkillRegistry.hpp"
-#include "skills/registry/SkillIds.hpp"
+#include "skills/registry/SkillKey.hpp"
 
 using namespace TaskMessenger::Skills;
 
-// Check skill validity
-if (SkillRegistry::instance().has_skill(SkillIds::StringReversal)) {
+// Check skill validity by name
+if (SkillRegistry::instance().has_skill("builtin.StringReversal")) {
+    auto id = SkillKey::from_name("builtin.StringReversal");
     // Create typed request + pre-allocated response buffers
-    auto request = SkillRegistry::instance().create_test_request_buffer(SkillIds::StringReversal);
+    auto request = SkillRegistry::instance().create_test_request_buffer(id);
     auto response = SkillRegistry::instance().create_response_buffer(
-        SkillIds::StringReversal, request->span());
+        id, request->span());
     // Wrap in a TaskMessage and submit
 }
 ```

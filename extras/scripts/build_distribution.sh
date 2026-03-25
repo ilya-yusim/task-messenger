@@ -1,6 +1,6 @@
 #!/bin/bash
 # build_distribution.sh - Create distributable packages for task-messenger
-# Usage: ./build_distribution.sh [manager|worker|all]
+# Usage: ./build_distribution.sh [dispatcher|worker|all]
 
 set -e
 
@@ -10,8 +10,8 @@ cd "$PROJECT_ROOT"
 
 # Parse arguments
 COMPONENT="${1:-all}"
-if [[ ! "$COMPONENT" =~ ^(manager|worker|all)$ ]]; then
-    echo "Usage: $0 [manager|worker|all]"
+if [[ ! "$COMPONENT" =~ ^(dispatcher|worker|all)$ ]]; then
+    echo "Usage: $0 [dispatcher|worker|all]"
     exit 1
 fi
 
@@ -125,11 +125,11 @@ build_component() {
     
     # Determine build options based on component
     local build_opts=()
-    if [[ "$comp" == "manager" ]]; then
+    if [[ "$comp" == "dispatcher" ]]; then
         build_opts+=("-Dbuild_worker=false")
-        echo "Building manager only (FTXUI disabled for faster build)"
+        echo "Building dispatcher only (FTXUI disabled for faster build)"
     elif [[ "$comp" == "worker" ]]; then
-        build_opts+=("-Dbuild_manager=false")
+        build_opts+=("-Dbuild_dispatcher=false")
         echo "Building worker only"
     fi
     
@@ -171,17 +171,17 @@ create_archive() {
     # Copy files for this component
     local archive_root="$temp_archive_dir/tm-$comp"
     
-    if [[ "$comp" == "manager" ]]; then
-        # Manager: executable, libzt, configs, identity directory, docs
+    if [[ "$comp" == "dispatcher" ]]; then
+        # Dispatcher: executable, libzt, configs, identity directory, docs
         mkdir -p "$archive_root/bin"
-        cp "$staging_prefix/bin/tm-manager" "$archive_root/bin/"
+        cp "$staging_prefix/bin/tm-dispatcher" "$archive_root/bin/"
         
         mkdir -p "$archive_root/lib"
         cp "$staging_prefix/lib/libzt.so" "$archive_root/lib/libzt.so"
         
         mkdir -p "$archive_root/config"
-        cp "$staging_prefix/etc/task-messenger/config-manager.json" "$archive_root/config/"
-        cp -r "$staging_prefix/etc/task-messenger/vn-manager-identity" "$archive_root/config/"
+        cp "$staging_prefix/etc/task-messenger/config-dispatcher.json" "$archive_root/config/"
+        cp -r "$staging_prefix/etc/task-messenger/vn-dispatcher-identity" "$archive_root/config/"
         
         mkdir -p "$archive_root/doc"
         cp -r "$staging_prefix/share/doc/task-messenger/"* "$archive_root/doc/"
@@ -214,8 +214,8 @@ create_archive() {
     
     # Copy launchers
     mkdir -p "$archive_root/launchers"
-    if [[ "$comp" == "manager" ]]; then
-        cp "$PROJECT_ROOT/extras/launchers/start-tm-manager.sh" "$archive_root/launchers/"
+    if [[ "$comp" == "dispatcher" ]]; then
+        cp "$PROJECT_ROOT/extras/launchers/start-tm-dispatcher.sh" "$archive_root/launchers/"
     else
         cp "$PROJECT_ROOT/extras/launchers/start-tm-worker.sh" "$archive_root/launchers/"
     fi
@@ -223,8 +223,8 @@ create_archive() {
     
     # Copy desktop files
     mkdir -p "$archive_root/desktop"
-    if [[ "$comp" == "manager" ]]; then
-        cp "$PROJECT_ROOT/extras/desktop/tm-manager.desktop" "$archive_root/desktop/"
+    if [[ "$comp" == "dispatcher" ]]; then
+        cp "$PROJECT_ROOT/extras/desktop/tm-dispatcher.desktop" "$archive_root/desktop/"
     else
         cp "$PROJECT_ROOT/extras/desktop/tm-worker.desktop" "$archive_root/desktop/"
     fi
@@ -317,7 +317,7 @@ mkdir -p "$STAGING_DIR" "$OUTPUT_DIR"
 
 # Build and package based on component selection
 if [[ "$COMPONENT" == "all" ]]; then
-    for comp in manager worker; do
+    for comp in dispatcher worker; do
         build_component "$comp"
         create_archive "$comp"
         create_makeself_archive "$comp"

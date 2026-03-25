@@ -22,8 +22,8 @@ class AsyncRuntime : public IRuntimeMode {
 public:
     /**
      * \brief Create an async runtime bound to a target host and port.
-     * \param host Manager host to connect to.
-     * \param port Manager port to connect to.
+     * \param host Dispatcher host to connect to.
+     * \param port Dispatcher port to connect to.
      * \param logger Logger shared across worker components.
      */
     AsyncRuntime(const std::string& host, int port, std::shared_ptr<Logger> logger);

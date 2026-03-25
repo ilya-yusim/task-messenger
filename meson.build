@@ -95,20 +95,32 @@ flatc_prog = flatbuffers_sp.get_variable('flatc_prog', find_program('flatc', req
 # Shared Skills Library
 # =============================================================================
 
-# Skills library provides FlatBuffers-based skill handling for both manager and worker
-# Must be built before manager/worker as they depend on skills_dep
+# Skills library provides FlatBuffers-based skill handling for both dispatcher and worker
+# Must be built before dispatcher/worker as they depend on skills_dep
 subdir('skills')
+
+# =============================================================================
+# Shared Transport Library
+# =============================================================================
+
+# Transport library provides coroutine I/O, socket adapters, and ZeroTier
+# integration shared by both dispatcher and worker.
+subdir('transport')
 
 # =============================================================================
 # Build Targets
 # =============================================================================
 
-if get_option('build_manager')
-  subdir('manager')
+if get_option('build_dispatcher')
+  subdir('dispatcher')
 endif
 
 if get_option('build_worker')
   subdir('worker')
+endif
+
+if get_option('build_generators')
+  subdir('generators')
 endif
 
 # Serialization tests (optional, for evaluating FlatBuffers/Cap'n Proto)
@@ -126,13 +138,13 @@ install_data('LICENSE', install_dir: doc_dir)
 
 # Install configuration templates
 config_dir = get_option('sysconfdir') / 'task-messenger'
-install_data('config/config-manager.json', 'config/config-worker.json', install_dir: config_dir)
+install_data('config/config-dispatcher.json', 'config/config-worker.json', install_dir: config_dir)
 
-# Install manager's ZeroTier identity files (public/secret keys only)
+# Install dispatcher's ZeroTier identity files (public/secret keys only)
 install_data(
-  'config/vn-manager-identity/identity.public',
-  'config/vn-manager-identity/identity.secret',
-  install_dir: config_dir / 'vn-manager-identity'
+  'config/vn-dispatcher-identity/identity.public',
+  'config/vn-dispatcher-identity/identity.secret',
+  install_dir: config_dir / 'vn-dispatcher-identity'
 )
 
 # =============================================================================

@@ -1,5 +1,5 @@
 # TaskMessenger Windows Installation Script
-# This script installs TaskMessenger (manager or worker) for the current user
+# This script installs TaskMessenger (dispatcher or worker) for the current user
 
 param(
     [Parameter(Mandatory=$false)]
@@ -55,12 +55,12 @@ Options:
   -Archive PATH          Path to distribution archive (auto-detected if not provided)
   -Help                  Show this help message
 
-Note: The component (manager or worker) is automatically detected from the extracted files.
+Note: The component (dispatcher or worker) is automatically detected from the extracted files.
 
 Examples:
   .\install_windows.ps1
   .\install_windows.ps1 -InstallDir "C:\Custom\Path"
-  .\install_windows.ps1 -Archive "task-messenger-manager-v1.0.0-windows-x64.zip"
+  .\install_windows.ps1 -Archive "task-messenger-dispatcher-v1.0.0-windows-x64.zip"
 
 "@
 }
@@ -68,8 +68,8 @@ Examples:
 function Get-DefaultInstallDir {
     param([string]$Component)
     
-    if ($Component -eq "manager") {
-        return Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-manager"
+    if ($Component -eq "dispatcher") {
+        return Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-dispatcher"
     } else {
         return Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-worker"
     }
@@ -78,8 +78,8 @@ function Get-DefaultInstallDir {
 function Get-ConfigDir {
     param([string]$Component)
     
-    if ($Component -eq "manager") {
-        return Join-Path $env:APPDATA "TaskMessenger\tm-manager"
+    if ($Component -eq "dispatcher") {
+        return Join-Path $env:APPDATA "TaskMessenger\tm-dispatcher"
     } else {
         return Join-Path $env:APPDATA "TaskMessenger\tm-worker"
     }
@@ -110,11 +110,11 @@ function Test-ExtractedFiles {
     
     if (Test-Path $dllPath) {
         # Detect which component by checking which executable exists
-        $managerPath = Join-Path $extractedRoot "bin\tm-manager.exe"
+        $managerPath = Join-Path $extractedRoot "bin\tm-dispatcher.exe"
         $workerPath = Join-Path $extractedRoot "bin\tm-worker.exe"
         
         if (Test-Path $managerPath) {
-            return @{ Root = $extractedRoot; Component = "manager" }
+            return @{ Root = $extractedRoot; Component = "dispatcher" }
         } elseif (Test-Path $workerPath) {
             return @{ Root = $extractedRoot; Component = "worker" }
         }
@@ -126,8 +126,8 @@ function Test-ExtractedFiles {
 function Get-ComponentName {
     param([string]$Component)
     
-    if ($Component -eq "manager") {
-        return "TMManager"
+    if ($Component -eq "dispatcher") {
+        return "TMDispatcher"
     } else {
         return "TMWorker"
     }
@@ -136,7 +136,7 @@ function Get-ComponentName {
 function Get-VersionFromArchive {
     param([string]$ArchiveName)
     
-    # Extract version from filename: tm-manager-v1.0.0-windows-x64.zip -> 1.0.0
+    # Extract version from filename: tm-dispatcher-v1.0.0-windows-x64.zip -> 1.0.0
     if ($ArchiveName -match '-v(\d+\.\d+\.\d+)-') {
         return $matches[1]
     }
@@ -234,15 +234,15 @@ function Install-Component {
         Copy-Item $configFile $configDir -Force
     }
     
-    # Copy identity directory for manager to config directory (APPDATA)
-    if ($Component -eq "manager") {
-        $identityDir = Join-Path $configSourceDir "vn-manager-identity"
+    # Copy identity directory for dispatcher to config directory (APPDATA)
+    if ($Component -eq "dispatcher") {
+        $identityDir = Join-Path $configSourceDir "vn-dispatcher-identity"
         
         if (Test-Path $identityDir) {
             Copy-Item $identityDir $configDir -Recurse -Force
             
             # Set restrictive permissions on secret file (best effort - may require admin privileges)
-            $secretPath = Join-Path $configDir "vn-manager-identity\identity.secret"
+            $secretPath = Join-Path $configDir "vn-dispatcher-identity\identity.secret"
             if (Test-Path $secretPath) {
                 try {
                     $acl = Get-Acl $secretPath
@@ -357,8 +357,8 @@ function New-StartMenuShortcut {
     $shortcut.WorkingDirectory = $InstallDir
     
     # Set description
-    if ($Component -eq "manager") {
-        $shortcut.Description = "TaskMessenger task distribution manager"
+    if ($Component -eq "dispatcher") {
+        $shortcut.Description = "TaskMessenger task distribution dispatcher"
     } else {
         $shortcut.Description = "TaskMessenger task processing worker"
     }
@@ -467,7 +467,7 @@ function Main {
     } else {
         # Fall back to archive-based installation
         if (-not $Archive) {
-            Exit-WithError "Could not detect component from extracted files`n`nSolutions:`n  1. Extract a TaskMessenger distribution archive (manager or worker)`n     and run this script from the extracted TaskMessenger directory`n`n  2. Specify the archive path manually:`n     .\install_windows.ps1 -Archive 'path\to\tm-{component}-v1.0.0-windows-x64.zip'"
+            Exit-WithError "Could not detect component from extracted files`n`nSolutions:`n  1. Extract a TaskMessenger distribution archive (dispatcher or worker)`n     and run this script from the extracted TaskMessenger directory`n`n  2. Specify the archive path manually:`n     .\install_windows.ps1 -Archive 'path\to\tm-{component}-v1.0.0-windows-x64.zip'"
         }
         
         # Validate archive exists
@@ -481,17 +481,17 @@ function Main {
         Expand-Archive -Path $Archive -DestinationPath $tempDir -Force
         
         # Detect component from extracted files first
-        $managerCheck = Join-Path $tempDir "tm-manager"
+        $managerCheck = Join-Path $tempDir "tm-dispatcher"
         $workerCheck = Join-Path $tempDir "tm-worker"
         
         if (Test-Path $managerCheck) {
             $sourceDir = $managerCheck
-            $Component = "manager"
+            $Component = "dispatcher"
         } elseif (Test-Path $workerCheck) {
             $sourceDir = $workerCheck
             $Component = "worker"
         } else {
-            Exit-WithError "Unexpected archive structure. Expected tm-manager or tm-worker directory."
+            Exit-WithError "Unexpected archive structure. Expected tm-dispatcher or tm-worker directory."
         }
         
         # Update install directory based on detected component if not specified
@@ -500,15 +500,15 @@ function Main {
         }
         
         # Detect component from extracted files
-        $managerPath = Join-Path $sourceDir "bin\tm-manager.exe"
+        $managerPath = Join-Path $sourceDir "bin\tm-dispatcher.exe"
         $workerPath = Join-Path $sourceDir "bin\tm-worker.exe"
         
         if (Test-Path $managerPath) {
-            $Component = "manager"
+            $Component = "dispatcher"
         } elseif (Test-Path $workerPath) {
             $Component = "worker"
         } else {
-            Exit-WithError "Could not detect component. No tm-manager.exe or tm-worker.exe found."
+            Exit-WithError "Could not detect component. No tm-dispatcher.exe or tm-worker.exe found."
         }
         
         Write-Info "Detected component: $Component"
@@ -521,7 +521,7 @@ function Main {
     
     # Validate we detected a component
     if (-not $Component) {
-        Exit-WithError "Failed to detect component (manager or worker)"
+        Exit-WithError "Failed to detect component (dispatcher or worker)"
     }
     
     # Get config directory

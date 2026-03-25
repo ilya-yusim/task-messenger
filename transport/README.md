@@ -44,9 +44,9 @@ Documentation is generated via Meson’s optional `docs` target and includes bot
 
 Regenerate docs:
 ```powershell
-meson compile -C builddir-manager docs
+meson compile -C builddir docs
 ```
-Output: `builddir-manager/doxygen/`.
+Output: `builddir/doxygen/`.
 
 ## Extensibility
 

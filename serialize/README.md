@@ -5,8 +5,8 @@ This directory contains standalone test cases for evaluating serialization libra
 ## Concept: Skills
 
 A "skill" is a typed task category with:
-- A **request** data structure (manager → worker)
-- A **response** data structure (worker → manager)
+- A **request** data structure (dispatcher → worker)
+- A **response** data structure (worker → dispatcher)
 - A unique `skill_id` for routing and dispatch
 
 The serialization envelope (`SkillRequest`/`SkillResponse`) wraps skill-specific payloads, allowing the transport layer to route messages without knowing the inner payload structure.
@@ -55,11 +55,11 @@ meson test -C builddir flatbuffers_skill_test
 
 ### Example Skills Defined
 
-1. **StringReversalSkill** (skill_id=1)
+1. **StringReversalSkill** (`builtin.StringReversal`)
    - Request: `{ input: string }`
    - Response: `{ output: string, original_length: uint32 }`
 
-2. **MathOperationSkill** (skill_id=2)
+2. **MathOperationSkill** (`builtin.MathOperation`)
    - Request: `{ operand_a: double, operand_b: double, operation: enum }`
    - Response: `{ result: double, overflow: bool }`
 
@@ -67,12 +67,12 @@ meson test -C builddir flatbuffers_skill_test
 
 After evaluation, the chosen library will be integrated with:
 - [`TaskMessage`](../message/TaskMessage.hpp) - payload serialization
-- [`TaskGenerator`](../manager/TaskGenerator.hpp) - creating skill-typed tasks
+- [`TaskGenerator`](../generators/common/TaskGenerator.hpp) - creating skill-typed tasks
 - Worker processor - deserializing and executing skill requests
 
 ## Adding New Skills
 
 1. Define request/response tables in the `.fbs` schema
-2. Assign a unique `skill_id`
+2. Declare a namespaced `kSkillName` (e.g., `"mynamespace.MySkill"`)
 3. Update the worker's skill dispatcher to handle the new skill
 4. Regenerate the `_generated.h` file (done automatically by meson)

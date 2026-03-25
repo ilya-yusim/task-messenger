@@ -1,9 +1,9 @@
 subprojects/libzt-wrapper/libzt/
 subprojects/.wraplock
 
-config/vn-manager-identity/networks.d
-config/vn-manager-identity/peers.d
-config/vn-manager-identity/roots
+config/vn-dispatcher-identity/networks.d
+config/vn-dispatcher-identity/peers.d
+config/vn-dispatcher-identity/roots
 
 # Build directories
 builddir-*/
@@ -22,3 +22,7 @@ dist-*/
 extras/scripts/makeself/
 subprojects/flatbuffers-24.3.25/
 subprojects/packagecache/
+
+# Meson downloaded subprojects
+subprojects/CLI11/
+subprojects/nlohmann_json/

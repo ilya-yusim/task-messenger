@@ -2,14 +2,15 @@
  * @file skills/registry/SkillRegistration.hpp
  * @brief Self-registration helper for skills.
  *
- * This header provides the REGISTER_SKILL macro that allows skills to
+ * This header provides the REGISTER_SKILL_CLASS macro that allows skills to
  * self-register during static initialization, eliminating the need for
  * a central register_builtin_skills() function.
  */
 #pragma once
 
 #include "SkillRegistry.hpp"
-#include "SkillDescriptor.hpp"
+
+#include <memory>
 
 namespace TaskMessenger::Skills {
 
@@ -23,80 +24,34 @@ class SkillRegistration {
 public:
     /**
      * @brief Register a skill with the global registry.
-     * @param descriptor The skill descriptor to register.
+     * @param skill The skill implementation to register.
      */
-    explicit SkillRegistration(SkillDescriptor descriptor) {
-        SkillRegistry::instance().register_skill(std::move(descriptor));
+    explicit SkillRegistration(std::unique_ptr<ISkill> skill) {
+        SkillRegistry::instance().register_skill(std::move(skill));
     }
 };
 
 } // namespace TaskMessenger::Skills
 
-/**
- * @def REGISTER_SKILL
- * @brief Macro to register a skill from its implementation file.
- *
- * Usage:
- * @code
- * REGISTER_SKILL(
- *     SkillIds::MySkill,
- *     "MySkill",
- *     "Description of my skill",
- *     std::make_unique<MySkillHandler>(),
- *     std::make_unique<MySkillPayloadFactory>(),
- *     version, max_input, max_output
- * );
- * @endcode
- *
- * @param id The skill ID (from SkillIds enum)
- * @param name The skill name string
- * @param description The skill description string
- * @param handler A unique_ptr to the skill handler
- * @param factory A unique_ptr to the payload factory (use nullptr if none)
- * @param version The skill version
- * @param max_input Maximum input size
- * @param max_output Maximum output size
- */
 // Token concatenation helpers for __COUNTER__ expansion
 #define SKILL_REG_CONCAT_IMPL(a, b) a##b
 #define SKILL_REG_CONCAT(a, b) SKILL_REG_CONCAT_IMPL(a, b)
 
-#define REGISTER_SKILL(id, name, description, handler, factory, version, max_input, max_output) \
-    static ::TaskMessenger::Skills::SkillRegistration \
-        SKILL_REG_CONCAT(_skill_registration_, __COUNTER__)( \
-            ::TaskMessenger::Skills::SkillDescriptor::create( \
-                id, name, description, handler, factory, version, max_input, max_output \
-            ) \
-        )
-
 /**
  * @def REGISTER_SKILL_CLASS
- * @brief Macro to register a combined Skill class (preferred over REGISTER_SKILL).
+ * @brief Macro to register a combined Skill class.
+ *
+ * All metadata (name, description, version) is read from the class itself.
  *
  * Usage:
  * @code
- * REGISTER_SKILL_CLASS(
- *     MySkill,           // The skill class (must extend Skill<MySkill>)
- *     "MySkill",         // Human-readable name
- *     "Description",     // Description
- *     1,                 // Version
- *     4096,              // Max input size
- *     4096               // Max output size
- * );
+ * REGISTER_SKILL_CLASS(MySkill);
  * @endcode
  *
  * @param SkillClass The skill class that extends Skill<SkillClass>
- * @param name The skill name string
- * @param description The skill description string
- * @param version The skill version
- * @param max_input Maximum input size
- * @param max_output Maximum output size
  */
-#define REGISTER_SKILL_CLASS(SkillClass, name, description, version, max_input, max_output) \
+#define REGISTER_SKILL_CLASS(SkillClass) \
     static ::TaskMessenger::Skills::SkillRegistration \
         SKILL_REG_CONCAT(_skill_registration_, __COUNTER__)( \
-            ::TaskMessenger::Skills::SkillDescriptor::create( \
-                std::make_unique<SkillClass>(), \
-                name, description, version, max_input, max_output \
-            ) \
+            std::make_unique<SkillClass>() \
         )

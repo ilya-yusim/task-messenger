@@ -2,7 +2,7 @@
 
 \ingroup task_messenger_worker
 
-Worker process that connects to the manager, executes queued tasks, and reports metrics suitable for UI visualization. The worker is composed of small submodules that collectively form the `task_messenger_worker` subgroup:
+Worker process that connects to the dispatcher, executes queued tasks, and reports metrics suitable for UI visualization. The worker is composed of small submodules that collectively form the `task_messenger_worker` subgroup:
 
 - `runtime/`: pluggable execution engines (`BlockingRuntime`, `AsyncRuntime`) implementing socket ownership and I/O loops, utilizing either a blocking or coroutine-enabled asynchronous methods. (\ingroup task_messenger_worker)
 - `session/`: `WorkerSession` orchestrates lifecycle, configuration, logging, and metrics aggregation. (\ingroup task_messenger_worker)
@@ -48,14 +48,14 @@ The UI and log sinks receive string-formatted values (e.g., `1.5MB`). The raw `u
 
 ## UI & Demo
 
-The UI is optional and compiled only when FTXUI is detected. To explore it without a manager connection, build and run the demo harness:
+The UI is optional and compiled only when FTXUI is detected. To explore it without a dispatcher connection, build and run the demo harness:
 
 ```powershell
 meson compile -C builddir-worker worker-ui-demo
 ./builddir-worker/worker/worker-ui-demo.exe
 ```
 
-The demo simulates task throughput and byte counters so you can validate visual workflows before connecting to a real manager.
+The demo simulates task throughput and byte counters so you can validate visual workflows before connecting to a real dispatcher.
 
 ## Documentation & Submodules
 
@@ -68,5 +68,5 @@ Additional deep-dives are provided per subdirectory:
 Regenerate project-wide documentation through Meson:
 
 ```powershell
-meson compile -C builddir-manager docs
+meson compile -C builddir docs
 ```

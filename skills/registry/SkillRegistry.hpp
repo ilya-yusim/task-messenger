@@ -6,8 +6,8 @@
  */
 #pragma once
 
-#include "SkillDescriptor.hpp"
-#include "SkillIds.hpp"
+#include "ISkill.hpp"
+#include "SkillKey.hpp"
 #include "VerificationResult.hpp"
 
 #include <memory>
@@ -15,6 +15,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -25,9 +26,9 @@ namespace TaskMessenger::Skills {
 /**
  * @brief Central registry for skills: metadata, handlers, and dispatch.
  *
- * Thread-safe registry that stores skill descriptors (including handlers)
+ * Thread-safe registry that stores ISkill implementations
  * and provides dispatch functionality. Used by:
- * - Manager: Validate skill IDs, query metadata
+ * - Dispatcher: Validate skill IDs, query metadata
  * - Worker: Dispatch payloads to handlers, provide diagnostics
  *
  * Can be used as a singleton via instance() or instantiated directly for testing.
@@ -38,7 +39,7 @@ public:
      * @brief Construct a SkillRegistry with optional logger.
      * @param logger Logger for debug output (may be nullptr).
      *
-     * Skills self-register via static initialization using REGISTER_SKILL macro.
+     * Skills self-register via static initialization using REGISTER_SKILL_CLASS macro.
      * See SkillRegistration.hpp and skills/builtins/ for examples.
      */
     explicit SkillRegistry(std::shared_ptr<Logger> logger = nullptr);
@@ -60,23 +61,37 @@ public:
     // =========================================================================
     
     /**
-     * @brief Register a skill with its handler.
-     * @param descriptor Complete skill definition (takes ownership of handler).
-     * @note If a skill with the same ID exists, it is replaced.
+     * @brief Register a skill implementation.
+     * @param skill The skill to register (takes ownership).
+     * @note Aborts if a hash collision is detected (different name, same ID).
      */
-    void register_skill(SkillDescriptor descriptor);
+    void register_skill(std::unique_ptr<ISkill> skill);
     
     // =========================================================================
     // Query
     // =========================================================================
     
     /**
-     * @brief Check if a skill is registered.
+     * @brief Check if a skill is registered (by numeric ID).
      * @param skill_id The skill identifier to check.
      * @return true if the skill is registered.
      */
     [[nodiscard]] bool has_skill(uint32_t skill_id) const;
+
+    /**
+     * @brief Check if a skill is registered (by name).
+     * @param name The namespaced skill name (e.g., "builtin.StringReversal").
+     * @return true if the skill is registered.
+     */
+    [[nodiscard]] bool has_skill(std::string_view name) const;
     
+    /**
+     * @brief Get skill ID by name.
+     * @param name The namespaced skill name.
+     * @return Skill ID, or std::nullopt if not found.
+     */
+    [[nodiscard]] std::optional<uint32_t> get_skill_id(std::string_view name) const;
+
     /**
      * @brief Get skill name by ID.
      * @param skill_id The skill identifier.
@@ -122,9 +137,12 @@ public:
     /**
      * @brief Get the payload factory for a skill.
      * @param skill_id The skill identifier.
-     * @return Pointer to the factory or nullptr if skill not found or has no factory.
+     * @return Shared pointer to the skill (as factory), or nullptr if not found.
+     *
+     * Returns a shared_ptr so the caller keeps the skill alive even if
+     * it is concurrently unregistered.
      */
-    [[nodiscard]] IPayloadFactory* get_payload_factory(uint32_t skill_id) const;
+    [[nodiscard]] std::shared_ptr<IPayloadFactory> get_payload_factory(uint32_t skill_id) const;
 
     /**
      * @brief Create a pre-allocated response buffer for a request.
@@ -188,7 +206,8 @@ private:
     
     std::shared_ptr<Logger> logger_;
     mutable std::mutex mutex_;
-    std::unordered_map<uint32_t, SkillDescriptor> skills_;
+    std::unordered_map<uint32_t, std::shared_ptr<ISkill>> skills_;
+    std::unordered_map<std::string, uint32_t> name_to_id_;
 };
 
 } // namespace TaskMessenger::Skills

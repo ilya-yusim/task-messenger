@@ -20,7 +20,7 @@ This document provides instructions for installing TaskMessenger on Windows, Lin
 
 TaskMessenger consists of two components:
 - **Worker**: The task processing client that executes assigned tasks
-- **Manager**: The task distribution server that coordinates task assignment
+- **Dispatcher**: The task distribution server that coordinates task assignment
 
 Each component can be installed independently based on your needs. Both components are installed as user applications (not system services) and run on-demand.
 
@@ -68,7 +68,7 @@ TaskMessenger provides self-extracting `.exe` installers for Windows.
 
 Download the appropriate installer for your component:
 - `tm-worker-v1.0.0-windows-x64-installer.exe`
-- `tm-manager-v1.0.0-windows-x64-installer.exe`
+- `tm-dispatcher-v1.0.0-windows-x64-installer.exe`
 
 #### Step 2: Run the Installer
 
@@ -90,7 +90,7 @@ Edit the configuration file using Notepad or your preferred text editor:
 ```powershell
 notepad %APPDATA%\task-messenger\config-worker.json
 # or
-notepad %APPDATA%\task-messenger\config-manager.json
+notepad %APPDATA%\task-messenger\config-dispatcher.json
 ```
 
 See [Configuration](#configuration) section for details.
@@ -103,7 +103,7 @@ TaskMessenger provides self-extracting `.run` installers for Linux.
 
 Download the appropriate installer for your component:
 - `tm-worker-v1.0.0-linux-x64-installer.run`
-- `tm-manager-v1.0.0-linux-x64-installer.run`
+- `tm-dispatcher-v1.0.0-linux-x64-installer.run`
 
 #### Step 2: Make Executable and Run
 
@@ -112,10 +112,10 @@ chmod +x tm-worker-v1.0.0-linux-x64-installer.run
 ./tm-worker-v1.0.0-linux-x64-installer.run
 ```
 
-Or for manager:
+Or for dispatcher:
 ```bash
-chmod +x tm-manager-v1.0.0-linux-x64-installer.run
-./tm-manager-v1.0.0-linux-x64-installer.run
+chmod +x tm-dispatcher-v1.0.0-linux-x64-installer.run
+./tm-dispatcher-v1.0.0-linux-x64-installer.run
 ```
 
 The installer will automatically extract and install the application.
@@ -169,7 +169,7 @@ Edit the configuration file:
 ```bash
 nano ~/.config/task-messenger/config-worker.json
 # or
-nano ~/.config/task-messenger/config-manager.json
+nano ~/.config/task-messenger/config-dispatcher.json
 ```
 
 See [Configuration](#configuration) section for details.
@@ -189,11 +189,11 @@ brew tap ilya-yusim/task-messenger
 # Install worker
 brew install tm-worker
 
-# Install manager
-brew install tm-manager
+# Install dispatcher
+brew install tm-dispatcher
 
 # Or install both
-brew install tm-worker tm-manager
+brew install tm-worker tm-dispatcher
 ```
 
 Homebrew handles all dependencies, PATH configuration, and updates automatically. No need to deal with security warnings.
@@ -201,12 +201,12 @@ Homebrew handles all dependencies, PATH configuration, and updates automatically
 **To upgrade:**
 ```bash
 brew update
-brew upgrade tm-worker tm-manager
+brew upgrade tm-worker tm-dispatcher
 ```
 
 **To uninstall:**
 ```bash
-brew uninstall tm-worker tm-manager
+brew uninstall tm-worker tm-dispatcher
 brew untap ilya-yusim/task-messenger
 ```
 
@@ -218,7 +218,7 @@ TaskMessenger provides `.command` installers for macOS that can be run by double
 
 Download the appropriate installer for your component and architecture:
 - `tm-worker-v1.0.0-macos-arm64.command` (Apple Silicon)
-- `tm-manager-v1.0.0-macos-arm64.command` (Apple Silicon)
+- `tm-dispatcher-v1.0.0-macos-arm64.command` (Apple Silicon)
 
 #### Step 2: Run the Installer
 
@@ -231,10 +231,10 @@ xattr -d com.apple.quarantine tm-worker-v1.0.0-macos-arm64.command
 ./tm-worker-v1.0.0-macos-arm64.command
 ```
 
-Or for manager:
+Or for dispatcher:
 ```bash
-xattr -d com.apple.quarantine tm-manager-v1.0.0-macos-arm64.command
-./tm-manager-v1.0.0-macos-arm64.command
+xattr -d com.apple.quarantine tm-dispatcher-v1.0.0-macos-arm64.command
+./tm-dispatcher-v1.0.0-macos-arm64.command
 ```
 
 **Option B: Double-click with System Settings**
@@ -285,7 +285,7 @@ Edit the configuration file:
 ```bash
 nano ~/Library/Application\ Support/TaskMessenger/config/config-worker.json
 # or
-nano ~/Library/Application\ Support/TaskMessenger/config/config-manager.json
+nano ~/Library/Application\ Support/TaskMessenger/config/config-dispatcher.json
 ```
 
 See [Configuration](#configuration) section for details.
@@ -294,7 +294,7 @@ See [Configuration](#configuration) section for details.
 
 ## Configuration
 
-Both manager and worker require configuration before first use. The installation creates a template configuration file that you must edit.
+Both dispatcher and worker require configuration before first use. The installation creates a template configuration file that you must edit.
 
 ### Configuration File Structure
 
@@ -321,7 +321,7 @@ Both manager and worker require configuration before first use. The installation
 
 **`zerotier_identity_path`**: Path to custom ZeroTier identity files
 - Leave empty to use default identity files
-- Manager uses bundled identity files by default
+- Dispatcher uses bundled identity files by default
 
 **`logging.level`**: Log verbosity
 - Values: `trace`, `debug`, `info`, `warning`, `error`
@@ -341,7 +341,7 @@ Both manager and worker require configuration before first use. The installation
   },
   "logging": {
     "level": "info",
-    "file": "/home/user/.local/share/task-messenger/manager/manager.log"
+    "file": "/home/user/.local/share/task-messenger/dispatcher/dispatcher.log"
   }
 }
 ```
@@ -363,7 +363,7 @@ To upgrade, simply download and run the new installer - it will handle the upgra
 ### Windows
 
 Run the uninstaller from the Start Menu:
-- Start → TaskMessenger → Uninstall Worker (or Uninstall Manager)
+- Start → TaskMessenger → Uninstall Worker (or Uninstall Dispatcher)
 
 Or use the uninstall script if available in your installation directory.
 
@@ -374,7 +374,7 @@ Run the uninstall script from your installation:
 ```bash
 ~/.local/share/task-messenger/worker/scripts/uninstall_linux.sh
 # or
-~/.local/share/task-messenger/manager/scripts/uninstall_linux.sh
+~/.local/share/task-messenger/dispatcher/scripts/uninstall_linux.sh
 ```
 
 ### macOS
@@ -384,7 +384,7 @@ Run the uninstall script from your installation:
 ```bash
 ~/Library/Application\ Support/TaskMessenger/worker/scripts/uninstall_macos.sh
 # or
-~/Library/Application\ Support/TaskMessenger/manager/scripts/uninstall_macos.sh
+~/Library/Application\ Support/TaskMessenger/dispatcher/scripts/uninstall_macos.sh
 ```
 
 ### What Gets Removed
@@ -471,14 +471,14 @@ If unable to connect to ZeroTier network:
 
 After installation, you can run the applications:
 
-1. **From Start Menu**: Start → TaskMessenger → Worker or Manager
-2. **From Command Prompt/PowerShell**: Type `tm-worker` or `tm-manager`
+1. **From Start Menu**: Start → TaskMessenger → Worker or Dispatcher
+2. **From Command Prompt/PowerShell**: Type `tm-worker` or `tm-dispatcher`
 3. **With configuration file**:
    ```powershell
    tm-worker -c %APPDATA%\task-messenger\config-worker.json
-   tm-manager -c %APPDATA%\task-messenger\config-manager.json
+   tm-dispatcher -c %APPDATA%\task-messenger\config-dispatcher.json
    ```
-4. **View help**: `tm-worker --help` or `tm-manager --help`
+4. **View help**: `tm-worker --help` or `tm-dispatcher --help`
 
 ### Linux
 
@@ -487,16 +487,16 @@ After installation, you can run the applications:
 1. **From terminal** (if `~/.local/bin` is in PATH):
    ```bash
    tm-worker --help
-   tm-manager --help
+   tm-dispatcher --help
    ```
 
 2. **With configuration file**:
    ```bash
    tm-worker -c ~/.config/task-messenger/config-worker.json
-   tm-manager -c ~/.config/task-messenger/config-manager.json
+   tm-dispatcher -c ~/.config/task-messenger/config-dispatcher.json
    ```
 
-3. **From desktop/application menu**: Search for "TaskMessenger Worker" or "TaskMessenger Manager"
+3. **From desktop/application menu**: Search for "TaskMessenger Worker" or "TaskMessenger Dispatcher"
 
 ### macOS
 
@@ -505,26 +505,26 @@ After installation, you can run the applications:
 1. **From terminal** (if `~/.local/bin` is in PATH):
    ```bash
    tm-worker --help
-   tm-manager --help
+   tm-dispatcher --help
    ```
 
 2. **With configuration file**:
    ```bash
    tm-worker -c ~/Library/Application\ Support/TaskMessenger/config/config-worker.json
-   tm-manager -c ~/Library/Application\ Support/TaskMessenger/config/config-manager.json
+   tm-dispatcher -c ~/Library/Application\ Support/TaskMessenger/config/config-dispatcher.json
    ```
 
 3. **Direct path**:
    ```bash
    ~/Library/Application\ Support/TaskMessenger/worker/tm-worker --help
-   ~/Library/Application\ Support/TaskMessenger/manager/tm-manager --help
+   ~/Library/Application\ Support/TaskMessenger/dispatcher/tm-dispatcher --help
    ```
 
 ## Getting Help
 
 For additional help:
 
-1. Run with `--help` flag: `tm-worker --help` or `tm-manager --help`
+1. Run with `--help` flag: `tm-worker --help` or `tm-dispatcher --help`
 2. Check log files if logging is enabled
 3. Review this installation guide
 4. Contact support or file an issue on the project repository

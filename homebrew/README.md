@@ -25,7 +25,7 @@ If you cannot run the above command, **skip to the .command installer section be
 3. Users install with:
    ```bash
    brew tap <username>/task-messenger
-   brew install tm-manager tm-worker
+   brew install tm-dispatcher tm-worker
    ```
 
 ### Option 2: Use Main Repository (Current Setup)
@@ -33,7 +33,7 @@ If you cannot run the above command, **skip to the .command installer section be
 The formulas are kept in this repository and automatically updated on each release:
 ```bash
 brew tap <username>/task-messenger https://github.com/<username>/task-messenger
-brew install tm-manager tm-worker
+brew install tm-dispatcher tm-worker
 ```
 
 Replace `<username>` with your GitHub username or organization name.
@@ -78,11 +78,11 @@ After pushing changes to GitHub, test the actual tap:
 brew tap <username>/task-messenger https://github.com/<username>/task-messenger
 
 # Install and test
-brew install tm-manager
-tm-manager --version
+brew install tm-dispatcher
+tm-dispatcher --version
 
 # Uninstall
-brew uninstall tm-manager
+brew uninstall tm-dispatcher
 brew untap <username>/task-messenger
 ```
 
@@ -98,13 +98,13 @@ mkdir -p $(brew --repository)/Library/Taps/local/homebrew-task-messenger
 ln -sf $(pwd)/homebrew/Formula $(brew --repository)/Library/Taps/local/homebrew-task-messenger/
 
 # Install from local tap
-brew install local/task-messenger/tm-manager
+brew install local/task-messenger/tm-dispatcher
 
 # Test
-tm-manager --version
+tm-dispatcher --version
 
 # Cleanup
-brew uninstall tm-manager
+brew uninstall tm-dispatcher
 rm -rf $(brew --repository)/Library/Taps/local/homebrew-task-messenger
 ```
 
@@ -167,17 +167,17 @@ Users can install with:
 # Add tap
 brew tap yourusername/task-messenger
 
-# Install manager
-brew install tm-manager
+# Install dispatcher
+brew install tm-dispatcher
 
 # Install worker
 brew install tm-worker
 
 # Update
-brew upgrade tm-manager tm-worker
+brew upgrade tm-dispatcher tm-worker
 
 # Uninstall
-brew uninstall tm-manager
+brew uninstall tm-dispatcher
 ```
 
 ## Benefits of Homebrew Distribution
@@ -189,28 +189,28 @@ brew uninstall tm-manager
 ✅ **Famil (replace <username> with your GitHub username)
 brew tap <username>/task-messenger
 
-# Install manager
-brew install tm-manager
+# Install dispatcher
+brew install tm-dispatcher
 
 # Install worker
 brew install tm-worker
 
 # Update to latest version
-brew upgrade tm-manager tm-worker
+brew upgrade tm-dispatcher tm-worker
 
 # Uninstall
-brew uninstall tm-manager tm-worker
+brew uninstall tm-dispatcher tm-worker
 ```
 
 ### Configuration Locations
 
 After installation, config files are created at:
-- **Manager**: `~/Library/Application Support/TaskMessenger/config/manager/config-manager.json`
+- **Dispatcher**: `~/Library/Application Support/TaskMessenger/config/dispatcher/config-dispatcher.json`
 - **Worker**: `~/Library/Application Support/TaskMessenger/config/worker/config-worker.json`
 
 To run with config:
 ```bash
-tm-manager -c "~/Library/Application Support/TaskMessenger/config/manager/config-manager.json"
+tm-dispatcher -c "~/Library/Application Support/TaskMessenger/config/dispatcher/config-dispatcher.json"
 tm-worker -c "~/Library/Application Support/TaskMessenger/config/worker/config-worker.json"
 ```
 
@@ -221,7 +221,7 @@ tm-worker -c "~/Library/Application Support/TaskMessenger/config/worker/config-w
 Instead of Homebrew, use the self-extracting .command installers:
 
 1. **Download** from [GitHub Releases](https://github.com/GITHUB_REPOSITORY/releases/latest):
-   - `tm-manager-vX.Y.Z-macos-arm64.command` (Apple Silicon)
+   - `tm-dispatcher-vX.Y.Z-macos-arm64.command` (Apple Silicon)
    - `tm-worker-vX.Y.Z-macos-arm64.command` (Apple Silicon)
 
 2. **Install** by double-clicking the `.command` file in Finder
@@ -232,7 +232,7 @@ Instead of Homebrew, use the self-extracting .command installers:
 
 3. **Run** by double-clicking the `.app` in Applications or:
    ```bash
-   tm-manager -c "~/Library/Application Support/TaskMessenger/config/manager/config-manager.json"
+   tm-dispatcher -c "~/Library/Application Support/TaskMessenger/config/dispatcher/config-dispatcher.json"
    ```
 
 4. **Uninstall** by double-clicking the uninstaller on your Desktop

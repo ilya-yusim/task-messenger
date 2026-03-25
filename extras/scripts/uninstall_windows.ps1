@@ -1,9 +1,9 @@
 # TaskMessenger Windows Uninstallation Script
-# This script removes TaskMessenger (manager or worker) for the current user
+# This script removes TaskMessenger (dispatcher or worker) for the current user
 
 param(
     [Parameter(Mandatory=$false, Position=0)]
-    [ValidateSet("manager", "worker", "all")]
+    [ValidateSet("dispatcher", "worker", "all")]
     [string]$Component,
     
     [Parameter(Mandatory=$false)]
@@ -54,7 +54,7 @@ TaskMessenger Windows Uninstallation Script
 Usage: .\uninstall_windows.ps1 [component] [OPTIONS]
 
 Arguments:
-  component              Either 'manager', 'worker', or 'all' (auto-detected if not specified)
+  component              Either 'dispatcher', 'worker', or 'all' (auto-detected if not specified)
 
 Options:
   -InstallDir PATH       Custom installation directory (optional, auto-detected by default)
@@ -64,12 +64,12 @@ Options:
 Note: If component is not specified, the script will detect the installation from its location or prompt you to choose.
 
 Installation directories:
-  Manager: %LOCALAPPDATA%\TaskMessageManager
-  Worker:  %LOCALAPPDATA%\TaskMessageWorker
+  Dispatcher: %LOCALAPPDATA%\TaskMessageDispatcher
+  Worker:     %LOCALAPPDATA%\TaskMessageWorker
 
 Examples:
   .\uninstall_windows.ps1
-  .\uninstall_windows.ps1 manager
+  .\uninstall_windows.ps1 dispatcher
   .\uninstall_windows.ps1 worker -RemoveConfig
   .\uninstall_windows.ps1 all
 
@@ -79,8 +79,8 @@ Examples:
 function Get-DefaultInstallDir {
     param([string]$Component)
     
-    if ($Component -eq "manager") {
-        return Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-manager"
+    if ($Component -eq "dispatcher") {
+        return Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-dispatcher"
     } elseif ($Component -eq "worker") {
         return Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-worker"
     } else {
@@ -92,8 +92,8 @@ function Get-DefaultInstallDir {
 function Get-ConfigDir {
     param([string]$Component)
     
-    if ($Component -eq "manager") {
-        return Join-Path $env:APPDATA "TaskMessenger\tm-manager"
+    if ($Component -eq "dispatcher") {
+        return Join-Path $env:APPDATA "TaskMessenger\tm-dispatcher"
     } else {
         return Join-Path $env:APPDATA "TaskMessenger\tm-worker"
     }
@@ -102,8 +102,8 @@ function Get-ConfigDir {
 function Get-ComponentName {
     param([string]$Component)
     
-    if ($Component -eq "manager") {
-        return "TMManager"
+    if ($Component -eq "dispatcher") {
+        return "TMDispatcher"
     } else {
         return "TMWorker"
     }
@@ -113,13 +113,13 @@ function Test-Installation {
     param([string]$Component)
     
     if ($Component -eq "all") {
-        $managerBinDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-manager"
+        $dispatcherBinDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-dispatcher"
         $workerBinDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-worker"
-        $managerCfgDir = Join-Path $env:APPDATA "TaskMessenger\tm-manager"
+        $dispatcherCfgDir = Join-Path $env:APPDATA "TaskMessenger\tm-dispatcher"
         $workerCfgDir = Join-Path $env:APPDATA "TaskMessenger\tm-worker"
         
-        if (-not (Test-Path $managerBinDir) -and -not (Test-Path $workerBinDir) -and
-            -not (Test-Path $managerCfgDir) -and -not (Test-Path $workerCfgDir)) {
+        if (-not (Test-Path $dispatcherBinDir) -and -not (Test-Path $workerBinDir) -and
+            -not (Test-Path $dispatcherCfgDir) -and -not (Test-Path $workerCfgDir)) {
             Exit-WithError "No TaskMessenger installation found"
         }
     } else {
@@ -149,11 +149,11 @@ function Get-InstalledVersion {
 function Get-InstalledComponents {
     $components = @()
     
-    $managerDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-manager"
+    $dispatcherDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-dispatcher"
     $workerDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-worker"
     
-    if (Test-Path $managerDir) {
-        $components += "manager"
+    if (Test-Path $dispatcherDir) {
+        $components += "dispatcher"
     }
     
     if (Test-Path $workerDir) {
@@ -175,7 +175,7 @@ function Select-Component {
     }
     
     Write-Info "Multiple components are installed:"
-    Write-Host "  1. manager"
+    Write-Host "  1. dispatcher"
     Write-Host "  2. worker"
     Write-Host "  3. all (both)"
     Write-Host ""
@@ -184,7 +184,7 @@ function Select-Component {
         $choice = Read-Host "Select component to uninstall [1-3]"
         
         switch ($choice) {
-            "1" { return "manager" }
+            "1" { return "dispatcher" }
             "2" { return "worker" }
             "3" { return "all" }
             default { Write-Warning "Invalid choice. Please enter 1, 2, or 3." }
@@ -198,11 +198,11 @@ function Get-ComponentFromScriptLocation {
     $scriptDir = Split-Path -Parent $scriptPath
     
     # Check if script is in a component directory
-    $managerDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-manager"
+    $dispatcherDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-dispatcher"
     $workerDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-worker"
     
-    if ($scriptDir -eq $managerDir) {
-        return "manager"
+    if ($scriptDir -eq $dispatcherDir) {
+        return "dispatcher"
     } elseif ($scriptDir -eq $workerDir) {
         return "worker"
     }
@@ -282,7 +282,7 @@ function Remove-FromPath {
 function Remove-StartMenuShortcut {
     param([string]$Component)
     
-    $componentName = if ($Component -eq "manager") { "TMManager" } else { "TMWorker" }
+    $componentName = if ($Component -eq "dispatcher") { "TMDispatcher" } else { "TMWorker" }
     $startMenuDir = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\$componentName"
     
     if (Test-Path $startMenuDir) {
@@ -341,7 +341,7 @@ function Main {
     
     # Set default install directory if not provided
     if (-not $InstallDir) {
-        $InstallDir = Get-DefaultInstallDir -Component ($Component -or "manager")
+        $InstallDir = Get-DefaultInstallDir -Component ($Component -or "dispatcher")
     }
     
     # Auto-detect installed components if component not specified
@@ -379,8 +379,8 @@ function Main {
         Write-Info "Install location: $InstallDir"
         Write-Info "Config location:  $configDir"
     } else {
-        Write-Info "Install locations: %LOCALAPPDATA%\TaskMessenger\tm-manager and tm-worker"
-        Write-Info "Config locations:  %APPDATA%\TaskMessenger\tm-manager and tm-worker"
+        Write-Info "Install locations: %LOCALAPPDATA%\TaskMessenger\tm-dispatcher and tm-worker"
+        Write-Info "Config locations:  %APPDATA%\TaskMessenger\tm-dispatcher and tm-worker"
     }
     Write-Info "Remove config:    $RemoveConfig"
     Write-Info "=========================================="
@@ -388,11 +388,11 @@ function Main {
     
     # Remove components
     if ($Component -eq "all") {
-        Remove-Component -Component "manager"
+        Remove-Component -Component "dispatcher"
         Remove-Component -Component "worker"
         
         if ($RemoveConfig) {
-            Remove-ConfigFile -Component "manager"
+            Remove-ConfigFile -Component "dispatcher"
             Remove-ConfigFile -Component "worker"
         }
     } else {

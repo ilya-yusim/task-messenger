@@ -1,7 +1,7 @@
 #!/bin/bash
 # build_distribution_macos.sh - Create distributable packages for macOS
 #
-# Usage: ./build_distribution_macos.sh [manager|worker|all]
+# Usage: ./build_distribution_macos.sh [dispatcher|worker|all]
 #
 # This script builds task-messenger distribution packages for macOS.
 # It creates tar.gz archives suitable for distribution.
@@ -14,9 +14,9 @@ cd "$PROJECT_ROOT"
 
 # Parse component argument
 COMPONENT="${1:-all}"
-if [[ ! "$COMPONENT" =~ ^(manager|worker|all)$ ]]; then
+if [[ ! "$COMPONENT" =~ ^(dispatcher|worker|all)$ ]]; then
     echo "❌ Error: Invalid component '$COMPONENT'"
-    echo "Usage: $0 [manager|worker|all]"
+    echo "Usage: $0 [dispatcher|worker|all]"
     exit 1
 fi
 
@@ -66,11 +66,11 @@ build_component() {
     
     # Determine build options
     local build_opts=()
-    if [[ "$comp" == "manager" ]]; then
+    if [[ "$comp" == "dispatcher" ]]; then
         build_opts+=("-Dbuild_worker=false")
-        echo "   Build mode: Manager only"
+        echo "   Build mode: Dispatcher only"
     elif [[ "$comp" == "worker" ]]; then
-        build_opts+=("-Dbuild_manager=false")
+        build_opts+=("-Dbuild_dispatcher=false")
         echo "   Build mode: Worker only"
     fi
     
@@ -153,11 +153,11 @@ create_archive() {
     # Copy configuration files
     echo "   Copying configuration files..."
     mkdir -p "$archive_root/config"
-    if [[ "$comp" == "manager" ]]; then
-        # Manager: config + identity directory
-        cp "$staging_prefix/etc/task-messenger/config-manager.json" "$archive_root/config/"
-        if [ -d "$staging_prefix/etc/task-messenger/vn-manager-identity" ]; then
-            cp -r "$staging_prefix/etc/task-messenger/vn-manager-identity" "$archive_root/config/"
+    if [[ "$comp" == "dispatcher" ]]; then
+        # Dispatcher: config + identity directory
+        cp "$staging_prefix/etc/task-messenger/config-dispatcher.json" "$archive_root/config/"
+        if [ -d "$staging_prefix/etc/task-messenger/vn-dispatcher-identity" ]; then
+            cp -r "$staging_prefix/etc/task-messenger/vn-dispatcher-identity" "$archive_root/config/"
         fi
     else
         # Worker: config only
@@ -200,10 +200,10 @@ create_archive() {
     echo "   Copying launcher scripts..."
     mkdir -p "$archive_root/launchers"
     if [ -d "$PROJECT_ROOT/extras/launchers" ]; then
-        if [[ "$comp" == "manager" ]]; then
-            if [ -f "$PROJECT_ROOT/extras/launchers/start-tm-manager.sh" ]; then
-                cp "$PROJECT_ROOT/extras/launchers/start-tm-manager.sh" "$archive_root/launchers/"
-                chmod +x "$archive_root/launchers/start-tm-manager.sh"
+        if [[ "$comp" == "dispatcher" ]]; then
+            if [ -f "$PROJECT_ROOT/extras/launchers/start-tm-dispatcher.sh" ]; then
+                cp "$PROJECT_ROOT/extras/launchers/start-tm-dispatcher.sh" "$archive_root/launchers/"
+                chmod +x "$archive_root/launchers/start-tm-dispatcher.sh"
             fi
         else
             if [ -f "$PROJECT_ROOT/extras/launchers/start-tm-worker.sh" ]; then
@@ -296,7 +296,7 @@ tail -n +"$ARCHIVE_LINE" "$0" | tar -xzf - -C "$TEMP_DIR" || {
 }
 
 # Find extracted directory
-EXTRACTED_DIR=$(find "$TEMP_DIR" -maxdepth 1 -type d \( -name "tm-manager" -o -name "tm-worker" \) | head -n 1)
+EXTRACTED_DIR=$(find "$TEMP_DIR" -maxdepth 1 -type d \( -name "tm-dispatcher" -o -name "tm-worker" \) | head -n 1)
 
 if [ -z "$EXTRACTED_DIR" ]; then
     print_error "Could not find extracted files"
@@ -362,7 +362,7 @@ echo ""
 
 if [[ "$COMPONENT" == "all" ]]; then
     # Build both components
-    for comp in manager worker; do
+    for comp in dispatcher worker; do
         build_component "$comp" || {
             echo "❌ Build failed for $comp"
             exit 1

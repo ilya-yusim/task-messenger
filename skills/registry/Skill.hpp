@@ -8,10 +8,13 @@
 #pragma once
 
 #include "skills/registry/ISkill.hpp"
+#include "skills/registry/SkillKey.hpp"
 #include "skills/registry/VerificationResult.hpp"
 
+#include <concepts>
 #include <optional>
 #include <span>
+#include <string_view>
 
 namespace TaskMessenger::Skills {
 
@@ -23,11 +26,16 @@ namespace TaskMessenger::Skills {
  * Derived class must provide:
  * - `struct RequestPtrs` - typed pointers into request buffer
  * - `struct ResponsePtrs` - typed pointers into response buffer
- * - `static constexpr uint32_t kSkillId` - unique skill identifier
+ * - `static constexpr std::string_view kSkillName` - namespaced skill name
+ * - `static constexpr std::string_view kSkillDescription` - human-readable description
+ * - `static constexpr uint32_t kSkillVersion` - schema version
  * - `static std::optional<RequestPtrs> scatter_request(std::span<const uint8_t>)`
  * - `static std::optional<ResponsePtrs> scatter_response(std::span<uint8_t>)`
  * - `static std::unique_ptr<PayloadBufferBase> create_response_for_request(std::span<const uint8_t>)`
  * - `bool compute(const RequestPtrs& req, ResponsePtrs& resp)`
+ *
+ * The base class provides kSkillId() which derives the numeric ID from kSkillName
+ * via SkillKey::from_name(). Derived classes should never declare a kSkillId member.
  *
  * Example:
  * @code
@@ -35,7 +43,9 @@ namespace TaskMessenger::Skills {
  * public:
  *     struct RequestPtrs { double* input; size_t size; };
  *     struct ResponsePtrs { double* output; };
- *     static constexpr uint32_t kSkillId = SkillIds::MySkill;
+ *     static constexpr std::string_view kSkillName = "mynamespace.MySkill";
+ *     static constexpr std::string_view kSkillDescription = "Does something useful";
+ *     static constexpr uint32_t kSkillVersion = 1;
  *
  *     static std::optional<RequestPtrs> scatter_request(std::span<const uint8_t> payload);
  *     static std::optional<ResponsePtrs> scatter_response(std::span<uint8_t> payload);
@@ -53,7 +63,7 @@ class Skill : public ISkill {
 public:
 
     // =========================================================================
-    // ISkillHandler implementation
+    // Task processing (ISkill)
     // =========================================================================
 
     /**
@@ -88,11 +98,55 @@ public:
     // =========================================================================
 
     /**
+     * @brief Derive the skill ID from Derived::kSkillName.
+     *
+     * Provides kSkillId as a static constexpr function rather than requiring
+     * derived classes to declare it. The name is the single source of truth.
+     */
+    static constexpr uint32_t kSkillId() {
+        static_assert(
+            requires { { Derived::kSkillName } -> std::convertible_to<std::string_view>; },
+            "Derived skill must provide: "
+            "static constexpr std::string_view kSkillName = \"namespace.SkillName\";"
+        );
+        return SkillKey::from_name(Derived::kSkillName);
+    }
+
+    /**
      * @brief Get the skill ID for this skill.
-     * @return The skill ID from Derived::kSkillId.
+     * @return The skill ID derived from Derived::kSkillName via SkillKey::from_name().
      */
     [[nodiscard]] uint32_t skill_id() const noexcept final override {
-        return Derived::kSkillId;
+        return kSkillId();
+    }
+
+    // =========================================================================
+    // ISkill metadata implementation
+    // =========================================================================
+
+    /** @brief Returns Derived::kSkillName. */
+    [[nodiscard]] std::string_view skill_name() const noexcept final override {
+        return Derived::kSkillName;
+    }
+
+    /** @brief Returns Derived::kSkillDescription. */
+    [[nodiscard]] std::string_view skill_description() const noexcept final override {
+        static_assert(
+            requires { { Derived::kSkillDescription } -> std::convertible_to<std::string_view>; },
+            "Derived skill must provide: "
+            "static constexpr std::string_view kSkillDescription = \"...\";" 
+        );
+        return Derived::kSkillDescription;
+    }
+
+    /** @brief Returns Derived::kSkillVersion. */
+    [[nodiscard]] uint32_t skill_version() const noexcept final override {
+        static_assert(
+            requires { { Derived::kSkillVersion } -> std::convertible_to<uint32_t>; },
+            "Derived skill must provide: "
+            "static constexpr uint32_t kSkillVersion = 1;"
+        );
+        return Derived::kSkillVersion;
     }
 
     /**

@@ -6,7 +6,7 @@
 
 - `IWorkerService`: lightweight interface exposing lifecycle hooks (`Start`, `RequestStop`) and metrics accessors (task counts, byte totals).
 - `WorkerUI`: FTXUI main loop that consumes `IWorkerService` snapshots and renders gauges, logs, and formatted byte totals.
-- `WorkerUIDemo`: standalone executable (meson target `worker-ui-demo`) that exercises the UI without a manager connection.
+- `WorkerUIDemo`: standalone executable (meson target `worker-ui-demo`) that exercises the UI without a dispatcher connection.
 
 ## Data Flow
 

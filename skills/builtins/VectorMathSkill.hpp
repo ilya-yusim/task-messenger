@@ -10,7 +10,6 @@
 #include "skills/registry/CompareUtils.hpp"
 #include "skills/registry/Skill.hpp"
 #include "skills/registry/PayloadBuffer.hpp"
-#include "skills/registry/SkillIds.hpp"
 #include "VectorMathSkill_generated.h"
 
 #include <array>
@@ -67,8 +66,10 @@ public:
     using RequestPtrs = VectorMathRequestPtrs;
     using ResponsePtrs = VectorMathResponsePtrs;
     
-    /// Skill identifier
-    static constexpr uint32_t kSkillId = SkillIds::VectorMath;
+    /// Namespaced skill name (single source of truth for identity)
+    static constexpr std::string_view kSkillName = "builtin.VectorMath";
+    static constexpr std::string_view kSkillDescription = "Performs element-wise vector math operations";
+    static constexpr uint32_t kSkillVersion = 1;
 
     // =========================================================================
     // Scatter methods (required by Skill base class)
@@ -233,7 +234,7 @@ public:
     }
 
     // =========================================================================
-    // Factory methods (used by manager for creating payloads)
+    // Factory methods (used by dispatcher for creating payloads)
     // =========================================================================
 
     /**
@@ -273,7 +274,7 @@ public:
             .operation = final_ptr_op
         };
 
-        return VectorMathPayload(std::move(detached), ptrs, kSkillId);
+        return VectorMathPayload(std::move(detached), ptrs, kSkillId());
     }
 
     /**
@@ -297,7 +298,7 @@ public:
         auto request = CreateVectorMathRequest(builder, vec_a, vec_b, vec_op);
         builder.Finish(request);
 
-        return SimplePayload(builder.Release(), SimpleBufferPtrs{}, kSkillId);
+        return SimplePayload(builder.Release(), SimpleBufferPtrs{}, kSkillId());
     }
 
     /**
@@ -324,7 +325,7 @@ public:
             .result = std::span<double>(final_result_ptr, vector_size)
         };
 
-        return VectorMathResponseBuffer(std::move(detached), ptrs, kSkillId);
+        return VectorMathResponseBuffer(std::move(detached), ptrs, kSkillId());
     }
 
     /**

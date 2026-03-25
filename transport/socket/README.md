@@ -143,7 +143,7 @@ See `zerotier/README.md` for detailed design, configuration, and examples.
 This directory is included in the Doxygen target. Many headers use `\ingroup socket_backend` for grouping. Regenerate docs with:
 
 ```powershell
-meson compile -C builddir-manager docs
+meson compile -C builddir docs
 ```
 
 ## Extending the Socket Layer
