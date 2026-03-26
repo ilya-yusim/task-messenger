@@ -92,6 +92,30 @@ flatbuffers_dep = flatbuffers_sp.get_variable('flatbuffers_dep')
 flatc_prog = flatbuffers_sp.get_variable('flatc_prog', find_program('flatc', required: true))
 
 # =============================================================================
+# BLAS/LAPACK (for math skills) — via openblas-wrapper subproject
+# =============================================================================
+
+enable_blas_skills = get_option('enable_blas_skills')
+if enable_blas_skills
+  blas_dep = dependency('openblas-wrapper',
+    fallback: ['openblas-wrapper', 'openblas_dep'],
+    required: false)
+  if not blas_dep.found()
+    warning('BLAS dependency not found — disabling BLAS skills')
+    enable_blas_skills = false
+  endif
+else
+  blas_dep = dependency('', required: false)
+endif
+
+# Expose OpenBLAS DLL path for development-build copy targets
+if enable_blas_skills and host_machine.system() == 'windows'
+  openblas_dll_file = join_paths(
+    meson.global_source_root(), 'subprojects', 'openblas-wrapper',
+    'dist', 'win-x64', 'bin', 'libopenblas.dll')
+endif
+
+# =============================================================================
 # Shared Skills Library
 # =============================================================================
 

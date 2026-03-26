@@ -78,3 +78,14 @@ skills_builtin_sources = files(
 )
 
 skills_builtin_inc = include_directories('.')
+
+# =============================================================================
+# BLAS Skills (conditional on enable_blas_skills option)
+# =============================================================================
+
+if enable_blas_skills
+  subdir('blas')
+  skills_builtin_schema_gen += skills_blas_schema_gen
+  skills_builtin_sources += skills_blas_sources
+  skills_builtin_inc = [skills_builtin_inc, skills_blas_inc]
+endif
