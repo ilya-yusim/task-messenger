@@ -33,7 +33,7 @@ if host_machine.system() == 'windows'
     build_by_default: true,
     install: false,
   )
-  if enable_blas_skills
+  if enable_blas_skills and openblas_dll_file != ''
     custom_target('copy-openblas-dll-gen-auto-refill',
       output: 'openblas-gen-auto-refill.stamp',
       command: ['powershell', '-Command',

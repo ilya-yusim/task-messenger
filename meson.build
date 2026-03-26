@@ -105,14 +105,21 @@ if enable_blas_skills
     enable_blas_skills = false
   endif
 else
-  blas_dep = dependency('', required: false)
+  blas_dep = declare_dependency()
 endif
 
-# Expose OpenBLAS DLL path for development-build copy targets
+# Expose OpenBLAS DLL path for development-build copy targets.
+# Only set when the downloaded distribution is actually present; empty otherwise
+# (e.g. blas_use_system=true or BLAS skills disabled).
+fs = import('fs')
+openblas_dll_file = ''
 if enable_blas_skills and host_machine.system() == 'windows'
-  openblas_dll_file = join_paths(
+  _dll_candidate = join_paths(
     meson.global_source_root(), 'subprojects', 'openblas-wrapper',
     'dist', 'win-x64', 'bin', 'libopenblas.dll')
+  if fs.exists(_dll_candidate)
+    openblas_dll_file = _dll_candidate
+  endif
 endif
 
 # =============================================================================
