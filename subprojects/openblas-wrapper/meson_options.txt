@@ -1,0 +1,2 @@
+option('blas_use_system', type: 'boolean', value: false,
+       description: 'Use system-installed OpenBLAS instead of downloading prebuilt binaries')

@@ -113,6 +113,8 @@
     "python-envs.defaultEnvManager": "ms-python.python:system",
     "python-envs.pythonProjects": [],
     "cSpell.words": [
+        "cblas",
+        "Dgemm",
         "nlohmann"
     ],
     "C_Cpp.default.compileCommands": "c:\\Users\\iyusi\\projects\\task-messenger\\builddir/compile_commands.json",

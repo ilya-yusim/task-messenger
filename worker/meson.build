@@ -67,6 +67,14 @@ if host_machine.system() == 'windows'
     build_by_default: true,
     install: false,
   )
+  if enable_blas_skills and openblas_dll_file != ''
+    custom_target('copy-openblas-dll-worker',
+      output: 'libopenblas.dll',
+      command: ['powershell', '-Command', 'Copy-Item', '-Path', openblas_dll_file, '-Destination', '@OUTPUT@', '-Force'],
+      build_by_default: true,
+      install: false,
+    )
+  endif
 elif host_machine.system() == 'linux'
   # Linux: Copy libzt.so
   custom_target('copy-zt-so-worker',

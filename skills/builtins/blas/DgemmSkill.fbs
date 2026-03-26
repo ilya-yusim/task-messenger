@@ -1,0 +1,22 @@
+// BLAS Dgemm: General matrix-matrix multiply
+// Computes: C = alpha * A * B + beta * C
+// Location: skills/builtins/blas/DgemmSkill.fbs
+
+namespace TaskMessenger.Skills;
+
+table DgemmRequest {
+  a:      [double];   // Matrix A row-major, length = a_rows * a_cols
+  a_rows: [int32];    // Scalar-as-vector (single element)
+  a_cols: [int32];    // Scalar-as-vector
+  b:      [double];   // Matrix B row-major, length = b_rows * b_cols
+  b_rows: [int32];    // Scalar-as-vector
+  b_cols: [int32];    // Scalar-as-vector
+  alpha:  [double];   // Scalar-as-vector
+  beta:   [double];   // Scalar-as-vector
+}
+
+table DgemmResponse {
+  c:      [double];   // Result matrix C row-major, length = c_rows * c_cols
+  c_rows: [int32];    // Scalar-as-vector
+  c_cols: [int32];    // Scalar-as-vector
+}

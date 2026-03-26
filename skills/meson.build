@@ -25,6 +25,12 @@ subdir('registry')
 # Skills Static Library
 # =============================================================================
 
+# Collect optional dependencies for skills library
+skills_optional_deps = []
+if enable_blas_skills
+  skills_optional_deps += [blas_dep]
+endif
+
 skills_lib = static_library(
   'skills',
   sources: [
@@ -34,6 +40,7 @@ skills_lib = static_library(
   dependencies: [
     skills_schema_dep,
     shared_dep,  # For logger.hpp
+    skills_optional_deps,
   ],
   include_directories: [
     include_directories('.'),

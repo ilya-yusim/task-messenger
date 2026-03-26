@@ -1,0 +1,10 @@
+{
+  "0.3.28": {
+    "windows-x64": {
+      "url": "https://github.com/OpenMathLib/OpenBLAS/releases/download/v0.3.28/OpenBLAS-0.3.28-x64.zip",
+      "sha256": "4cbd0e5daa3fb083b18f5e5fa6eefe79e2f2c51a6d539f98a3c6309a21160042",
+      "archive_name": "OpenBLAS-0.3.28-x64.zip",
+      "strip_prefix": ""
+    }
+  }
+}
