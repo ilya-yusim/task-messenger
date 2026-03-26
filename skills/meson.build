@@ -6,7 +6,6 @@
 #
 # Components:
 # - builtins/  : Built-in skill implementations with FlatBuffers schemas
-# - schemas/   : Schema dependency aggregation
 # - registry/  : Skill metadata, registration, and interface infrastructure
 #
 # Dependencies: flatbuffers_dep, flatc_prog (from root meson.build)
@@ -17,8 +16,13 @@
 
 # Process builtins first - generates schema headers
 subdir('builtins')
-# Process schemas - aggregates schema dependencies
-subdir('schemas')
+
+# Aggregate schema headers from builtins with FlatBuffers runtime
+skills_schema_dep = declare_dependency(
+  sources: skills_builtin_schema_gen,
+  dependencies: [flatbuffers_dep],
+)
+
 subdir('registry')
 
 # =============================================================================
