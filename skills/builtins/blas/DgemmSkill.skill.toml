@@ -1,0 +1,47 @@
+# DgemmSkill - General matrix-matrix multiply
+# Computes: C = alpha * A * B + beta * C
+
+[skill]
+name = "builtin.blas.Dgemm"
+class_name = "DgemmSkill"
+description = "General matrix-matrix multiply: C = alpha*A*B + beta*C"
+version = 1
+
+# ── Request Fields ──
+
+[request]
+fields = [
+  { name = "a",      type = "[double]", role = "matrix", ptr_name = "a", rows_field = "a_rows", cols_field = "a_cols" },
+  { name = "a_rows", type = "[int32]",  role = "dim" },
+  { name = "a_cols", type = "[int32]",  role = "dim" },
+  { name = "b",      type = "[double]", role = "matrix", ptr_name = "b", rows_field = "b_rows", cols_field = "b_cols" },
+  { name = "b_rows", type = "[int32]",  role = "dim" },
+  { name = "b_cols", type = "[int32]",  role = "dim" },
+  { name = "alpha",  type = "[double]", role = "scalar", ptr_name = "alpha" },
+  { name = "beta",   type = "[double]", role = "scalar", ptr_name = "beta" },
+]
+
+# ── Response Fields ──
+
+[response]
+fields = [
+  { name = "c",      type = "[double]", role = "matrix", ptr_name = "c", rows_field = "c_rows", cols_field = "c_cols" },
+  { name = "c_rows", type = "[int32]",  role = "dim" },
+  { name = "c_cols", type = "[int32]",  role = "dim" },
+]
+
+# ── Request Shape: maps FBS dim fields to abstract dims ──
+
+[request_shape]
+dims = ["m", "k", "n"]
+constraints = ["a_cols == b_rows"]
+a_rows = "m"
+a_cols = "k"
+b_rows = "k"
+b_cols = "n"
+
+# ── Response Shape: maps response dims to request_shape dims ──
+
+[response_shape]
+c_rows = "m"
+c_cols = "n"
