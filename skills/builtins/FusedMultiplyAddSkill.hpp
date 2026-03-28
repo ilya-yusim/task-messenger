@@ -328,21 +328,6 @@ public:
         return FusedMultiplyAddResponseBuffer(std::move(detached), ptrs, kSkillId());
     }
 
-    /**
-     * @brief Extract read-only result span from response payload.
-     * @param payload Raw FlatBuffer bytes.
-     * @return Read-only result span on success, nullopt on failure.
-     */
-    [[nodiscard]] static std::optional<std::span<const double>> get_result(
-        std::span<const uint8_t> payload
-    ) noexcept {
-        auto response = flatbuffers::GetRoot<FusedMultiplyAddResponse>(payload.data());
-        if (!response || !response->result()) {
-            return std::nullopt;
-        }
-        return std::span<const double>(response->result()->data(), response->result()->size());
-    }
-
     // =========================================================================
     // Verification Support
     // =========================================================================

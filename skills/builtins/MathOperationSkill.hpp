@@ -336,19 +336,6 @@ public:
     }
 
     /**
-     * @brief Extract result from response buffer.
-     * @param payload Raw FlatBuffer bytes.
-     * @return Result value (0.0 if parse fails).
-     */
-    [[nodiscard]] static double get_result(std::span<const uint8_t> payload) noexcept {
-        auto response = flatbuffers::GetRoot<MathOperationResponse>(payload.data());
-        if (!response || !response->result() || response->result()->size() < 1) {
-            return 0.0;
-        }
-        return response->result()->Get(0);
-    }
-
-    /**
      * @brief Extract overflow flag from response buffer.
      * @param payload Raw FlatBuffer bytes.
      * @return Overflow flag value.

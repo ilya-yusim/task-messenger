@@ -677,50 +677,8 @@ def _dim_to_ptrs_expr(dim_field: str, shape_info: dict) -> str:
 
 
 # =============================================================================
-# HPP Generation — get_result / compare
+# HPP Generation — compare
 # =============================================================================
-
-def _emit_get_result(class_name: str, table_prefix: str, resp_fields: list[FieldDef]) -> str:
-    """Generate get_result() for read-only response access."""
-    # For matrix responses: return ConstMatrixSpan
-    # For vector responses: return span<const T>
-    matrix_fields = [f for f in resp_fields if f.role == "matrix"]
-    vector_fields = [f for f in resp_fields if f.role == "vector"]
-
-    if len(matrix_fields) == 1:
-        f = matrix_fields[0]
-        return textwrap.dedent(f"""\
-            [[nodiscard]] static std::optional<ConstMatrixSpan> get_result(
-                std::span<const uint8_t> payload
-            ) noexcept {{
-                auto* response = flatbuffers::GetRoot<{table_prefix}Response>(payload.data());
-                if (!response || !response->{f.name}() || !response->{f.rows_field}() || !response->{f.cols_field}()) {{
-                    return std::nullopt;
-                }}
-                if (response->{f.rows_field}()->size() != 1 || response->{f.cols_field}()->size() != 1) {{
-                    return std::nullopt;
-                }}
-                return ConstMatrixSpan{{
-                    .data = std::span<const double>(response->{f.name}()->data(), response->{f.name}()->size()),
-                    .rows = response->{f.rows_field}()->Get(0),
-                    .cols = response->{f.cols_field}()->Get(0)
-                }};
-            }}""")
-    elif len(vector_fields) == 1 and len(matrix_fields) == 0:
-        f = vector_fields[0]
-        return textwrap.dedent(f"""\
-            [[nodiscard]] static std::optional<std::span<const {f.cpp_type}>> get_result(
-                std::span<const uint8_t> payload
-            ) noexcept {{
-                auto* response = flatbuffers::GetRoot<{table_prefix}Response>(payload.data());
-                if (!response || !response->{f.name}()) {{
-                    return std::nullopt;
-                }}
-                return std::span<const {f.cpp_type}>(response->{f.name}()->data(), response->{f.name}()->size());
-            }}""")
-    else:
-        return "// get_result(): complex response — provide manually in _impl.hpp"
-
 
 def _emit_compare_response(resp_fields: list[FieldDef]) -> str:
     """Generate compare_response() method."""
@@ -923,10 +881,6 @@ def generate_hpp(data: dict, srcdir: str = ".") -> str:
     lines.append("    " + _emit_create_request(class_name, prefix, req_fields, shape_info).replace("\n", "\n    "))
     lines.append("")
     lines.append("    " + _emit_create_response(class_name, prefix, resp_fields, shape_info, resp_shape_map).replace("\n", "\n    "))
-    lines.append("")
-
-    # get_result
-    lines.append("    " + _emit_get_result(class_name, prefix, resp_fields).replace("\n", "\n    "))
     lines.append("")
 
     # Verification
