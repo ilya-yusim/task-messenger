@@ -45,6 +45,9 @@ class FieldDef:
     ptr_name: Optional[str] = None
     rows_field: Optional[str] = None
     cols_field: Optional[str] = None
+    size_dim: Optional[str] = None
+    rows_dim: Optional[str] = None
+    cols_dim: Optional[str] = None
 
     @property
     def fbs_inner(self) -> str:
@@ -138,6 +141,13 @@ class ScalarRole:
     @staticmethod
     def factory_reparse_ptrs(f: FieldDef, root_var: str) -> str:
         return f"        .{f.ptr_name} = const_cast<{f.cpp_type}*>({root_var}->{f.name}()->data())"
+
+    @staticmethod
+    def compare_code(f: FieldDef) -> str:
+        if f.fbs_inner in ("double", "float"):
+            return f'    compare_scalar(*computed.{f.ptr_name}, *worker.{f.ptr_name}, "{f.ptr_name}")'
+        else:
+            return f'    compare_int(*computed.{f.ptr_name}, *worker.{f.ptr_name}, "{f.ptr_name}")'
 
 
 class MatrixRole:
@@ -262,7 +272,7 @@ class BytesRole:
     @staticmethod
     def scatter_ptrs_init(f: FieldDef) -> list[str]:
         return [
-            f"        .{f.ptr_name} = vec_{f.name}->data(),",
+            f"        .{f.ptr_name} = vec_{f.name}->data()",
             f"        .{f.ptr_name}_length = vec_{f.name}->size()",
         ]
 
@@ -280,7 +290,7 @@ class BytesRole:
     @staticmethod
     def factory_reparse_ptrs(f: FieldDef, root_var: str, size_expr: str) -> list[str]:
         return [
-            f"        .{f.ptr_name} = const_cast<{f.cpp_type}*>({root_var}->{f.name}()->data()),",
+            f"        .{f.ptr_name} = const_cast<{f.cpp_type}*>({root_var}->{f.name}()->data())",
             f"        .{f.ptr_name}_length = {size_expr}",
         ]
 

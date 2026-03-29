@@ -1,0 +1,20 @@
+[skill]
+name = "builtin.FusedMultiplyAdd"
+class_name = "FusedMultiplyAddSkill"
+description = "Computes result[i] = a[i] + c * b[i] with scalar-as-vector pattern"
+version = 1
+
+[shape]
+dims = ["n"]
+
+[request]
+fields = [
+  { name = "operand_a", type = "[double]", role = "vector", ptr_name = "a", size_dim = "n" },
+  { name = "operand_b", type = "[double]", role = "vector", ptr_name = "b", size_dim = "n" },
+  { name = "scalar_c", type = "[double]", role = "scalar", ptr_name = "c" },
+]
+
+[response]
+fields = [
+  { name = "result", type = "[double]", role = "vector", ptr_name = "result", size_dim = "n" },
+]

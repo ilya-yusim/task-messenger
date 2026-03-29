@@ -47,13 +47,25 @@ def load_skill_def(path: str) -> dict:
 
 
 def parse_fields(fields_raw: list[dict]) -> list[FieldDef]:
-    """Parse field list from skill definition into FieldDef objects."""
+    """Parse field list from skill definition into FieldDef objects.
+
+    Matrix fields with rows_dim/cols_dim are auto-expanded: synthetic dim
+    role fields are injected, and rows_field/cols_field are set automatically.
+    """
     result = []
     for f in fields_raw:
         d = dict(f)
         if "type" in d:
             d["fbs_type"] = d.pop("type")
-        result.append(FieldDef(**d))
+        fd = FieldDef(**d)
+        if fd.role == "matrix" and fd.rows_dim and fd.cols_dim:
+            fd.rows_field = f"{fd.name}_rows"
+            fd.cols_field = f"{fd.name}_cols"
+            result.append(fd)
+            result.append(FieldDef(name=fd.rows_field, fbs_type="[int32]", role="dim", size_dim=fd.rows_dim))
+            result.append(FieldDef(name=fd.cols_field, fbs_type="[int32]", role="dim", size_dim=fd.cols_dim))
+        else:
+            result.append(fd)
     return result
 
 
@@ -88,8 +100,9 @@ def generate_fbs(data: dict) -> str:
         "",
         f"namespace {FBS_NAMESPACE};",
         "",
-        f"table {prefix}Request {{",
     ]
+
+    lines.append(f"table {prefix}Request {{")
 
     for f in req_fields:
         comment = ""
@@ -141,26 +154,22 @@ def _build_shape_info(data: dict) -> dict:
 
     Returns dict with:
       - dims: list of dimension names (e.g., ['m', 'k', 'n'])
-      - field_map: dict mapping FBS dim field name → shape dim name
+      - field_map: dict mapping FBS field name → shape dim name (from size_dim)
       - dim_type: C++ type for shape members (int32_t for matrices, size_t for vectors/bytes)
-      - constraints: list of constraint expression strings
+      - req_fields: parsed request FieldDef list (for ptrs access resolution)
     """
-    shape = data.get("request_shape", {})
+    shape = data.get("shape", {})
     dims = shape.get("dims", [])
-    constraints = shape.get("constraints", [])
-
-    # Field map: all keys except reserved words
-    reserved = {"dims", "constraints"}
-    field_map = {k: v for k, v in shape.items() if k not in reserved}
 
     req_fields = parse_fields(data["request"]["fields"])
-    field_by_name = {f.name: f for f in req_fields}
 
-    # Determine dim type from what fields reference
-    dim_type = "int32_t"  # default for matrix dims
-    for fbs_field in field_map:
-        ref = field_by_name.get(fbs_field)
-        if ref and ref.role == "vector":
+    # Build field_map from size_dim on all request fields (dim, vector, bytes)
+    field_map = {f.name: f.size_dim for f in req_fields if f.size_dim}
+
+    # Determine dim type: size_t if any vector/bytes dims, int32_t for matrices
+    dim_type = "int32_t"
+    for f in req_fields:
+        if f.role in ("vector", "bytes") and f.size_dim:
             dim_type = "size_t"
             break
 
@@ -168,7 +177,7 @@ def _build_shape_info(data: dict) -> dict:
         "dims": dims,
         "field_map": field_map,
         "dim_type": dim_type,
-        "constraints": constraints,
+        "req_fields": req_fields,
     }
 
 
@@ -188,8 +197,9 @@ def _shape_field_map(shape_info: dict) -> dict[str, str]:
 
 
 def _response_shape_map(data: dict) -> dict[str, str]:
-    """Build map from response dim field name → shape dimension name."""
-    return data.get("response_shape", {})
+    """Build map from response field name → shape dimension name (from size_dim)."""
+    resp_fields = parse_fields(data["response"]["fields"])
+    return {f.name: f.size_dim for f in resp_fields if f.size_dim}
 
 
 # =============================================================================
@@ -237,6 +247,19 @@ def _emit_scatter_request(class_name: str, table_prefix: str, fields: list[Field
 
     lines.append("")
 
+    # Auto-derive size consistency for vector/bytes fields sharing same size_dim
+    from collections import defaultdict
+    size_dim_groups = defaultdict(list)
+    for f in fields:
+        if f.role in ("vector", "bytes") and f.size_dim:
+            size_dim_groups[f.size_dim].append(f)
+    for dim, group in size_dim_groups.items():
+        if len(group) >= 2:
+            first = group[0]
+            for other in group[1:]:
+                lines.append(f"    if (vec_{first.name}->size() != vec_{other.name}->size()) return std::nullopt;")
+            lines.append("")
+
     # Scalar-as-vector size validation
     scalar_checks = []
     for f in fields:
@@ -259,14 +282,6 @@ def _emit_scatter_request(class_name: str, table_prefix: str, fields: list[Field
         if f.role == "matrix":
             handler = get_role_handler(f.role)
             lines.extend(handler.scatter_dim_extract(f))
-
-    # Check constraints
-    constraints = shape_info.get("constraints", [])
-    if constraints:
-        lines.append("")
-        for c in constraints:
-            lines.append(f"    // Dimension compatibility: {c}")
-            lines.append(f"    if (!({c})) return std::nullopt;")
 
     # Build MatrixSpan for matrix fields
     matrix_fields = [f for f in fields if f.role == "matrix"]
@@ -337,10 +352,13 @@ def _emit_scatter_response(class_name: str, table_prefix: str, fields: list[Fiel
             lines.extend(handler.scatter_code(f, "response"))
     lines.append("")
 
-    # Scalar-as-vector validation (dims)
+    # Scalar-as-vector validation (response scalars and matrix dims)
     scalar_checks = []
     for f in fields:
-        if f.role == "matrix":
+        if f.role == "scalar":
+            handler = get_role_handler(f.role)
+            scalar_checks.append(handler.scatter_validation(f))
+        elif f.role == "matrix":
             handler = get_role_handler(f.role)
             scalar_checks.extend(handler.scatter_dim_validation(f))
 
@@ -391,9 +409,10 @@ def _emit_create_request(class_name: str, table_prefix: str, req_fields: list[Fi
     """Generate create_request(const RequestShape&) factory."""
     dim_map = _shape_field_map(shape_info)  # fbs_field -> shape.dim_name
 
+    maybe_unused = "[[maybe_unused]] " if not shape_info["dims"] else ""
     lines = [
         f"[[nodiscard]] static {class_name}Payload create_request(",
-        "    const RequestShape& shape",
+        f"    {maybe_unused}const RequestShape& shape",
         ") {",
     ]
 
@@ -404,10 +423,10 @@ def _emit_create_request(class_name: str, table_prefix: str, req_fields: list[Fi
             rows_expr = f"shape.{dim_map[f.rows_field]}"
             cols_expr = f"shape.{dim_map[f.cols_field]}"
             estimate_parts.append(f"static_cast<size_t>({rows_expr}) * {cols_expr} * sizeof({f.cpp_type})")
-        elif f.role == "vector":
-            # Need to find the shape dim for this vector's size
-            # For now use a general approach - vectors reference shape dims
-            pass
+        elif f.role == "vector" and f.size_dim:
+            estimate_parts.append(f"shape.{f.size_dim} * sizeof({f.cpp_type})")
+        elif f.role == "bytes" and f.size_dim:
+            estimate_parts.append(f"shape.{f.size_dim} * sizeof({f.cpp_type})")
         elif f.role == "scalar":
             estimate_parts.append(f"sizeof({f.cpp_type})")
         elif f.role == "dim":
@@ -427,13 +446,12 @@ def _emit_create_request(class_name: str, table_prefix: str, req_fields: list[Fi
         elif f.role == "scalar":
             lines.extend(handler.factory_decl(f))
         elif f.role == "vector":
-            # Find size from shape
-            size_expr = "/* TODO: vector size from shape */"
+            size_expr = f"shape.{f.size_dim}" if f.size_dim else "0"
             lines.extend(handler.factory_decl(f, size_expr))
         elif f.role == "dim":
             pass  # Handled by matrix
         elif f.role == "bytes":
-            size_expr = "/* TODO: bytes size from shape */"
+            size_expr = f"shape.{f.size_dim}" if f.size_dim else "0"
             lines.extend(handler.factory_decl(f, size_expr))
 
     lines.append("")
@@ -478,15 +496,21 @@ def _emit_create_request(class_name: str, table_prefix: str, req_fields: list[Fi
         if f.role == "matrix":
             rows_expr = f"shape.{dim_map[f.rows_field]}"
             cols_expr = f"shape.{dim_map[f.cols_field]}"
-            ptrs_inits.append(handler.factory_reparse_ptrs(f, "req", rows_expr, cols_expr))
+            result = handler.factory_reparse_ptrs(f, "req", rows_expr, cols_expr)
         elif f.role == "scalar":
-            ptrs_inits.append(handler.factory_reparse_ptrs(f, "req"))
+            result = handler.factory_reparse_ptrs(f, "req")
         elif f.role == "vector":
-            size_expr = "/* TODO */"
-            ptrs_inits.append(handler.factory_reparse_ptrs(f, "req", size_expr))
+            size_expr = f"shape.{f.size_dim}" if f.size_dim else "0"
+            result = handler.factory_reparse_ptrs(f, "req", size_expr)
         elif f.role == "bytes":
-            size_expr = "/* TODO */"
-            ptrs_inits.append(handler.factory_reparse_ptrs(f, "req", size_expr))
+            size_expr = f"shape.{f.size_dim}" if f.size_dim else "0"
+            result = handler.factory_reparse_ptrs(f, "req", size_expr)
+        else:
+            continue
+        if isinstance(result, list):
+            ptrs_inits.extend(result)
+        else:
+            ptrs_inits.append(result)
 
     lines.append(",\n".join(ptrs_inits))
     lines.append("    };")
@@ -532,7 +556,15 @@ def _emit_create_response(class_name: str, table_prefix: str, resp_fields: list[
         elif f.role == "dim":
             estimate_parts.append("sizeof(int32_t)")
         elif f.role == "vector":
-            pass  # TODO: vector response sizing
+            dim = resp_shape_map.get(f.name)
+            if dim:
+                estimate_parts.append(f"{dim} * sizeof({f.cpp_type})")
+        elif f.role == "bytes":
+            dim = resp_shape_map.get(f.name)
+            if dim:
+                estimate_parts.append(f"{dim} * sizeof({f.cpp_type})")
+        elif f.role == "scalar":
+            estimate_parts.append(f"sizeof({f.cpp_type})")
     lines.append(f"    size_t est = {' + '.join(estimate_parts)};")
     lines.append("    flatbuffers::FlatBufferBuilder builder(est);")
     lines.append("")
@@ -549,7 +581,11 @@ def _emit_create_response(class_name: str, table_prefix: str, resp_fields: list[
         elif f.role == "scalar":
             lines.extend(handler.factory_decl(f))
         elif f.role == "vector":
-            lines.extend(handler.factory_decl(f, "/* TODO */"))
+            dim = resp_shape_map.get(f.name, "0")
+            lines.extend(handler.factory_decl(f, dim))
+        elif f.role == "bytes":
+            dim = resp_shape_map.get(f.name, "0")
+            lines.extend(handler.factory_decl(f, dim))
     lines.append("")
 
     # Set dimension values
@@ -560,12 +596,22 @@ def _emit_create_response(class_name: str, table_prefix: str, resp_fields: list[
             cols_dim = resp_shape_map.get(f.cols_field, f.cols_field)
             lines.extend(handler.factory_dim_assign(f, rows_dim, cols_dim))
 
-    # Zero-initialize data vectors (safe default)
+    # Zero-initialize data (safe default)
     for f in resp_fields:
         if f.role == "matrix":
             lines.append(f"    for (size_t i = 0; i < {f.name}_size; ++i) ptr_{f.name}[i] = 0.0;")
         elif f.role == "vector":
-            pass  # TODO
+            dim = resp_shape_map.get(f.name)
+            if dim:
+                zero = "0.0" if f.cpp_type in ("double", "float") else "0"
+                lines.append(f"    for (size_t i = 0; i < {dim}; ++i) ptr_{f.name}[i] = {zero};")
+        elif f.role == "bytes":
+            dim = resp_shape_map.get(f.name)
+            if dim:
+                lines.append(f"    for (size_t i = 0; i < {dim}; ++i) ptr_{f.name}[i] = 0;")
+        elif f.role == "scalar":
+            zero = "0.0" if f.cpp_type in ("double", "float") else "0"
+            lines.append(f"    *ptr_{f.name} = {zero};")
     lines.append("")
 
     # Build FlatBuffer
@@ -588,11 +634,21 @@ def _emit_create_response(class_name: str, table_prefix: str, resp_fields: list[
         if f.role == "matrix":
             rows_dim = resp_shape_map.get(f.rows_field, f.rows_field)
             cols_dim = resp_shape_map.get(f.cols_field, f.cols_field)
-            ptrs_inits.append(handler.factory_reparse_ptrs(f, "resp", rows_dim, cols_dim))
+            result = handler.factory_reparse_ptrs(f, "resp", rows_dim, cols_dim)
         elif f.role == "scalar":
-            ptrs_inits.append(handler.factory_reparse_ptrs(f, "resp"))
+            result = handler.factory_reparse_ptrs(f, "resp")
         elif f.role == "vector":
-            ptrs_inits.append(handler.factory_reparse_ptrs(f, "resp", "/* TODO */"))
+            dim = resp_shape_map.get(f.name, "0")
+            result = handler.factory_reparse_ptrs(f, "resp", dim)
+        elif f.role == "bytes":
+            dim = resp_shape_map.get(f.name, "0")
+            result = handler.factory_reparse_ptrs(f, "resp", dim)
+        else:
+            continue
+        if isinstance(result, list):
+            ptrs_inits.extend(result)
+        else:
+            ptrs_inits.append(result)
     lines.append(",\n".join(ptrs_inits))
     lines.append("    };")
     lines.append("")
@@ -661,10 +717,17 @@ def _dim_to_ptrs_expr(dim_field: str, shape_info: dict) -> str:
     Convert a FBS dimension field name to a RequestPtrs access expression.
 
     e.g., 'a_rows' → 'a.rows', 'b_cols' → 'b.cols'
-    For vectors: the size of the span.
+    For vectors: ptr_name.size(), for bytes: ptr_name_length.
     """
-    # Check if this dim field is a matrix's rows/cols
-    # Convention: <matrix_ptr_name>_rows / <matrix_ptr_name>_cols
+    # Check if this is a vector/bytes request field
+    for f in shape_info.get("req_fields", []):
+        if f.name == dim_field:
+            if f.role == "vector":
+                return f"{f.ptr_name}.size()"
+            elif f.role == "bytes":
+                return f"{f.ptr_name}_length"
+
+    # Matrix convention: <matrix_ptr_name>_rows / <matrix_ptr_name>_cols
     if dim_field.endswith("_rows"):
         matrix_name = dim_field[:-5]  # strip '_rows'
         return f"{matrix_name}.rows"
@@ -672,7 +735,6 @@ def _dim_to_ptrs_expr(dim_field: str, shape_info: dict) -> str:
         matrix_name = dim_field[:-5]  # strip '_cols'
         return f"{matrix_name}.cols"
     else:
-        # Fallback: for vector sizes, use ptr_name.size()
         return f"{dim_field}"
 
 
@@ -712,6 +774,89 @@ def _emit_compare_response(resp_fields: list[FieldDef]) -> str:
 
     lines.append("}")
     return "\n".join(lines)
+
+
+# =============================================================================
+# HPP Generation — developer reference comment
+# =============================================================================
+
+def _emit_developer_comment(req_fields: list[FieldDef], resp_fields: list[FieldDef],
+                             shape_info: dict) -> str:
+    """Generate a structured comment showing Ptrs layouts and shape dims."""
+    lines = ["// =========================================================================",
+             "// Developer-implemented (defined in _impl.hpp)",
+             "//"]
+
+    def _field_desc(f: FieldDef) -> str:
+        if f.role == "matrix":
+            return f"//   MatrixSpan {f.ptr_name}   — {f.rows_dim} × {f.cols_dim}"
+        elif f.role == "vector":
+            dim = f" — size: {f.size_dim}" if f.size_dim else ""
+            return f"//   std::span<{f.cpp_type}> {f.ptr_name}{dim}"
+        elif f.role == "bytes":
+            dim = f" — size: {f.size_dim}" if f.size_dim else ""
+            return f"//   {f.cpp_type}* {f.ptr_name} + size_t {f.ptr_name}_length{dim}"
+        elif f.role == "scalar":
+            return f"//   {f.cpp_type}* {f.ptr_name}"
+        return None
+
+    lines.append("// RequestPtrs:")
+    for f in req_fields:
+        desc = _field_desc(f)
+        if desc:
+            lines.append(desc)
+
+    lines.append("//")
+    lines.append("// ResponsePtrs:")
+    for f in resp_fields:
+        desc = _field_desc(f)
+        if desc:
+            lines.append(desc)
+
+    if shape_info["dims"]:
+        lines.append("//")
+        dims_str = ", ".join(shape_info["dims"])
+        lines.append(f"// Shape dims: {dims_str}")
+
+    lines.append("// =========================================================================")
+    return "\n".join(lines)
+
+
+# =============================================================================
+# HPP Generation — extract_shape
+# =============================================================================
+
+def _emit_extract_shape(shape_info: dict) -> str:
+    """Generate extract_shape(req) → RequestShape from request ptrs."""
+    dims = shape_info["dims"]
+    dim_map = shape_info["field_map"]
+
+    # Reverse map: shape dim → first FBS field that maps to it
+    dim_to_first_field = {}
+    for fbs_field, shape_dim in dim_map.items():
+        if shape_dim not in dim_to_first_field:
+            dim_to_first_field[shape_dim] = fbs_field
+
+    if not dims:
+        return textwrap.dedent("""\
+            static RequestShape extract_shape([[maybe_unused]] const RequestPtrs& req) {
+                return RequestShape{};
+            }""")
+
+    inits = []
+    for dim_name in dims:
+        from_field = dim_to_first_field[dim_name]
+        expr = _dim_to_ptrs_expr(from_field, shape_info)
+        inits.append(f"        .{dim_name} = req.{expr}")
+
+    init_str = ",\n".join(inits)
+    return (
+        "static RequestShape extract_shape(const RequestPtrs& req) {\n"
+        "    return RequestShape{\n"
+        f"{init_str}\n"
+        "    };\n"
+        "}"
+    )
 
 
 # =============================================================================
@@ -846,15 +991,17 @@ def generate_hpp(data: dict, srcdir: str = ".") -> str:
     lines.append("    " + _emit_scatter_response(class_name, prefix, resp_fields).replace("\n", "\n    "))
     lines.append("")
 
-    # Developer-implemented method declarations
-    lines.append("    // =========================================================================")
-    lines.append("    // Developer-implemented (defined in _impl.hpp)")
-    lines.append("    // =========================================================================")
+    # Developer-implemented method declarations (with reference comment)
+    lines.append("    " + _emit_developer_comment(req_fields, resp_fields, shape_info).replace("\n", "\n    "))
     lines.append("")
     lines.append("    bool compute(const RequestPtrs& req, ResponsePtrs& resp);")
     lines.append("    static void fill_test_request(size_t case_index,")
     lines.append("        std::function<RequestPtrs&(const RequestShape&)> allocate_request);")
     lines.append("    static size_t get_test_case_count() noexcept;")
+    lines.append("")
+
+    # extract_shape helper
+    lines.append("    " + _emit_extract_shape(shape_info).replace("\n", "\n    "))
     lines.append("")
 
     # Test support — generated inline, bridges callback to create_request
