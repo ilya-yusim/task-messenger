@@ -1,4 +1,21 @@
 {
+    "search.exclude": {
+        "**/subprojects/CLI11**": true,
+        "**/subprojects/flatbuffers-24.3.25**": true,
+        "**/subprojects/ftxui**": true,
+        "**/subprojects/nlohmann_json**": true,
+        "**/subprojects/libzt-wrapper/libzt**": true,
+        "**/builddir/**": true
+    },
+    "files.watcherExclude": {
+        "**/subprojects/CLI11**": true,
+        "**/subprojects/flatbuffers-24.3.25**": true,
+        "**/subprojects/ftxui**": true,
+        "**/subprojects/nlohmann_json**": true,
+        "**/subprojects/libzt-wrapper/libzt**": true,
+        "**/builddir/**": true
+    },
+
     "C_Cpp.default.configurationProvider": "mesonbuild.mesonbuild",
     "mesonbuild.configureOnOpen": false,
     "files.associations": {
