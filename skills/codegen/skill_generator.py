@@ -337,8 +337,11 @@ def _emit_scatter_response(class_name: str, table_prefix: str, fields: list[Fiel
         else:
             null_checks.append(checks)
 
-    conditions = " || !".join(null_checks)
-    lines.append(f"    if (!response || !{conditions}) {{")
+    if null_checks:
+        conditions = " || !".join(null_checks)
+        lines.append(f"    if (!response || !{conditions}) {{")
+    else:
+        lines.append("    if (!response) {")
     lines.append("        return std::nullopt;")
     lines.append("    }")
     lines.append("")

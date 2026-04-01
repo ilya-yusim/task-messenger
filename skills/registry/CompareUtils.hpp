@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <span>
 #include <string>
+#include <type_traits>
 
 namespace TaskMessenger::Skills {
 
@@ -117,6 +118,55 @@ struct CompareConfig {
     const char* field_name = "result",
     const CompareConfig& cfg = CompareConfig::defaults()
 );
+
+/**
+ * @brief Compare two typed vectors element-wise, returning VerificationResult.
+ *
+ * For floating-point element types the comparison is tolerance-based (via
+ * `doubles_equal()`); for integer element types it is exact.  The existing
+ * `compare_vector(span<const double>, ...)` non-template overload is preferred
+ * by overload resolution for `double` vectors, so this template is only
+ * instantiated for other types (e.g., `float`, `int32_t`, `uint8_t`).
+ *
+ * @tparam T  Element type (float, integer types, etc.)
+ * @param expected The expected result vector.
+ * @param actual The actual result vector.
+ * @param field_name Name of the field for error messages.
+ * @param cfg Comparison configuration (used for floating-point tolerance).
+ * @return VerificationResult with pass/fail and diagnostic message.
+ */
+template<typename T>
+[[nodiscard]] VerificationResult compare_vector(
+    std::span<const T> expected,
+    std::span<const T> actual,
+    const char* field_name = "result",
+    const CompareConfig& cfg = CompareConfig::defaults()
+) {
+    if (expected.size() != actual.size()) {
+        return VerificationResult::failure(
+            std::string(field_name) + " size mismatch: expected=" +
+            std::to_string(expected.size()) + " got=" + std::to_string(actual.size()));
+    }
+    for (size_t i = 0; i < expected.size(); ++i) {
+        if constexpr (std::is_floating_point_v<T>) {
+            if (!doubles_equal(static_cast<double>(expected[i]),
+                               static_cast<double>(actual[i]), cfg)) {
+                return VerificationResult::failure(
+                    std::string(field_name) + " mismatch at index " + std::to_string(i) +
+                    ": expected=" + std::to_string(expected[i]) +
+                    " got=" + std::to_string(actual[i]));
+            }
+        } else {
+            if (expected[i] != actual[i]) {
+                return VerificationResult::failure(
+                    std::string(field_name) + " mismatch at index " + std::to_string(i) +
+                    ": expected=" + std::to_string(expected[i]) +
+                    " got=" + std::to_string(actual[i]));
+            }
+        }
+    }
+    return VerificationResult::success();
+}
 
 /**
  * @brief Compare two integer values, returning VerificationResult.
