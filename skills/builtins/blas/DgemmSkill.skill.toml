@@ -1,0 +1,24 @@
+# DgemmSkill - General matrix-matrix multiply
+# Computes: C = alpha * A * B + beta * C
+
+[skill]
+name = "builtin.blas.Dgemm"
+class_name = "DgemmSkill"
+description = "General matrix-matrix multiply: C = alpha*A*B + beta*C"
+version = 1
+
+[shape]
+dims = ["m", "k", "n"]
+
+[request]
+fields = [
+  { name = "a",     type = "[double]", role = "matrix", ptr_name = "a", rows_dim = "m", cols_dim = "k" },
+  { name = "b",     type = "[double]", role = "matrix", ptr_name = "b", rows_dim = "k", cols_dim = "n" },
+  { name = "alpha", type = "[double]", role = "scalar", ptr_name = "alpha" },
+  { name = "beta",  type = "[double]", role = "scalar", ptr_name = "beta" },
+]
+
+[response]
+fields = [
+  { name = "c", type = "[double]", role = "matrix", ptr_name = "c", rows_dim = "m", cols_dim = "n" },
+]

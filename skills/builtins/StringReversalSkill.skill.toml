@@ -1,0 +1,19 @@
+[skill]
+name = "builtin.StringReversal"
+class_name = "StringReversalSkill"
+description = "Reverses the input string"
+version = 1
+
+[shape]
+dims = ["len"]
+
+[request]
+fields = [
+  { name = "input", type = "[int8]", role = "bytes", ptr_name = "input", size_dim = "len" },
+]
+
+[response]
+fields = [
+  { name = "output", type = "[int8]", role = "bytes", ptr_name = "output", size_dim = "len" },
+  { name = "original_length", type = "[uint32]", role = "scalar", ptr_name = "original_length" },
+]

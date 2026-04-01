@@ -113,9 +113,21 @@
     "python-envs.defaultEnvManager": "ms-python.python:system",
     "python-envs.pythonProjects": [],
     "cSpell.words": [
+        "blas",
         "cblas",
         "Dgemm",
-        "nlohmann"
+        "flatbuffers",
+        "flatc",
+        "libzt",
+        "makeself",
+        "nlohmann",
+        "nodiscard",
+        "nullopt",
+        "packagecache",
+        "ptrs",
+        "pycache",
+        "reparsed",
+        "wraplock"
     ],
     "C_Cpp.default.compileCommands": "c:\\Users\\iyusi\\projects\\task-messenger\\builddir/compile_commands.json",
     "chat.tools.terminal.autoApprove": {

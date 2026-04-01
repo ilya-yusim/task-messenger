@@ -1,0 +1,21 @@
+[skill]
+name = "builtin.MathOperation"
+class_name = "MathOperationSkill"
+description = "Performs scalar math operations (add, subtract, multiply, divide)"
+version = 1
+
+[shape]
+dims = []
+
+[request]
+fields = [
+  { name = "operand_a", type = "[double]", role = "scalar", ptr_name = "a" },
+  { name = "operand_b", type = "[double]", role = "scalar", ptr_name = "b" },
+  { name = "operation", type = "[int8]", role = "scalar", ptr_name = "operation" },
+]
+
+[response]
+fields = [
+  { name = "result", type = "[double]", role = "scalar", ptr_name = "result" },
+  { name = "overflow", type = "[uint8]", role = "scalar", ptr_name = "overflow" },
+]

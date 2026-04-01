@@ -1,0 +1,20 @@
+[skill]
+name = "builtin.VectorMath"
+class_name = "VectorMathSkill"
+description = "Performs element-wise vector math operations"
+version = 1
+
+[shape]
+dims = ["n"]
+
+[request]
+fields = [
+  { name = "operand_a", type = "[double]", role = "vector", ptr_name = "a", size_dim = "n" },
+  { name = "operand_b", type = "[double]", role = "vector", ptr_name = "b", size_dim = "n" },
+  { name = "operation", type = "[int8]", role = "scalar", ptr_name = "operation" },
+]
+
+[response]
+fields = [
+  { name = "result", type = "[double]", role = "vector", ptr_name = "result", size_dim = "n" },
+]
