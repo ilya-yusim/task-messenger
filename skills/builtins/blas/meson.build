@@ -6,7 +6,7 @@
 # Each skill maps one BLAS/LAPACK routine to the Skill<Derived> pattern.
 #
 # Adding a new BLAS skill (generated):
-# 1. Create SkillName.skill.yaml with schema + metadata
+# 1. Create SkillName.skill.toml with schema + metadata
 # 2. Create SkillName_impl.hpp with compute() + test data
 # 3. Add a skill_gen + schema_gen target pair below
 

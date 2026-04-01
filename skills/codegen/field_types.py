@@ -155,7 +155,7 @@ class MatrixRole:
 
     @staticmethod
     def ptrs_member(f: FieldDef) -> str:
-        return f"    MatrixSpan {f.ptr_name};"
+        return f"    MatrixSpan<{f.cpp_type}> {f.ptr_name};"
 
     @staticmethod
     def scatter_code(f: FieldDef, msg_var: str) -> list[str]:
@@ -184,8 +184,8 @@ class MatrixRole:
     @staticmethod
     def scatter_matrix_span(f: FieldDef) -> list[str]:
         return [
-            f"    MatrixSpan mat_{f.ptr_name}{{",
-            f"        .data = std::span<double>(vec_{f.name}->data(), vec_{f.name}->size()),",
+            f"    MatrixSpan<{f.cpp_type}> mat_{f.ptr_name}{{",
+            f"        .data = std::span<{f.cpp_type}>(vec_{f.name}->data(), vec_{f.name}->size()),",
             f"        .rows = {f.rows_field},",
             f"        .cols = {f.cols_field}",
             f"    }};",
@@ -231,9 +231,9 @@ class MatrixRole:
     def factory_reparse_ptrs(f: FieldDef, root_var: str, rows_expr: str, cols_expr: str) -> str:
         size_expr = f"static_cast<size_t>({rows_expr}) * {cols_expr}"
         return (
-            f"        .{f.ptr_name} = MatrixSpan{{\n"
-            f"            .data = std::span<double>(\n"
-            f"                const_cast<double*>({root_var}->{f.name}()->data()), {size_expr}),\n"
+            f"        .{f.ptr_name} = MatrixSpan<{f.cpp_type}>{{\n"
+            f"            .data = std::span<{f.cpp_type}>(\n"
+            f"                const_cast<{f.cpp_type}*>({root_var}->{f.name}()->data()), {size_expr}),\n"
             f"            .rows = {rows_expr},\n"
             f"            .cols = {cols_expr}\n"
             f"        }}"

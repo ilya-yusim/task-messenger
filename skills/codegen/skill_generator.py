@@ -789,7 +789,7 @@ def _emit_developer_comment(req_fields: list[FieldDef], resp_fields: list[FieldD
 
     def _field_desc(f: FieldDef) -> str:
         if f.role == "matrix":
-            return f"//   MatrixSpan {f.ptr_name}   — {f.rows_dim} × {f.cols_dim}"
+            return f"//   MatrixSpan<{f.cpp_type}> {f.ptr_name}   — {f.rows_dim} × {f.cols_dim}"
         elif f.role == "vector":
             dim = f" — size: {f.size_dim}" if f.size_dim else ""
             return f"//   std::span<{f.cpp_type}> {f.ptr_name}{dim}"
