@@ -2,6 +2,27 @@
 #include "SessionManager.hpp"
 #include <algorithm>
 
+namespace {
+session::DispatcherMonitoringState map_dispatcher_state(const session::Session& s, const session::SessionStats& stats) {
+    switch (s.state()) {
+        case session::SessionState::INITIALIZING:
+            return session::DispatcherMonitoringState::Connecting;
+        case session::SessionState::ACTIVE: {
+            const auto completed_or_failed = stats.tasks_completed + stats.tasks_failed;
+            return (stats.tasks_sent > completed_or_failed)
+                       ? session::DispatcherMonitoringState::AssignedActive
+                       : session::DispatcherMonitoringState::AssignedStalled;
+        }
+        case session::SessionState::COMPLETING:
+        case session::SessionState::TERMINATED:
+        case session::SessionState::ERROR_STATE:
+            return session::DispatcherMonitoringState::Unassigned;
+        default:
+            return session::DispatcherMonitoringState::Unknown;
+    }
+}
+} // namespace
+
 /**
  * \file dispatcher/session/SessionManager.cpp
  * \brief Implements session orchestration and task pool fan-out.
@@ -242,6 +263,38 @@ void SessionManager::print_comprehensive_statistics() const {
     logger_->info("Task Pool: " + std::to_string(available_tasks) + " available, " + 
                   std::to_string(waiting_sessions) + " sessions waiting");
     logger_->info("========================================");
+}
+
+std::vector<WorkerMonitoringSnapshot> SessionManager::get_worker_monitoring_snapshot(
+    std::chrono::milliseconds freshness_window) const {
+    std::vector<WorkerMonitoringSnapshot> out;
+    const auto now = std::chrono::system_clock::now();
+
+    std::lock_guard<std::mutex> lock(sessions_mutex_);
+    out.reserve(active_sessions_.size());
+
+    for (const auto& [session_id, session] : active_sessions_) {
+        if (!session) {
+            continue;
+        }
+
+        WorkerMonitoringSnapshot row{};
+        row.worker_node_id = session->get_worker_node_id();
+        row.session_id = session_id;
+        row.remote_endpoint = session->get_client_endpoint();
+        row.stats = session->get_stats();
+        row.dispatcher_state = map_dispatcher_state(*session, row.stats);
+
+        const auto last_seen = session->get_last_seen_dispatcher();
+        row.last_seen_dispatcher_ts_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                         last_seen.time_since_epoch())
+                                         .count();
+        row.dispatcher_fresh = (now - last_seen) <= freshness_window;
+
+        out.push_back(std::move(row));
+    }
+
+    return out;
 }
 
 } // namespace session

@@ -1,9 +1,11 @@
 // Session.cpp - Session lifecycle and task handling implementation
 #include "Session.hpp"
 #include "message/ResponseContext.hpp"
+#include "message/WorkerGreeting.hpp"
 #include <cassert>
 #include <chrono>
 #include <cstring>
+#include <thread>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -36,6 +38,7 @@ Session::Session(std::shared_ptr<transport::CoroSocketAdapter> client_socket,
     stats_.tasks_sent = 0;
     stats_.tasks_completed = 0;
     stats_.tasks_failed = 0;
+    touch_last_seen_dispatcher();
 }
 
 void Session::run() {
@@ -234,6 +237,65 @@ void Session::initialize_session() {
     stats_.total_task_roundtrip_time = std::chrono::nanoseconds{0};
     stats_.last_task_roundtrip_time = std::chrono::nanoseconds{0};
     stats_.timed_tasks = 0;
+    touch_last_seen_dispatcher();
+
+    if (!client_socket_) {
+        return;
+    }
+
+    auto* sock = client_socket_->socket();
+    if (!sock) {
+        return;
+    }
+
+    WorkerGreeting greeting{};
+    size_t total_read = 0;
+    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+
+    while (std::chrono::steady_clock::now() < deadline && total_read < sizeof(greeting)) {
+        std::error_code ec;
+        size_t bytes_read = 0;
+        sock->try_read(
+            reinterpret_cast<char*>(&greeting) + total_read,
+            sizeof(greeting) - total_read,
+            bytes_read,
+            ec);
+
+        if (ec) {
+            throw std::runtime_error("Session greeting read failed: " + ec.message());
+        }
+
+        if (bytes_read > 0) {
+            total_read += bytes_read;
+            touch_last_seen_dispatcher();
+            if (total_read < sizeof(greeting)) {
+                deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+            }
+            continue;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+
+    if (total_read == 0) {
+        logger_->debug("Session " + std::to_string(session_id_) + ": worker greeting not present; continuing in compatibility mode");
+        return;
+    }
+
+    if (total_read != sizeof(greeting)) {
+        throw std::runtime_error("Session greeting incomplete");
+    }
+
+    if (greeting.magic != kWorkerGreetingMagic) {
+        throw std::runtime_error("Session greeting magic mismatch");
+    }
+
+    if (greeting.version != kWorkerGreetingVersion) {
+        throw std::runtime_error("Session greeting version mismatch");
+    }
+
+    worker_node_id_.store(greeting.node_id, std::memory_order_relaxed);
+    logger_->debug("Session " + std::to_string(session_id_) + ": captured worker_node_id=" + std::to_string(greeting.node_id));
 }
 
 void Session::finalize_session() {
@@ -261,18 +323,26 @@ void Session::finalize_session() {
 
 void Session::update_state(SessionState new_state) {
     state_.store(new_state);
+    touch_last_seen_dispatcher();
+}
+
+void Session::touch_last_seen_dispatcher() {
+    last_seen_dispatcher_.store(std::chrono::system_clock::now(), std::memory_order_relaxed);
 }
 
 void Session::record_task_sent() {
     stats_.tasks_sent++;
+    touch_last_seen_dispatcher();
 }
 
 void Session::record_task_completed() {
     stats_.tasks_completed++;
+    touch_last_seen_dispatcher();
 }
 
 void Session::record_task_failed() {
     stats_.tasks_failed++;
+    touch_last_seen_dispatcher();
 }
 
 } // namespace session

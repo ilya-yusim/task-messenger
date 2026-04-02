@@ -12,8 +12,27 @@
 #include <mutex>
 #include <atomic>
 #include <unordered_map>
+#include <chrono>
 
 namespace session {
+
+enum class DispatcherMonitoringState {
+    Connecting,
+    AssignedActive,
+    AssignedStalled,
+    Unassigned,
+    Unknown
+};
+
+struct WorkerMonitoringSnapshot {
+    uint64_t worker_node_id = 0;
+    uint32_t session_id = 0;
+    std::string remote_endpoint;
+    DispatcherMonitoringState dispatcher_state = DispatcherMonitoringState::Unknown;
+    SessionStats stats;
+    int64_t last_seen_dispatcher_ts_ms = 0;
+    bool dispatcher_fresh = false;
+};
 
 /**
  * \defgroup session_module Session Management Module
@@ -114,6 +133,12 @@ public:
     * \brief Print comprehensive statistics for all sessions and the task pool.
      */
     void print_comprehensive_statistics() const;
+
+    /**
+     * \brief Build per-worker monitoring snapshots for dashboard/proxy layers.
+     */
+    std::vector<WorkerMonitoringSnapshot> get_worker_monitoring_snapshot(
+        std::chrono::milliseconds freshness_window = std::chrono::seconds(15)) const;
 
 private:
     // Core manager data

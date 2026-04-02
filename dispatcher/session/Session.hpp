@@ -9,6 +9,8 @@
 #include <memory>
 #include <string>
 #include <atomic>
+#include <chrono>
+#include <cstdint>
 
 namespace session {
 
@@ -101,6 +103,23 @@ public:
     std::string get_client_endpoint() const;
 
     /**
+     * \brief Get worker node ID learned from greeting (0 if unavailable).
+     */
+    uint64_t get_worker_node_id() const { return worker_node_id_.load(std::memory_order_relaxed); }
+
+    /**
+     * \brief Get current raw session state enum.
+     */
+    SessionState state() const { return state_.load(std::memory_order_relaxed); }
+
+    /**
+     * \brief Last dispatcher-observed activity timestamp.
+     */
+    std::chrono::system_clock::time_point get_last_seen_dispatcher() const {
+        return last_seen_dispatcher_.load(std::memory_order_relaxed);
+    }
+
+    /**
      * \brief Check if the session is still active.
      */
     bool is_active() const;
@@ -126,6 +145,8 @@ private:
     std::atomic<SessionState> state_;
     SessionStats stats_;
     std::atomic<bool> termination_requested_;
+    std::atomic<uint64_t> worker_node_id_{0};
+    std::atomic<std::chrono::system_clock::time_point> last_seen_dispatcher_{};
     
     // Coroutine management (internal implementation detail)
     std::unique_ptr<Task<void>> session_coroutine_;
@@ -134,6 +155,7 @@ private:
     void initialize_session();
     void finalize_session();
     void update_state(SessionState new_state);
+    void touch_last_seen_dispatcher();
     void record_task_sent();
     void record_task_completed();
     void record_task_failed();

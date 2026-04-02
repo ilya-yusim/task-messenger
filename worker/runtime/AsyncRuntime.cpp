@@ -7,11 +7,56 @@
 #include "transport/coro/coroIoContext.hpp"
 #include "transport/coro/CoroTask.hpp"
 #include "transport/coro/CoroSocketAdapter.hpp"
+#include "transport/socket/IBlockingStream.hpp"
 #include "message/TaskMessage.hpp"
+#include "message/WorkerGreeting.hpp"
 #include "logger.hpp"
+#include <ZeroTierSockets.h>
+#include <system_error>
 #include <thread>
 #include <chrono>
 #include <utility>
+
+namespace {
+bool send_worker_greeting_via_underlying_stream(transport::CoroSocketAdapter& adapter, std::error_code& ec) {
+    ec.clear();
+
+    WorkerGreeting greeting{};
+    greeting.magic = kWorkerGreetingMagic;
+    greeting.version = kWorkerGreetingVersion;
+    greeting.node_id = zts_node_get_id();
+
+    auto* stream = adapter.socket();
+    if (!stream) {
+        ec = std::make_error_code(std::errc::bad_file_descriptor);
+        return false;
+    }
+
+    // ZeroTierSocket also implements IBlockingStream, and this path keeps connect()
+    // synchronous while still using the async adapter for the run loop.
+    auto* blocking = dynamic_cast<IBlockingStream*>(stream);
+    if (!blocking) {
+        ec = std::make_error_code(std::errc::operation_not_supported);
+        return false;
+    }
+
+    const auto* data = reinterpret_cast<const char*>(&greeting);
+    size_t total = 0;
+    while (total < sizeof(greeting)) {
+        size_t bw = 0;
+        blocking->write(data + total, sizeof(greeting) - total, bw, ec);
+        if (ec) {
+            return false;
+        }
+        if (bw == 0) {
+            ec = std::make_error_code(std::errc::connection_reset);
+            return false;
+        }
+        total += bw;
+    }
+    return true;
+}
+} // namespace
 
 AsyncRuntime::AsyncRuntime(const std::string& host, int port, std::shared_ptr<Logger> logger)
     : host_(host), port_(port), logger_(std::move(logger)) {}
@@ -51,6 +96,13 @@ bool AsyncRuntime::connect() {
             if (logger_) logger_->error(std::string{"Failed to connect: "} + ec.message());
             return false;
         }
+
+        if (!send_worker_greeting_via_underlying_stream(*sock, ec)) {
+            if (logger_) logger_->error(std::string{"Failed to send worker greeting: "} + ec.message());
+            sock->close();
+            return false;
+        }
+
         return true;
         
     } catch (const std::runtime_error& e) {

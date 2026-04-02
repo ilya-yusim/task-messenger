@@ -6,6 +6,7 @@
 #include "logger.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <memory>
 
@@ -70,11 +71,15 @@ public:
     /** \brief Get the logger. */
     std::shared_ptr<Logger> logger() const;
 
+    /** \brief Dispatcher uptime in whole seconds. */
+    uint64_t uptime_seconds() const;
+
 private:
     static void install_signal_handlers();
 
     std::shared_ptr<Logger> logger_;
     std::unique_ptr<AsyncTransportServer> server_;
+    std::chrono::steady_clock::time_point start_time_{};
 
     // Global shutdown flag — static so signal handler can access it
     static std::atomic<bool> s_shutdown_requested;

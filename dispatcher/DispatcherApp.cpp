@@ -41,6 +41,7 @@ int DispatcherApp::start(int argc, char* argv[]) {
 
     // --- Stage 3: Bring up transport server subsystem ---
     logger_->info("Transport server starting...");
+    start_time_ = std::chrono::steady_clock::now();
 
     server_ = std::make_unique<AsyncTransportServer>(logger_);
     if (!server_->start()) {
@@ -91,6 +92,11 @@ void DispatcherApp::print_statistics() const {
 
 std::shared_ptr<Logger> DispatcherApp::logger() const {
     return logger_;
+}
+
+uint64_t DispatcherApp::uptime_seconds() const {
+    const auto elapsed = std::chrono::steady_clock::now() - start_time_;
+    return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(elapsed).count());
 }
 
 void DispatcherApp::install_signal_handlers() {

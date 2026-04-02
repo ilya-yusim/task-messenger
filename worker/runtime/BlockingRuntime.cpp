@@ -7,8 +7,10 @@
 #include "transport/socket/IBlockingStream.hpp"
 #include "transport/socket/SocketFactory.hpp"
 #include "message/TaskMessage.hpp"
+#include "message/WorkerGreeting.hpp"
 #include "skills/registry/PayloadBuffer.hpp"
 #include "logger.hpp"
+#include <ZeroTierSockets.h>
 
 #include <cstdint>
 #include <memory>
@@ -78,6 +80,29 @@ bool write_response(IBlockingStream& s, uint32_t task_id,
     }
     return true;
 }
+
+bool send_worker_greeting(IBlockingStream& s, std::error_code& ec) {
+    WorkerGreeting greeting{};
+    greeting.magic = kWorkerGreetingMagic;
+    greeting.version = kWorkerGreetingVersion;
+    greeting.node_id = zts_node_get_id();
+
+    const auto* data = reinterpret_cast<const char*>(&greeting);
+    size_t total = 0;
+    while (total < sizeof(greeting)) {
+        size_t bw = 0;
+        s.write(data + total, sizeof(greeting) - total, bw, ec);
+        if (ec) {
+            return false;
+        }
+        if (bw == 0) {
+            ec = std::make_error_code(std::errc::connection_reset);
+            return false;
+        }
+        total += bw;
+    }
+    return true;
+}
 } // namespace
 
 BlockingRuntime::BlockingRuntime(const std::string& host, int port, std::shared_ptr<Logger> logger)
@@ -119,6 +144,13 @@ bool BlockingRuntime::connect() {
             if (logger_) logger_->error(std::string{"Failed to connect: "} + ec.message());
             return false;
         }
+
+        if (!send_worker_greeting(*sock, ec)) {
+            if (logger_) logger_->error(std::string{"Failed to send worker greeting: "} + ec.message());
+            sock->close();
+            return false;
+        }
+
         return true;
         
     } catch (const std::runtime_error& e) {
