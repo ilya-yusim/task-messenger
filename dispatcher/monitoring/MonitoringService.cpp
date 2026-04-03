@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #include "processUtils.hpp"
+#include <filesystem>
 #include <thread>
 
 namespace monitoring {
@@ -95,9 +96,69 @@ void MonitoringService::accept_loop() {
     }
 }
 
+std::string MonitoringService::resolve_dashboard_dir() {
+#ifdef DASHBOARD_DIR
+    // Priority 1: compile-time override (absolute path injected by Meson).
+    std::filesystem::path p(DASHBOARD_DIR);
+    if (std::filesystem::is_directory(p)) {
+        return p.string();
+    }
+#endif
+
+    // Priority 2: locate executable and walk up to dev layout
+    // (<builddir>/generators/<name>/<exe> → <repo>/dispatcher/monitoring/dashboard).
+    std::error_code ec;
+    const auto exe_path = ProcessUtils::get_executable_path();
+
+    if (!exe_path.empty()) {
+        // Dev layout: <repo>/builddir/generators/<name>/<exe>
+        //  -> four parents up from exe path = <repo>, then dispatcher/monitoring/dashboard
+        auto candidate_dev = exe_path.parent_path().parent_path().parent_path().parent_path()
+                             / "dispatcher" / "monitoring" / "dashboard";
+        if (std::filesystem::is_directory(candidate_dev, ec)) {
+            return candidate_dev.string();
+        }
+
+        // Installed layout: exe next to a "dashboard" directory.
+        auto candidate_installed = exe_path.parent_path() / "dashboard";
+        if (std::filesystem::is_directory(candidate_installed, ec)) {
+            return candidate_installed.string();
+        }
+    }
+
+    return {};
+}
+
 void MonitoringService::register_routes() {
     if (!http_server_) {
         return;
+    }
+
+    // Register explicit MIME mappings so browsers execute JS and CSS correctly.
+    http_server_->set_file_extension_and_mimetype_mapping("html", "text/html; charset=utf-8");
+    http_server_->set_file_extension_and_mimetype_mapping("css",  "text/css; charset=utf-8");
+    http_server_->set_file_extension_and_mimetype_mapping("js",   "application/javascript; charset=utf-8");
+    http_server_->set_file_extension_and_mimetype_mapping("svg",  "image/svg+xml");
+    http_server_->set_file_extension_and_mimetype_mapping("ico",  "image/x-icon");
+    http_server_->set_file_extension_and_mimetype_mapping("woff2","font/woff2");
+
+    // Mount dashboard static assets at root. Non-fatal if directory is absent
+    // (API routes remain fully operational).
+    const auto dashboard_dir = resolve_dashboard_dir();
+    if (!dashboard_dir.empty()) {
+        if (http_server_->set_mount_point("/", dashboard_dir)) {
+            if (logger_) {
+                logger_->info("MonitoringService: dashboard assets mounted from " + dashboard_dir);
+            }
+        } else {
+            if (logger_) {
+                logger_->warning("MonitoringService: set_mount_point failed for " + dashboard_dir);
+            }
+        }
+    } else {
+        if (logger_) {
+            logger_->info("MonitoringService: no dashboard assets directory found; UI not served");
+        }
     }
 
     http_server_->Get("/healthz", [this](const httplib::Request&, httplib::Response& res) {

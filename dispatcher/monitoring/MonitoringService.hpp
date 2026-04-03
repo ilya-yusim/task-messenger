@@ -42,7 +42,17 @@ private:
 
     /** \brief Register /healthz and /api/monitor handlers on cpp-httplib server. */
     void register_routes();
-
+    /**
+     * \brief Resolve the filesystem path to the dashboard static asset directory.
+     *
+     * Probes candidate locations in priority order:
+     * 1. DASHBOARD_DIR compile-time define (set via Meson -DDASHBOARD_DIR=...).
+    * 2. Repository-relative dispatcher/monitoring/dashboard (dev/builddir layout).
+     * 3. Executable-relative ./dashboard (installed layout).
+     *
+     * Returns empty string if no candidate directory is found.
+     */
+    static std::string resolve_dashboard_dir();
     std::shared_ptr<Logger> logger_;
     AsyncTransportServer& server_;
     MonitoringSnapshotBuilder snapshot_builder_;

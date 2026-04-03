@@ -184,6 +184,14 @@ install_data(
   install_dir: config_dir / 'vn-dispatcher-identity'
 )
 
+# Install dispatcher monitoring dashboard assets next to installed binaries.
+# MonitoringService resolves installed UI assets from <bindir>/dashboard.
+install_subdir(
+  'dispatcher/monitoring/dashboard',
+  install_dir: get_option('bindir') / 'dashboard',
+  strip_directory: true,
+)
+
 # =============================================================================
 # Documentation Generation (Optional)
 # =============================================================================

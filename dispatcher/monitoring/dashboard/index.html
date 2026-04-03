@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Task Messenger Monitoring</title>
+
+
+    <link href="assets/lib/bootstrap.min.css" rel="stylesheet" />
+    <link href="assets/lib/tabulator_bootstrap5.min.css" rel="stylesheet" />
+    <link href="assets/css/dashboard.css" rel="stylesheet" />
+
+    <script defer src="assets/lib/alpine.min.js"></script>
+  </head>
+  <body>
+    <div class="dashboard-shell" x-data="monitoringDashboard()">
+      <header class="container-fluid py-4 px-3 px-md-4 border-bottom border-opacity-25">
+        <div class="d-flex flex-wrap align-items-end justify-content-between gap-3">
+          <div>
+            <p class="eyebrow mb-1">Task Messenger</p>
+            <h1 class="display-title mb-0">Dispatcher Monitoring</h1>
+          </div>
+          <div class="text-end small text-muted">
+            <div>Host: <span x-text="listenHost"></span>:<span x-text="listenPort"></span></div>
+            <div>Last update: <span x-text="lastUpdateText"></span></div>
+          </div>
+        </div>
+      </header>
+
+      <main class="container-fluid py-4 px-3 px-md-4">
+        <section class="alert alert-danger" role="alert" x-show="errorMessage" x-cloak>
+          <strong>Monitoring error:</strong>
+          <span x-text="errorMessage"></span>
+        </section>
+
+        <section class="row g-3 mb-4">
+          <div class="col-6 col-md-4 col-xl-2">
+            <article class="kpi-card">
+              <p class="kpi-label">Workers</p>
+              <p class="kpi-value" x-text="formatNullable(kpi.worker_count)">--</p>
+            </article>
+          </div>
+          <div class="col-6 col-md-4 col-xl-2">
+            <article class="kpi-card">
+              <p class="kpi-label">Generator</p>
+              <p class="kpi-value" x-text="formatNullable(kpi.generator_status)">--</p>
+            </article>
+          </div>
+          <div class="col-6 col-md-4 col-xl-2">
+            <article class="kpi-card">
+              <p class="kpi-label">Pool Available</p>
+              <p class="kpi-value" x-text="formatNullable(kpi.task_pool_available)">--</p>
+            </article>
+          </div>
+          <div class="col-6 col-md-4 col-xl-2">
+            <article class="kpi-card">
+              <p class="kpi-label">Pool Waiting</p>
+              <p class="kpi-value" x-text="formatNullable(kpi.task_pool_waiting)">--</p>
+            </article>
+          </div>
+          <div class="col-6 col-md-4 col-xl-2">
+            <article class="kpi-card">
+              <p class="kpi-label">Uptime</p>
+              <p class="kpi-value" x-text="formatNullable(kpi.uptime_seconds)">--</p>
+            </article>
+          </div>
+          <div class="col-6 col-md-4 col-xl-2">
+            <article class="kpi-card">
+              <p class="kpi-label">Avg Roundtrip</p>
+              <p class="kpi-value" x-text="formatNullable(kpi.avg_roundtrip_ms)">--</p>
+            </article>
+          </div>
+          <div class="col-12 col-md-4 col-xl-2">
+            <article class="kpi-card">
+              <p class="kpi-label">Failure Rate</p>
+              <p class="kpi-value" x-text="formatNullable(kpi.failure_rate_pct)">--</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="card table-card shadow-sm">
+          <div class="card-body p-2 p-md-3">
+            <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+              <h2 class="table-title mb-0">Worker Sessions</h2>
+              <span class="table-hint">Polling every 1000ms</span>
+            </div>
+            <div id="workers-table" aria-label="Workers monitoring table"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="assets/lib/bootstrap.bundle.min.js"></script>
+    <script src="assets/lib/tabulator.min.js"></script>
+    <script src="assets/js/app.js"></script>
+  </body>
+</html>

@@ -6,6 +6,16 @@
 # task message pool, and the DispatcherApp harness. Generators link this library
 # to get the full dispatcher runtime without duplicating plumbing code.
 
+# Optional compile-time dashboard path override (runtime discovery used when empty).
+_dashboard_dir = get_option('dashboard_dir')
+_dispatcher_cpp_args = []
+if _dashboard_dir != ''
+  _dispatcher_cpp_args += ['-DDASHBOARD_DIR="' + _dashboard_dir + '"']
+  message('dispatcher: DASHBOARD_DIR set to "' + _dashboard_dir + '"')
+else
+  message('dispatcher: DASHBOARD_DIR not set — runtime discovery enabled')
+endif
+
 tm_dispatcher_lib = static_library(
   'tm-dispatcher',
   sources: [
@@ -21,6 +31,7 @@ tm_dispatcher_lib = static_library(
     'session/Session.cpp',
     'session/SessionManager.cpp',
   ],
+  cpp_args: _dispatcher_cpp_args,
   dependencies: [
     tm_transport_dep,   # Shared transport library (coro IO, sockets, ZeroTier)
     shared_dep,         # Shared utilities (logger, protocol, etc.)
