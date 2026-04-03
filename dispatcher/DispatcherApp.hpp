@@ -2,6 +2,7 @@
 #pragma once
 
 #include "transport/AsyncTransportServer.hpp"
+#include "monitoring/MonitoringService.hpp"
 #include "message/TaskSubmitAwaitable.hpp"
 #include "logger.hpp"
 
@@ -79,6 +80,7 @@ private:
 
     std::shared_ptr<Logger> logger_;
     std::unique_ptr<AsyncTransportServer> server_;
+    std::unique_ptr<monitoring::MonitoringService> monitoring_service_;
     std::chrono::steady_clock::time_point start_time_{};
 
     // Global shutdown flag — static so signal handler can access it

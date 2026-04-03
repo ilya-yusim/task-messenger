@@ -8,6 +8,8 @@
 #include "logger.hpp"
 #include <stdexcept>
 #include <cstring>
+#include <iomanip>
+#include <sstream>
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -446,6 +448,24 @@ bool ZeroTierSocket::is_open() const {
 
 std::string ZeroTierSocket::socket_type() const {
     return "zerotier_socket";
+}
+
+std::uint64_t ZeroTierSocket::node_id() const {
+    return current_node_id();
+}
+
+std::string ZeroTierSocket::node_id_hex() const {
+    return current_node_id_hex();
+}
+
+std::uint64_t ZeroTierSocket::current_node_id() {
+    return static_cast<std::uint64_t>(zts_node_get_id());
+}
+
+std::string ZeroTierSocket::current_node_id_hex() {
+    std::ostringstream ss;
+    ss << std::hex << std::setw(16) << std::setfill('0') << current_node_id();
+    return ss.str();
 }
 
 // === Blocking interface implementations ===

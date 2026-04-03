@@ -1,5 +1,6 @@
 // DispatcherApp.cpp - Application harness for dispatcher infrastructure startup
 #include "DispatcherApp.hpp"
+#include "monitoring/MonitoringOptions.hpp"
 #include "options/Options.hpp"
 
 #include <csignal>
@@ -50,6 +51,18 @@ int DispatcherApp::start(int argc, char* argv[]) {
     }
     logger_->info("Transport server started successfully");
 
+    // Monitoring API is optional and non-fatal for dispatcher task execution.
+    if (monitoring_opts::get_enabled().value_or(true)) {
+        monitoring_service_ = std::make_unique<monitoring::MonitoringService>(
+            logger_, *server_, [this]() { return uptime_seconds(); });
+        if (!monitoring_service_->start()) {
+            logger_->warning("Monitoring service failed to start; continuing without monitoring API");
+            monitoring_service_.reset();
+        }
+    } else {
+        logger_->info("Monitoring service disabled by configuration");
+    }
+
     // --- Stage 4: Install signal handlers ---
     install_signal_handlers();
 
@@ -57,6 +70,13 @@ int DispatcherApp::start(int argc, char* argv[]) {
 }
 
 void DispatcherApp::stop() {
+    // Stop monitoring first because it depends on dispatcher-owned runtime objects.
+    if (monitoring_service_) {
+        logger_->info("Shutting down monitoring service...");
+        monitoring_service_->stop();
+        monitoring_service_.reset();
+    }
+
     if (server_) {
         logger_->info("Shutting down server...");
         server_->stop();

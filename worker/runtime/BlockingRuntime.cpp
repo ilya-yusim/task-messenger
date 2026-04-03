@@ -10,7 +10,6 @@
 #include "message/WorkerGreeting.hpp"
 #include "skills/registry/PayloadBuffer.hpp"
 #include "logger.hpp"
-#include <ZeroTierSockets.h>
 
 #include <cstdint>
 #include <memory>
@@ -85,7 +84,7 @@ bool send_worker_greeting(IBlockingStream& s, std::error_code& ec) {
     WorkerGreeting greeting{};
     greeting.magic = kWorkerGreetingMagic;
     greeting.version = kWorkerGreetingVersion;
-    greeting.node_id = zts_node_get_id();
+    greeting.node_id = s.node_id();
 
     const auto* data = reinterpret_cast<const char*>(&greeting);
     size_t total = 0;

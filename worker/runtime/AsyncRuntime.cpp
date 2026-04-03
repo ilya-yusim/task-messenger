@@ -11,7 +11,6 @@
 #include "message/TaskMessage.hpp"
 #include "message/WorkerGreeting.hpp"
 #include "logger.hpp"
-#include <ZeroTierSockets.h>
 #include <system_error>
 #include <thread>
 #include <chrono>
@@ -24,13 +23,13 @@ bool send_worker_greeting_via_underlying_stream(transport::CoroSocketAdapter& ad
     WorkerGreeting greeting{};
     greeting.magic = kWorkerGreetingMagic;
     greeting.version = kWorkerGreetingVersion;
-    greeting.node_id = zts_node_get_id();
 
     auto* stream = adapter.socket();
     if (!stream) {
         ec = std::make_error_code(std::errc::bad_file_descriptor);
         return false;
     }
+    greeting.node_id = stream->node_id();
 
     // ZeroTierSocket also implements IBlockingStream, and this path keeps connect()
     // synchronous while still using the async adapter for the run loop.

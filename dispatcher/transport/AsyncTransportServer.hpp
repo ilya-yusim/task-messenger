@@ -100,6 +100,18 @@ public:
      */
     std::shared_ptr<TaskMessagePool> task_pool() const;
 
+    /**
+     * \brief Access session manager for monitoring snapshot queries.
+     */
+    session::SessionManager* session_manager() const noexcept { return session_manager_.get(); }
+
+    /**
+     * \brief Access listening server stream interface for transport-level metadata.
+     */
+    std::shared_ptr<IAsyncStream> server_stream() const noexcept {
+        return server_socket_ ? server_socket_->socket_ptr() : nullptr;
+    }
+
 private:
     // Dedicated acceptor thread replaces coroutine accept loop
     void start_acceptor_thread();

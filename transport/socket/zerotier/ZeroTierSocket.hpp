@@ -18,6 +18,7 @@
 #include <functional>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <mutex>
 
 
@@ -171,6 +172,12 @@ public:
      */
     std::string socket_type() const;
 
+    /** \brief Get local ZeroTier node id for this backend. */
+    std::uint64_t node_id() const override;
+
+    /** \brief Get local ZeroTier node id as fixed-width lowercase hex. */
+    std::string node_id_hex() const override;
+
     /** \brief Enable or disable TCP_NODELAY (Nagle's algorithm).
      *  \\param enable true to disable Nagle (send immediately), false to enable Nagle.
      *  \\return true on success, false on failure.
@@ -178,6 +185,18 @@ public:
      *         low-latency messaging, especially with scatter-gather sends.
      */
     bool set_no_delay(bool enable);
+
+    /**
+     * \brief Return current local ZeroTier node id from libzt.
+     * \return Node id as uint64.
+     */
+    static std::uint64_t current_node_id();
+
+    /**
+     * \brief Return current local ZeroTier node id as fixed-width lowercase hex.
+     * \return 16-character lowercase hex string.
+     */
+    static std::string current_node_id_hex();
 
     // === Factory helpers ===
     // Create a new client socket

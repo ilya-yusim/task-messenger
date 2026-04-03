@@ -8,6 +8,7 @@
  */
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 /** \brief Base interface for common socket lifecycle and endpoint methods.
@@ -30,6 +31,10 @@ struct ISocketLifecycle {
     virtual std::string remote_endpoint() const = 0;
     /** \brief Transport/backend type identifier (e.g. zerotier). */
     virtual std::string socket_type() const = 0;
+    /** \brief Backend node id (0 when unsupported/not available). */
+    virtual std::uint64_t node_id() const { return 0; }
+    /** \brief Backend node id formatted as fixed-width lowercase hex (empty when unsupported). */
+    virtual std::string node_id_hex() const { return {}; }
     /** \brief Optional readability diagnostic (default false). */
     virtual bool is_readable() const { return false; }
     /** \brief Optional writability diagnostic (default false). */

@@ -5,6 +5,7 @@
         "**/subprojects/ftxui**": true,
         "**/subprojects/nlohmann_json**": true,
         "**/subprojects/libzt-wrapper/libzt**": true,
+        "**/subprojects/cpp-httplib-0.40.0**": true,
         "**/builddir/**": true
     },
     "files.watcherExclude": {
@@ -13,6 +14,7 @@
         "**/subprojects/ftxui**": true,
         "**/subprojects/nlohmann_json**": true,
         "**/subprojects/libzt-wrapper/libzt**": true,
+        "**/subprojects/cpp-httplib-0.40.0**": true,
         "**/builddir/**": true
     },
 
@@ -135,6 +137,7 @@
         "Dgemm",
         "flatbuffers",
         "flatc",
+        "httplib",
         "libzt",
         "makeself",
         "nlohmann",
