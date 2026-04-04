@@ -4,14 +4,25 @@
 
 namespace {
 session::DispatcherMonitoringState map_dispatcher_state(const session::Session& s, const session::SessionStats& stats) {
+    constexpr auto kStallGraceWindow = std::chrono::seconds(2);
+
     switch (s.state()) {
         case session::SessionState::INITIALIZING:
             return session::DispatcherMonitoringState::Connecting;
         case session::SessionState::ACTIVE: {
             const auto completed_or_failed = stats.tasks_completed + stats.tasks_failed;
-            return (stats.tasks_sent > completed_or_failed)
-                       ? session::DispatcherMonitoringState::AssignedActive
-                       : session::DispatcherMonitoringState::AssignedStalled;
+            if (stats.tasks_sent > completed_or_failed) {
+                return session::DispatcherMonitoringState::AssignedActive;
+            }
+
+            // No in-flight tasks: treat as active while dispatcher activity is still recent.
+            const auto now = std::chrono::system_clock::now();
+            const auto last_seen = s.get_last_seen_dispatcher();
+            if ((now - last_seen) <= kStallGraceWindow) {
+                return session::DispatcherMonitoringState::AssignedActive;
+            }
+
+            return session::DispatcherMonitoringState::AssignedStalled;
         }
         case session::SessionState::COMPLETING:
         case session::SessionState::TERMINATED:

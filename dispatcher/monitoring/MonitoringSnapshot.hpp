@@ -48,6 +48,8 @@ inline std::string to_string(session::DispatcherMonitoringState state) {
         return "connecting";
     case session::DispatcherMonitoringState::AssignedActive:
         return "assigned_active";
+    case session::DispatcherMonitoringState::AssignedIdle:
+        return "assigned_idle";
     case session::DispatcherMonitoringState::AssignedStalled:
         return "assigned_stalled";
     case session::DispatcherMonitoringState::Unassigned:

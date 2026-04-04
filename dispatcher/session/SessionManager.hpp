@@ -19,6 +19,7 @@ namespace session {
 enum class DispatcherMonitoringState {
     Connecting,
     AssignedActive,
+    AssignedIdle,
     AssignedStalled,
     Unassigned,
     Unknown

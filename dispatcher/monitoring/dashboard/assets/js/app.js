@@ -61,10 +61,11 @@ function monitoringDashboard() {
             minWidth: 170,
             formatter: (cell) => {
               const raw = this.toStringValue(cell.getValue(), "unknown");
-              const escaped = this.escapeHtml(raw);
-              const compact = raw.length > 12
-                ? `${raw.slice(0, 6)}...${raw.slice(-4)}`
-                : raw;
+              const normalized = this.trimLeadingZerosHex(raw);
+              const escaped = this.escapeHtml(normalized);
+              const compact = normalized.length > 12
+                ? `${normalized.slice(0, 6)}...${normalized.slice(-4)}`
+                : normalized;
               return `<span title="${escaped}">${this.escapeHtml(compact)}</span>`;
             },
           },
@@ -370,6 +371,14 @@ function monitoringDashboard() {
         .replaceAll(">", "&gt;")
         .replaceAll('"', "&quot;")
         .replaceAll("'", "&#39;");
+    },
+
+    trimLeadingZerosHex(value) {
+      if (!/^[0-9a-fA-F]+$/.test(value)) {
+        return value;
+      }
+      const trimmed = value.replace(/^0+/, "");
+      return trimmed.length > 0 ? trimmed.toLowerCase() : "0";
     },
 
     formatNullable(value) {
