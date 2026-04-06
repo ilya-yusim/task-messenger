@@ -27,7 +27,7 @@ tm_dispatcher_lib = static_library(
     'transport/AsyncTransportOptions.cpp',
     'transport/AsyncTransportServer.hpp',
     'transport/AsyncTransportServer.cpp',
-    '../message/TaskMessagePool.cpp',
+    '../message/TaskMessageQueue.cpp',
     'session/Session.cpp',
     'session/SessionManager.cpp',
   ],

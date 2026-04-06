@@ -1,4 +1,4 @@
-// TaskMessagePool.hpp - Thread-safe task pool with awaitable interface
+// TaskMessageQueue.hpp - Thread-safe task queue with awaitable interface
 #pragma once
 
 #include "TaskMessage.hpp"
@@ -13,28 +13,28 @@
 #include <vector>
 
 /**
- * \file message/TaskMessagePool.hpp
+ * \file message/TaskMessageQueue.hpp
  * \brief Awaitable task queue shared by dispatcher sessions.
  * \ingroup message_module
  */
 
 // Forward declaration
-class TaskMessagePool;
+class TaskMessageQueue;
 
 /**
- * \brief Awaitable for retrieving the next task from the pool.
+ * \brief Awaitable for retrieving the next task from the queue.
  * \ingroup message_module
  *
  * This awaitable suspends the calling coroutine if no tasks are available
- * and resumes it when a task becomes available or the pool shuts down.
+ * and resumes it when a task becomes available or the queue shuts down.
  */
-class TaskAwaitable {
+class TaskQueueAwaitable {
 private:
-    TaskMessagePool* pool_;
+    TaskMessageQueue* pool_;
     std::optional<TaskMessage> result_;
 
 public:
-    explicit TaskAwaitable(TaskMessagePool* pool) : pool_(pool) {}
+    explicit TaskQueueAwaitable(TaskMessageQueue* pool) : pool_(pool) {}
 
     // Awaitable interface
     bool await_ready();
@@ -46,77 +46,77 @@ public:
             return TaskMessage{};
     }
 
-    // Allow TaskMessagePool direct access to result_
-    friend class TaskMessagePool;
+    // Allow TaskMessageQueue direct access to result_
+    friend class TaskMessageQueue;
 };
 
 /**
- * \brief Thread-safe task pool consumed by dispatcher sessions.
+ * \brief Thread-safe task queue consumed by dispatcher sessions.
  * \ingroup message_module
  *
  * Provides an awaitable interface for getting tasks. Sessions can call
  * co_await get_next_task() which will suspend if no tasks are available
- * and resume when tasks are added to the pool.
+ * and resume when tasks are added to the queue.
  */
-class TaskMessagePool {
+class TaskMessageQueue {
 private:
     mutable std::mutex mutex_;
     std::deque<TaskMessage> tasks_;
     struct Waiter {
         std::coroutine_handle<> handle;
-        TaskAwaitable* awaiter; // pointer to suspended awaiter to fill result before resuming
+        TaskQueueAwaitable* awaiter; // pointer to suspended awaiter to fill result before resuming
     };
     std::queue<Waiter> waiting_sessions_;
     std::atomic<bool> shutdown_{false};
 
-    friend class TaskAwaitable;
+    friend class TaskQueueAwaitable;
 
 public:
-    TaskMessagePool() = default;
-    ~TaskMessagePool() = default;
+    TaskMessageQueue() = default;
+    ~TaskMessageQueue() = default;
 
     // Non-copyable, non-movable
-    TaskMessagePool(const TaskMessagePool&) = delete;
-    TaskMessagePool& operator=(const TaskMessagePool&) = delete;
-    TaskMessagePool(TaskMessagePool&&) = delete;
-    TaskMessagePool& operator=(TaskMessagePool&&) = delete;
+    TaskMessageQueue(const TaskMessageQueue&) = delete;
+    TaskMessageQueue& operator=(const TaskMessageQueue&) = delete;
+    TaskMessageQueue(TaskMessageQueue&&) = delete;
+    TaskMessageQueue& operator=(TaskMessageQueue&&) = delete;
 
     /**
      * @brief Get next task (awaitable - suspends if no tasks available)
-     * @return TaskAwaitable that can be co_awaited
+     * @return TaskQueueAwaitable that can be co_awaited
      *
-     * Usage: auto task = co_await task_pool->get_next_task();
+        * Usage: auto task = co_await task_queue->get_next_task();
      */
-    TaskAwaitable get_next_task() {
-        return TaskAwaitable(this);
+    TaskQueueAwaitable get_next_task() {
+        return TaskQueueAwaitable(this);
     }
 
     /**
-     * @brief Add task to pool (wakes up waiting sessions)
-     * @param task Task to add to the pool
+        * @brief Add task to queue (wakes up waiting sessions)
+        * @param task Task to add to the queue
      */
     void add_task(TaskMessage task);
 
     /**
-     * @brief Add multiple tasks to pool (wakes up waiting sessions efficiently)
-     * @param tasks Vector of tasks to add to the pool
+        * @brief Add multiple tasks to queue (wakes up waiting sessions efficiently)
+        * @param tasks Vector of tasks to add to the queue
      */
     void add_tasks(std::vector<TaskMessage> tasks);
 
     /**
-     * @brief Get current task count
-     * @return Number of tasks currently in the pool
+        * @brief Get current task count
+        * @return Number of tasks currently in the queue
      */
     size_t size() const;
 
     /**
-     * @brief Check if pool is empty
+        * @brief Check if queue is empty
      * @return true if no tasks are available
      */
     bool empty() const;
 
     /**
-     * @brief Shutdown pool (wake up all waiting sessions)
+        * @brief Shutdown queue (wake up all waiting sessions)
      *
      * After shutdown, no new tasks will be accepted and all waiting
      * sessions will be woken up with invalid tasks.
@@ -124,7 +124,7 @@ public:
     void shutdown();
 
     /**
-     * @brief Check if pool is shutting down
+        * @brief Check if queue is shutting down
      * @return true if shutdown() has been called
      */
     bool is_shutdown() const {
@@ -141,7 +141,7 @@ private:
     /**
      * @brief Try to get a task immediately without suspending
      * @param task Output parameter for the task
-     * @return true if task was available, false if pool is empty
+        * @return true if task was available, false if queue is empty
      */
     bool try_get_task_immediately(TaskMessage& task);
 

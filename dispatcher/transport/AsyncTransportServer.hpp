@@ -14,7 +14,7 @@
 
 #include "logger.hpp"
 #include "message/ResponseContext.hpp"
-#include "message/TaskMessagePool.hpp"
+#include "message/TaskMessageQueue.hpp"
 #include "transport/coro/CoroTask.hpp"
 #include "transport/coro/coroIoContext.hpp"
 #include "transport/coro/CoroSocketAdapter.hpp"
@@ -78,10 +78,10 @@ public:
     void enqueue_tasks(std::vector<TaskMessage> tasks);
 
     /**
-     * \brief Get task pool statistics for monitoring.
+        * \brief Get task queue statistics for monitoring.
      * \return Pair of (available_tasks, waiting_sessions)
      */
-    std::pair<size_t, size_t> get_task_pool_stats() const;
+    std::pair<size_t, size_t> get_task_queue_stats() const;
 
     /**
      * \brief Dump IO-thread counters plus session-level statistics.
@@ -95,10 +95,10 @@ public:
     std::shared_ptr<ResponseContext> response_context() const { return response_ctx_; }
 
     /**
-     * \brief Get the shared task pool for async task submission.
-     * \return Shared pointer to the TaskMessagePool (never null after construction).
+        * \brief Get the shared task queue for async task submission.
+     * \return Shared pointer to the TaskMessageQueue (never null after construction).
      */
-    std::shared_ptr<TaskMessagePool> task_pool() const;
+    std::shared_ptr<TaskMessageQueue> task_queue() const;
 
     /**
      * \brief Access session manager for monitoring snapshot queries.

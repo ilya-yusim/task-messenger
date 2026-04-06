@@ -1,11 +1,11 @@
-#include "TaskMessagePool.hpp"
+#include "TaskMessageQueue.hpp"
 #include "transport/coro/CoroTask.hpp"
 
 #include <iostream>
 #include <utility>
 
 /**
- * \file message/TaskMessagePool.cpp
+ * \file message/TaskMessageQueue.cpp
  * \brief Implements the coroutine-aware task queue and awaitable bridge.
  * \ingroup message_module
  */
@@ -18,7 +18,7 @@
 //   preserving FIFO order for both tasks and waiters.
 // - shutdown() drains waiters and resumes them with empty TaskMessage instances.
 
-bool TaskAwaitable::await_ready() {
+bool TaskQueueAwaitable::await_ready() {
     TaskMessage task;
     if (pool_->try_get_task_immediately(task)) {
         result_ = std::move(task);
@@ -27,7 +27,7 @@ bool TaskAwaitable::await_ready() {
     return false;
 }
 
-void TaskAwaitable::await_suspend(std::coroutine_handle<> handle) {
+void TaskQueueAwaitable::await_suspend(std::coroutine_handle<> handle) {
     // If pool is shut down, resume immediately with invalid task
     if (pool_->shutdown_.load()) {
         handle.resume();
@@ -56,7 +56,7 @@ void TaskAwaitable::await_suspend(std::coroutine_handle<> handle) {
     pool_->waiting_sessions_.push({handle, this});
 }
 
-void TaskMessagePool::add_task(TaskMessage task) {
+void TaskMessageQueue::add_task(TaskMessage task) {
     if (shutdown_.load()) {
         return;
     }
@@ -81,7 +81,7 @@ void TaskMessagePool::add_task(TaskMessage task) {
     }
 }
 
-void TaskMessagePool::add_tasks(std::vector<TaskMessage> tasks) {
+void TaskMessageQueue::add_tasks(std::vector<TaskMessage> tasks) {
     if (shutdown_.load()) {
         return;
     }
@@ -110,17 +110,17 @@ void TaskMessagePool::add_tasks(std::vector<TaskMessage> tasks) {
     }
 }
 
-size_t TaskMessagePool::size() const {
+size_t TaskMessageQueue::size() const {
     std::lock_guard lock(mutex_);
     return tasks_.size();
 }
 
-bool TaskMessagePool::empty() const {
+bool TaskMessageQueue::empty() const {
     std::lock_guard lock(mutex_);
     return tasks_.empty();
 }
 
-void TaskMessagePool::shutdown() {
+void TaskMessageQueue::shutdown() {
     bool expected = false;
     if (!shutdown_.compare_exchange_strong(expected, true)) {
         return;
@@ -139,12 +139,12 @@ void TaskMessagePool::shutdown() {
     }
 }
 
-size_t TaskMessagePool::waiting_count() const {
+size_t TaskMessageQueue::waiting_count() const {
     std::lock_guard lock(mutex_);
     return waiting_sessions_.size();
 }
 
-bool TaskMessagePool::try_get_task_immediately(TaskMessage& task) {
+bool TaskMessageQueue::try_get_task_immediately(TaskMessage& task) {
     if (shutdown_.load()) {
         return false;
     }
@@ -159,7 +159,7 @@ bool TaskMessagePool::try_get_task_immediately(TaskMessage& task) {
     return true;
 }
 
-void TaskMessagePool::resume_waiting_session() {
+void TaskMessageQueue::resume_waiting_session() {
     if (!waiting_sessions_.empty()) {
         auto waiter = waiting_sessions_.front();
         waiting_sessions_.pop();

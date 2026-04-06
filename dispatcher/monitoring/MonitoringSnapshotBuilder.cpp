@@ -23,9 +23,9 @@ DispatcherMonitoringSnapshot MonitoringSnapshotBuilder::build() const {
         snapshot.recent_disconnects = session_manager->get_recent_disconnects_snapshot();
     }
 
-    const auto [task_pool_available, task_pool_waiting] = server_.get_task_pool_stats();
-    snapshot.task_pool_available = task_pool_available;
-    snapshot.task_pool_waiting = task_pool_waiting;
+    const auto [task_queue_size, workers_waiting] = server_.get_task_queue_stats();
+    snapshot.task_queue_size = task_queue_size;
+    snapshot.workers_waiting = workers_waiting;
     snapshot.worker_count = snapshot.workers.size();
 
     const auto host = transport_server_opts::get_listen_host().value_or(std::string("0.0.0.0"));

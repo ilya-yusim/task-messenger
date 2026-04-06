@@ -22,15 +22,15 @@ namespace session {
 Session::Session(std::shared_ptr<transport::CoroSocketAdapter> client_socket,
                  uint32_t session_id,
                  std::shared_ptr<Logger> logger,
-                 std::shared_ptr<TaskMessagePool> shared_task_pool)
+                 std::shared_ptr<TaskMessageQueue> shared_task_queue)
     : client_socket_(std::move(client_socket))
     , session_id_(session_id)
     , logger_(std::move(logger))
-    , shared_task_pool_(std::move(shared_task_pool))
+    , shared_task_queue_(std::move(shared_task_queue))
     , state_(SessionState::INITIALIZING)
     , termination_requested_(false) {
-    if (!client_socket_ || !logger_ || !shared_task_pool_) {
-        throw std::invalid_argument("Session: client_socket, logger, and shared_task_pool cannot be null");
+    if (!client_socket_ || !logger_ || !shared_task_queue_) {
+        throw std::invalid_argument("Session: client_socket, logger, and shared_task_queue cannot be null");
     }
     
     // Initialize statistics
@@ -70,7 +70,7 @@ Task<void> Session::run_coroutine() {
                 logger_->debug("Session " + std::to_string(session_id_) + ": Awaiting task from shared pool");
 
                 // Get next task from shared pool (suspends if empty)
-                task = co_await shared_task_pool_->get_next_task();
+                task = co_await shared_task_queue_->get_next_task();
                 task_acquired = true;
                 
                 // Check if we got a valid task (pool might be shutting down)
@@ -113,7 +113,7 @@ Task<void> Session::run_coroutine() {
                                      std::to_string(task.task_id()) + ", Got: " + std::to_string(response.task_id));
                     record_task_failed();
                     // Requeue the task to shared pool since we didn't get a proper response
-                    shared_task_pool_->add_task(std::move(task));
+                    shared_task_queue_->add_task(std::move(task));
                     continue;
                 }
 
@@ -148,7 +148,7 @@ Task<void> Session::run_coroutine() {
                                      " received mismatched skill_id (expected " + std::to_string(wire_header.skill_id) +
                                      ", got " + std::to_string(response.skill_id) + ")");
                     // Requeue the task to shared pool for retry
-                    shared_task_pool_->add_task(std::move(task));
+                    shared_task_queue_->add_task(std::move(task));
                     continue;
                 }
 
@@ -160,7 +160,7 @@ Task<void> Session::run_coroutine() {
                 if (task_acquired && task.is_valid()) {
                     logger_->warning("Session " + std::to_string(session_id_) + ": I/O error for task " +
                                      std::to_string(task.task_id()) + ", requeuing: " + std::string(e.what()));
-                    shared_task_pool_->add_task(std::move(task));
+                    shared_task_queue_->add_task(std::move(task));
                     record_task_failed();
                 }
 
@@ -195,7 +195,7 @@ Task<void> Session::run_coroutine() {
                 if (task_acquired && task.is_valid()) {
                     logger_->warning("Session " + std::to_string(session_id_) + ": Exception for task " +
                                      std::to_string(task.task_id()) + ", requeuing: " + std::string(e.what()));
-                    shared_task_pool_->add_task(std::move(task));
+                    shared_task_queue_->add_task(std::move(task));
                     record_task_failed();
                 }
                 logger_->error("Session " + std::to_string(session_id_) + ": Exception processing task: " + std::string(e.what()));

@@ -18,12 +18,12 @@ Task Messenger is a client/server architecture for dispatching computational tas
 ## Subgroups
 - \ref task_messenger_dispatcher : Dispatcher subsystem implementation (transport, session management, mock task generator).
 - \ref task_messenger_worker : Worker subsystem implementation (runtimes, session orchestration, optional UI).
-- Shared utilities like `TaskMessage`/`TaskMessagePool` remain under the top-level Task Messenger group so both subsystems can reference them.
+- Shared utilities like `TaskMessage`/`TaskMessageQueue` remain under the top-level Task Messenger group so both subsystems can reference them.
 
 ## Flow (Mermaid)
 ```mermaid
 graph LR
-    TG[TaskGenerator / App] --> Pool[TaskMessagePool]
+    TG[TaskGenerator / App] --> Pool[TaskMessageQueue]
     Pool --> Dispatcher[Dispatcher Sessions]
     Dispatcher --> Net[Async Transport Server]
     Net --> Workers[Worker Sessions]

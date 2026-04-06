@@ -2,7 +2,7 @@
 #pragma once
 
 #include "TaskMessage.hpp"
-#include "TaskMessagePool.hpp"
+#include "TaskMessageQueue.hpp"
 #include "TaskCompletionSource.hpp"
 #include "ResponseContext.hpp"
 
@@ -32,7 +32,7 @@ public:
      * \param request Request payload buffer (ownership transferred)
      * \param response_buffer Pre-allocated response buffer (ownership transferred), or nullptr
      */
-    TaskSubmitAwaitable(std::shared_ptr<TaskMessagePool> pool,
+    TaskSubmitAwaitable(std::shared_ptr<TaskMessageQueue> pool,
                         std::shared_ptr<ResponseContext> response_ctx,
                         uint32_t task_id,
                         std::unique_ptr<PayloadBufferBase> request,
@@ -78,7 +78,7 @@ public:
     }
 
 private:
-    std::shared_ptr<TaskMessagePool> pool_;
+    std::shared_ptr<TaskMessageQueue> pool_;
     std::shared_ptr<ResponseContext> response_ctx_;
     uint32_t task_id_;
     std::unique_ptr<PayloadBufferBase> request_;
@@ -101,7 +101,7 @@ private:
  *                                        std::move(request), std::move(response));
  */
 inline TaskSubmitAwaitable submit_task(
-    std::shared_ptr<TaskMessagePool> pool,
+    std::shared_ptr<TaskMessageQueue> pool,
     std::shared_ptr<ResponseContext> response_ctx,
     uint32_t task_id,
     std::unique_ptr<PayloadBufferBase> request,

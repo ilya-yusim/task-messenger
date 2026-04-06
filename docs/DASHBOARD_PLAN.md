@@ -11,7 +11,7 @@
 |----------|--------|
 | Static asset hosting | Served from MonitoringService routes (same host + port as `/api/monitor`) |
 | Default poll interval | 1000 ms |
-| Header KPIs | worker_count · generator_status · task_pool_available · task_pool_waiting · uptime_seconds · avg_roundtrip aggregate · failure rate aggregate |
+| Header KPIs | worker_count · generator_status · task_queue_size · workers_waiting · uptime_seconds · avg_roundtrip aggregate · failure rate aggregate |
 | Frontend stack | Alpine.js + Bootstrap + Tabulator |
 | Asset directory | `dispatcher/monitoring/dashboard/` |
 

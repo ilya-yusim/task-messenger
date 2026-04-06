@@ -29,8 +29,8 @@ struct DispatcherMonitoringSnapshot {
     int64_t snapshot_timestamp_ms = 0;
     std::string generator_status;
     size_t worker_count = 0;
-    size_t task_pool_available = 0;
-    size_t task_pool_waiting = 0;
+    size_t task_queue_size = 0;
+    size_t workers_waiting = 0;
     std::vector<session::WorkerMonitoringSnapshot> workers;
     std::vector<session::RecentDisconnectSnapshot> recent_disconnects;
 };
@@ -123,8 +123,8 @@ inline void to_json(nlohmann::json& j, const DispatcherMonitoringSnapshot& snaps
         {"snapshot_timestamp_ms", snapshot.snapshot_timestamp_ms},
         {"generator_status", snapshot.generator_status},
         {"worker_count", snapshot.worker_count},
-        {"task_pool_available", snapshot.task_pool_available},
-        {"task_pool_waiting", snapshot.task_pool_waiting},
+        {"task_queue_size", snapshot.task_queue_size},
+        {"workers_waiting", snapshot.workers_waiting},
         {"workers", snapshot.workers},
         {"recent_disconnects", snapshot.recent_disconnects},
     };

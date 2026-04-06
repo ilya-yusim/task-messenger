@@ -90,12 +90,12 @@ void AsyncTransportServer::run_maintenance_if_due() noexcept {
     maybe_run_maintenance();
 }
 
-std::pair<size_t, size_t> AsyncTransportServer::get_task_pool_stats() const {
-    return session_manager_->get_task_pool_stats();
+std::pair<size_t, size_t> AsyncTransportServer::get_task_queue_stats() const {
+    return session_manager_->get_task_queue_stats();
 }
 
-std::shared_ptr<TaskMessagePool> AsyncTransportServer::task_pool() const {
-    return session_manager_->task_pool();
+std::shared_ptr<TaskMessageQueue> AsyncTransportServer::task_queue() const {
+    return session_manager_->task_queue();
 }
 
 void AsyncTransportServer::print_transporter_statistics() const noexcept {

@@ -42,7 +42,7 @@ int64_t to_epoch_ms(std::chrono::system_clock::time_point tp) {
 
 /**
  * \file dispatcher/session/SessionManager.cpp
- * \brief Implements session orchestration and task pool fan-out.
+ * \brief Implements session orchestration and task queue fan-out.
  * \ingroup session_module
  */
 
@@ -50,7 +50,7 @@ namespace session {
 
 SessionManager::SessionManager(std::shared_ptr<Logger> logger)
     : logger_(std::move(logger))
-    , task_pool_(std::make_shared<TaskMessagePool>())
+    , task_queue_(std::make_shared<TaskMessageQueue>())
     , next_session_id_(1) {
     
     if (!logger_) {
@@ -58,7 +58,7 @@ SessionManager::SessionManager(std::shared_ptr<Logger> logger)
     }
     
     logger_->info("SessionManager: Created with default config ");
-    logger_->info("SessionManager: Initialized task pool");
+    logger_->info("SessionManager: Initialized task queue");
 }
 
 uint32_t SessionManager::create_session(std::shared_ptr<transport::CoroSocketAdapter> client_socket) {
@@ -70,8 +70,8 @@ uint32_t SessionManager::create_session(std::shared_ptr<transport::CoroSocketAda
     uint32_t session_id = generate_session_id();
     
     try {
-        // Create the session object with task pool
-        auto session = std::make_shared<Session>(client_socket, session_id, logger_, task_pool_);
+        // Create the session object with task queue
+        auto session = std::make_shared<Session>(client_socket, session_id, logger_, task_queue_);
         
         // Store the session
         {
@@ -214,16 +214,16 @@ uint32_t SessionManager::generate_session_id() {
 }
 
 void SessionManager::enqueue_tasks(std::vector<TaskMessage> tasks) {
-    if (task_pool_.get() && !tasks.empty()) {
+    if (task_queue_.get() && !tasks.empty()) {
         logger_->info("SessionManager: Enqueuing " + std::to_string(tasks.size()) + " external tasks");
-        task_pool_->add_tasks(std::move(tasks));
-        logger_->info("SessionManager: Pool size now: " + std::to_string(task_pool_->size()));
+        task_queue_->add_tasks(std::move(tasks));
+        logger_->info("SessionManager: Pool size now: " + std::to_string(task_queue_->size()));
     }
 }
 
-std::pair<size_t, size_t> SessionManager::get_task_pool_stats() const {
-    if (task_pool_) {
-        return {task_pool_->size(), task_pool_->waiting_count()};
+std::pair<size_t, size_t> SessionManager::get_task_queue_stats() const {
+    if (task_queue_) {
+        return {task_queue_->size(), task_queue_->waiting_count()};
     }
     return {0, 0};
 }
@@ -235,8 +235,8 @@ void SessionManager::print_comprehensive_statistics() const {
     
     if (active_sessions_.empty()) {
         logger_->info("No active sessions");
-        auto [available_tasks, waiting_sessions] = get_task_pool_stats();
-        logger_->info("Task Pool: " + std::to_string(available_tasks) + " tasks available");
+        auto [available_tasks, waiting_sessions] = get_task_queue_stats();
+        logger_->info("Task Queue: " + std::to_string(available_tasks) + " tasks available");
         logger_->info("========================================");
         return;
     }
@@ -279,7 +279,7 @@ void SessionManager::print_comprehensive_statistics() const {
         }
     }
     
-    auto [available_tasks, waiting_sessions] = get_task_pool_stats();
+    auto [available_tasks, waiting_sessions] = get_task_queue_stats();
     
     logger_->info("=== SUMMARY ===");
     logger_->info("Total Sessions: " + std::to_string(active_sessions_.size()));
@@ -292,7 +292,7 @@ void SessionManager::print_comprehensive_statistics() const {
     const double overall_avg_rt_ms = total_timed_tasks > 0 ? (total_rt_ms_all / total_timed_tasks) : 0.0;
     logger_->info("Bytes: total sent=" + std::to_string(total_bytes_sent) + ", total recv=" + std::to_string(total_bytes_received));
     logger_->info("Roundtrip (ms): total=" + std::to_string(total_rt_ms_all) + ", overall avg=" + std::to_string(overall_avg_rt_ms) + ", timed tasks=" + std::to_string(total_timed_tasks));
-    logger_->info("Task Pool: " + std::to_string(available_tasks) + " available, " + 
+    logger_->info("Task Queue: " + std::to_string(available_tasks) + " available, " + 
                   std::to_string(waiting_sessions) + " sessions waiting");
     logger_->info("========================================");
 }

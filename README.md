@@ -6,13 +6,13 @@ Task Messenger is a dispatcher/worker platform for streaming computational tasks
 
 - **Dispatcher** (`dispatcher/`): Accepts worker connections, runs coroutine sessions, and coordinates task fan-out via `AsyncTransportServer`, `SessionManager`, and mock `TaskGenerator` integrations.
 - **Workers** (`worker/`): Connect back to the dispatcher, execute tasks under pluggable runtimes (`BlockingRuntime`/`AsyncRuntime`), track metrics, and optionally expose a terminal UI using FTXUI.
-- **Messaging Primitives** (`message/`): Defines `TaskMessage`, `TaskMessagePool`, and helpers that serialize payloads, enforce framing, and provide coroutine-friendly hand-off between producers and sessions.
+- **Messaging Primitives** (`message/`): Defines `TaskMessage`, `TaskMessageQueue`, and helpers that serialize payloads, enforce framing, and provide coroutine-friendly hand-off between producers and sessions.
 - **Transport Layer** (`transport/`): Shared networking stack (coroutines, ZeroTier adapters, socket factories) powering both dispatcher and worker runtimes.
 
 ## System Flow (Mermaid)
 ```mermaid
 graph LR
-    App[Domain App / TaskGenerator] --> Pool[TaskMessagePool]
+    App[Domain App / TaskGenerator] --> Pool[TaskMessageQueue]
     Pool --> Dispatcher[Dispatcher Sessions]
     Dispatcher --> Transport[Async Transport Layer]
     Transport --> WorkerFleet[Workers]

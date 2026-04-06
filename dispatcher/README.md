@@ -12,7 +12,7 @@ The dispatcher is the server-side half of the **Task Messenger** system. It acce
 ## Lifecycle Overview (Mermaid)
 ```mermaid
 graph TD
-    Generator[TaskGenerator mock] -->|add tasks| Pool[TaskMessagePool]
+    Generator[TaskGenerator mock] -->|add tasks| Pool[TaskMessageQueue]
     Pool -->|co_await| SessionManager
     SessionManager --> Session[Session coroutine]
     Session --> Transport[AsyncTransportServer]
@@ -22,4 +22,4 @@ graph TD
 ## Authoring Notes
 - Mark public entry points with the `task_messenger_dispatcher` Doxygen subgroup.
 - When adding new subsystems under `dispatcher/`, update this overview and ensure documentation mirrors the message/session modules for consistency.
-- Real applications should replace `TaskGenerator` with domain-specific producers that stream tasks into `TaskMessagePool`.
+- Real applications should replace `TaskGenerator` with domain-specific producers that stream tasks into `TaskMessageQueue`.

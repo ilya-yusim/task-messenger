@@ -64,7 +64,7 @@ public:
         std::unique_ptr<TaskMessenger::Skills::PayloadBufferBase> response_buffer = nullptr);
 
     /** \brief Get the current number of tasks in the pool. */
-    size_t task_pool_size() const;
+    size_t task_queue_size() const;
 
     /** \brief Print transport server statistics to the logger. */
     void print_statistics() const;

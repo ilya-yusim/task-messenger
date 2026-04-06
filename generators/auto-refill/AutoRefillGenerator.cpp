@@ -32,10 +32,10 @@ int AutoRefillGenerator::run(DispatcherApp& app) {
             return coro.done();
         });
 
-        auto pool_size = app.task_pool_size();
+        auto queue_size = app.task_queue_size();
 
-        if (pool_size < LOW_THRESHOLD) {
-            logger->info("Task pool low (" + std::to_string(pool_size) +
+        if (queue_size < LOW_THRESHOLD) {
+            logger->info("Task queue low (" + std::to_string(queue_size) +
                         " tasks), dispatching " + std::to_string(REFILL_AMOUNT) + " with async coroutines");
 
             auto tasks = iterator_->next(static_cast<uint32_t>(REFILL_AMOUNT));

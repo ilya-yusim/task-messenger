@@ -3,7 +3,7 @@
 
 #include "Session.hpp"
 #include "SessionStats.hpp"
-#include "../../message/TaskMessagePool.hpp"
+#include "../../message/TaskMessageQueue.hpp"
 #include "transport/coro/CoroSocketAdapter.hpp"
 #include "transport/coro/CoroTask.hpp"
 #include "logger.hpp"
@@ -62,7 +62,7 @@ struct RecentDisconnectSnapshot {
  * Responsibilities:
  * - Create `Session` objects per accepted connection.
  * - Track active sessions, stats, and lifecycle transitions.
- * - Provide enqueue/inspection helpers for the shared `TaskMessagePool`.
+ * - Provide enqueue/inspection helpers for the shared `TaskMessageQueue`.
  */
 class SessionManager {
 public:
@@ -122,24 +122,24 @@ public:
 
 
     /**
-    * \brief Enqueue externally generated tasks into the task pool.
+    * \brief Enqueue externally generated tasks into the task queue.
      */
     void enqueue_tasks(std::vector<TaskMessage> tasks);
 
     /**
-    * \brief Get task pool statistics.
-    * \return Current task pool size and waiting session count.
+    * \brief Get task queue statistics.
+    * \return Current task queue size and waiting session count.
      */
-    std::pair<size_t, size_t> get_task_pool_stats() const;
+    std::pair<size_t, size_t> get_task_queue_stats() const;
 
     /**
-     * \brief Get the shared task pool for async task submission.
-     * \return Shared pointer to the TaskMessagePool.
+    * \brief Get the shared task queue for async task submission.
+     * \return Shared pointer to the TaskMessageQueue.
      */
-    std::shared_ptr<TaskMessagePool> task_pool() const { return task_pool_; }
+    std::shared_ptr<TaskMessageQueue> task_queue() const { return task_queue_; }
 
     /**
-    * \brief Print comprehensive statistics for all sessions and the task pool.
+    * \brief Print comprehensive statistics for all sessions and the task queue.
      */
     void print_comprehensive_statistics() const;
 
@@ -158,7 +158,7 @@ private:
     // Core manager data
     std::shared_ptr<Logger> logger_;
     // Task management
-    std::shared_ptr<TaskMessagePool> task_pool_;
+    std::shared_ptr<TaskMessageQueue> task_queue_;
     
     // Session tracking
     std::atomic<uint32_t> next_session_id_;

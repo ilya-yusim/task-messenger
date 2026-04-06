@@ -2,7 +2,7 @@
 #pragma once
 
 #include "SessionStats.hpp"
-#include "../../message/TaskMessagePool.hpp"
+#include "../../message/TaskMessageQueue.hpp"
 #include "transport/coro/CoroSocketAdapter.hpp"
 #include "transport/coro/CoroTask.hpp"
 #include "logger.hpp"
@@ -57,7 +57,7 @@ enum class SessionDisconnectReason {
  *
  * Responsibilities:
  * - Connection management and cleanup.
- * - Task send/receive loop that interacts with `TaskMessagePool`.
+ * - Task send/receive loop that interacts with `TaskMessageQueue`.
  * - Statistics tracking for latency and throughput reporting.
  */
 class Session {
@@ -67,12 +67,12 @@ public:
      * \param client_socket Connected transport adapter.
      * \param session_id Unique identifier for this session.
      * \param logger Logger instance for session events.
-     * \param shared_task_pool Shared task pool supplying work units.
+        * \param shared_task_queue Shared task queue supplying work units.
      */
     Session(std::shared_ptr<transport::CoroSocketAdapter> client_socket,
             uint32_t session_id,
             std::shared_ptr<Logger> logger,
-            std::shared_ptr<TaskMessagePool> shared_task_pool);
+            std::shared_ptr<TaskMessageQueue> shared_task_queue);
 
     /**
      * \brief Start session processing.
@@ -166,7 +166,7 @@ private:
     std::shared_ptr<transport::CoroSocketAdapter> client_socket_;
     uint32_t session_id_;
     std::shared_ptr<Logger> logger_;
-    std::shared_ptr<TaskMessagePool> shared_task_pool_;  // Shared across all sessions
+    std::shared_ptr<TaskMessageQueue> shared_task_queue_;  // Shared across all sessions
     std::string cached_remote_endpoint_;
     
     // Session state

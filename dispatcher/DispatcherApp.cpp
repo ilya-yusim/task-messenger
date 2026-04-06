@@ -96,12 +96,12 @@ TaskSubmitAwaitable DispatcherApp::submit_task(
     uint32_t task_id,
     std::unique_ptr<TaskMessenger::Skills::PayloadBufferBase> request,
     std::unique_ptr<TaskMessenger::Skills::PayloadBufferBase> response_buffer) {
-    return ::submit_task(server_->task_pool(), server_->response_context(),
+    return ::submit_task(server_->task_queue(), server_->response_context(),
                          task_id, std::move(request), std::move(response_buffer));
 }
 
-size_t DispatcherApp::task_pool_size() const {
-    return server_ ? server_->task_pool()->size() : 0;
+size_t DispatcherApp::task_queue_size() const {
+    return server_ ? server_->task_queue()->size() : 0;
 }
 
 void DispatcherApp::print_statistics() const {

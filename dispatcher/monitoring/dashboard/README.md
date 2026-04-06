@@ -24,8 +24,8 @@ Expected payload fields (top level):
 - `snapshot_timestamp_ms`
 - `generator_status`
 - `worker_count`
-- `task_pool_available`
-- `task_pool_waiting`
+- `task_queue_size`
+- `workers_waiting`
 - `workers` (array)
 
 Expected worker fields:

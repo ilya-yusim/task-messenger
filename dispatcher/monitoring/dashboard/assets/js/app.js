@@ -14,8 +14,8 @@ function monitoringDashboard() {
     kpi: {
       worker_count: null,
       generator_status: null,
-      task_pool_available: null,
-      task_pool_waiting: null,
+      task_queue_size: null,
+      workers_waiting: null,
       uptime_seconds: null,
       avg_roundtrip_ms: null,
       failure_rate_pct: null,
@@ -225,8 +225,8 @@ function monitoringDashboard() {
         snapshot_timestamp_ms: snapshotTimestampMs,
         generator_status: this.toStringValue(p.generator_status, "unknown"),
         worker_count: this.toNumber(p.worker_count, workers.length),
-        task_pool_available: this.toNumber(p.task_pool_available, null),
-        task_pool_waiting: this.toNumber(p.task_pool_waiting, null),
+        task_queue_size: this.toNumber(p.task_queue_size, null),
+        workers_waiting: this.toNumber(p.workers_waiting, null),
         uptime_seconds: this.toNumber(p.uptime_seconds, null),
         avg_roundtrip_ms: avgRoundtripMs,
         failure_rate_pct: failureRatePct,
@@ -277,8 +277,8 @@ function monitoringDashboard() {
 
       this.kpi.worker_count = snapshot.worker_count;
       this.kpi.generator_status = snapshot.generator_status;
-      this.kpi.task_pool_available = snapshot.task_pool_available;
-      this.kpi.task_pool_waiting = snapshot.task_pool_waiting;
+      this.kpi.task_queue_size = snapshot.task_queue_size;
+      this.kpi.workers_waiting = snapshot.workers_waiting;
       this.kpi.uptime_seconds = this.formatDurationSeconds(snapshot.uptime_seconds);
       this.kpi.avg_roundtrip_ms = snapshot.avg_roundtrip_ms === null
         ? null
