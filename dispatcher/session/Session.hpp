@@ -37,6 +37,20 @@ enum class SessionState {
     ERROR_STATE
 };
 
+enum class SessionDisconnectReason {
+    None,
+    RemoteClosed,
+    ConnectionReset,
+    ConnectionAborted,
+    NotConnected,
+    BadFileDescriptor,
+    GreetingReadFailed,
+    GreetingInvalid,
+    TransportError,
+    LocalTermination,
+    Unknown
+};
+
 /**
  * \brief Represents a single client session with task processing lifecycle.
  * \ingroup session_module
@@ -103,9 +117,22 @@ public:
     std::string get_client_endpoint() const;
 
     /**
+     * \brief Get immutable endpoint cached at session creation time.
+     */
+    const std::string& cached_remote_endpoint() const { return cached_remote_endpoint_; }
+
+    /**
      * \brief Get worker node ID learned from greeting (0 if unavailable).
      */
     uint64_t get_worker_node_id() const { return worker_node_id_.load(std::memory_order_relaxed); }
+
+    SessionDisconnectReason disconnect_reason() const {
+        return disconnect_reason_.load(std::memory_order_relaxed);
+    }
+
+    std::chrono::system_clock::time_point disconnected_at() const {
+        return disconnected_at_.load(std::memory_order_relaxed);
+    }
 
     /**
      * \brief Get current raw session state enum.
@@ -140,6 +167,7 @@ private:
     uint32_t session_id_;
     std::shared_ptr<Logger> logger_;
     std::shared_ptr<TaskMessagePool> shared_task_pool_;  // Shared across all sessions
+    std::string cached_remote_endpoint_;
     
     // Session state
     std::atomic<SessionState> state_;
@@ -147,6 +175,8 @@ private:
     std::atomic<bool> termination_requested_;
     std::atomic<uint64_t> worker_node_id_{0};
     std::atomic<std::chrono::system_clock::time_point> last_seen_dispatcher_{};
+    std::atomic<SessionDisconnectReason> disconnect_reason_{SessionDisconnectReason::None};
+    std::atomic<std::chrono::system_clock::time_point> disconnected_at_{};
     
     // Coroutine management (internal implementation detail)
     std::unique_ptr<Task<void>> session_coroutine_;
@@ -156,6 +186,7 @@ private:
     void finalize_session();
     void update_state(SessionState new_state);
     void touch_last_seen_dispatcher();
+    void mark_disconnected(SessionDisconnectReason reason);
     void record_task_sent();
     void record_task_completed();
     void record_task_failed();

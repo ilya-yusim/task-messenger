@@ -134,6 +134,7 @@
     "cSpell.words": [
         "blas",
         "cblas",
+        "Coro",
         "Dgemm",
         "flatbuffers",
         "flatc",

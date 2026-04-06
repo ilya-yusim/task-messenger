@@ -112,6 +112,14 @@ public:
         return server_socket_ ? server_socket_->socket_ptr() : nullptr;
     }
 
+    /**
+     * \brief Run transport/session maintenance when interval budget allows.
+     *
+     * Safe to call from monitoring/polling paths; internal throttling prevents
+     * redundant work when multiple clients poll concurrently.
+     */
+    void run_maintenance_if_due() noexcept;
+
 private:
     // Dedicated acceptor thread replaces coroutine accept loop
     void start_acceptor_thread();
@@ -130,6 +138,7 @@ private:
     std::shared_ptr<transport::CoroSocketAdapter> server_socket_;
     std::thread acceptor_thread_{};
     std::chrono::steady_clock::time_point last_maintenance_run_{};
+    mutable std::mutex maintenance_mutex_;
 
     // Remember the listen endpoint for wake-up connections during shutdown
     std::string listen_host_{};

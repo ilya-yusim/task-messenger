@@ -3,6 +3,8 @@
 #include <algorithm>
 
 namespace {
+constexpr std::size_t kRecentDisconnectHistoryCap = 100;
+
 session::DispatcherMonitoringState map_dispatcher_state(const session::Session& s, const session::SessionStats& stats) {
     constexpr auto kStallGraceWindow = std::chrono::seconds(2);
 
@@ -31,6 +33,10 @@ session::DispatcherMonitoringState map_dispatcher_state(const session::Session& 
         default:
             return session::DispatcherMonitoringState::Unknown;
     }
+}
+
+int64_t to_epoch_ms(std::chrono::system_clock::time_point tp) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(tp.time_since_epoch()).count();
 }
 } // namespace
 
@@ -134,6 +140,7 @@ void SessionManager::terminate_all_sessions() {
 
 size_t SessionManager::cleanup_completed_sessions() {
     std::lock_guard<std::mutex> lock(sessions_mutex_);
+    const auto now = std::chrono::system_clock::now();
     
     size_t cleaned_up = 0;
     
@@ -151,6 +158,20 @@ size_t SessionManager::cleanup_completed_sessions() {
                     logger_->info("SessionManager: Completed session " + std::to_string(session_id) + 
                                   " - Tasks: " + std::to_string(stats.tasks_sent) + 
                                   ", Success rate: " + std::to_string(stats.get_success_rate()) + "%");
+                }
+
+                RecentDisconnectSnapshot rec{};
+                rec.worker_node_id = session->get_worker_node_id();
+                rec.session_id = session_id;
+                rec.remote_endpoint = session->cached_remote_endpoint();
+                rec.reason = disconnect_reason_to_string(session->disconnect_reason());
+                const auto disconnected_at = session->disconnected_at();
+                rec.disconnected_ts_ms = to_epoch_ms(
+                    disconnected_at.time_since_epoch().count() > 0 ? disconnected_at : now);
+                // Keep most-recent events at the front for dashboard-first consumption.
+                recent_disconnects_.insert(recent_disconnects_.begin(), std::move(rec));
+                if (recent_disconnects_.size() > kRecentDisconnectHistoryCap) {
+                    recent_disconnects_.resize(kRecentDisconnectHistoryCap);
                 }
             }
             
@@ -306,6 +327,39 @@ std::vector<WorkerMonitoringSnapshot> SessionManager::get_worker_monitoring_snap
     }
 
     return out;
+}
+
+std::vector<RecentDisconnectSnapshot> SessionManager::get_recent_disconnects_snapshot() const {
+    std::lock_guard<std::mutex> lock(sessions_mutex_);
+    return recent_disconnects_;
+}
+
+std::string SessionManager::disconnect_reason_to_string(SessionDisconnectReason reason) {
+    switch (reason) {
+    case SessionDisconnectReason::None:
+        return "none";
+    case SessionDisconnectReason::RemoteClosed:
+        return "remote_closed";
+    case SessionDisconnectReason::ConnectionReset:
+        return "connection_reset";
+    case SessionDisconnectReason::ConnectionAborted:
+        return "connection_aborted";
+    case SessionDisconnectReason::NotConnected:
+        return "not_connected";
+    case SessionDisconnectReason::BadFileDescriptor:
+        return "bad_file_descriptor";
+    case SessionDisconnectReason::GreetingReadFailed:
+        return "greeting_read_failed";
+    case SessionDisconnectReason::GreetingInvalid:
+        return "greeting_invalid";
+    case SessionDisconnectReason::TransportError:
+        return "transport_error";
+    case SessionDisconnectReason::LocalTermination:
+        return "local_termination";
+    case SessionDisconnectReason::Unknown:
+    default:
+        return "unknown";
+    }
 }
 
 } // namespace session

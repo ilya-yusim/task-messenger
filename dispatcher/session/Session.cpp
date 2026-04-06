@@ -38,6 +38,12 @@ Session::Session(std::shared_ptr<transport::CoroSocketAdapter> client_socket,
     stats_.tasks_sent = 0;
     stats_.tasks_completed = 0;
     stats_.tasks_failed = 0;
+
+    cached_remote_endpoint_ = client_socket_->remote_endpoint();
+    if (cached_remote_endpoint_.empty()) {
+        cached_remote_endpoint_ = "unknown";
+    }
+
     touch_last_seen_dispatcher();
 }
 
@@ -162,12 +168,24 @@ Task<void> Session::run_coroutine() {
                     e.code() == std::errc::connection_reset ||
                     e.code() == std::errc::connection_aborted ||
                     e.code() == std::errc::bad_file_descriptor) {
+                    if (e.code() == std::errc::not_connected) {
+                        mark_disconnected(SessionDisconnectReason::NotConnected);
+                    } else if (e.code() == std::errc::connection_reset) {
+                        mark_disconnected(SessionDisconnectReason::ConnectionReset);
+                    } else if (e.code() == std::errc::connection_aborted) {
+                        mark_disconnected(SessionDisconnectReason::ConnectionAborted);
+                    } else if (e.code() == std::errc::bad_file_descriptor) {
+                        mark_disconnected(SessionDisconnectReason::BadFileDescriptor);
+                    } else {
+                        mark_disconnected(SessionDisconnectReason::Unknown);
+                    }
                     logger_->info("Session " + std::to_string(session_id_) + ": Connection lost: " + std::string(e.what()));
                     update_state(SessionState::TERMINATED);
                     finalize_session();
                     co_return;
                 }
 
+                mark_disconnected(SessionDisconnectReason::TransportError);
                 logger_->error("Session " + std::to_string(session_id_) + ": I/O error: " + std::string(e.what()));
                 update_state(SessionState::ERROR_STATE);
                 finalize_session();
@@ -192,6 +210,7 @@ Task<void> Session::run_coroutine() {
         
         finalize_session();
     } catch (const std::exception& e) {
+        mark_disconnected(SessionDisconnectReason::Unknown);
         logger_->error("Session " + std::to_string(session_id_) + ": run coroutine failed: " + std::string(e.what()));
         update_state(SessionState::ERROR_STATE);
         finalize_session();
@@ -202,10 +221,10 @@ Task<void> Session::run_coroutine() {
 
 std::string Session::get_client_endpoint() const {
     if (!client_socket_) {
-        return "disconnected";
+        return cached_remote_endpoint_;
     }
     auto endpoint = client_socket_->remote_endpoint();
-    return endpoint.empty() ? std::string("unknown") : endpoint;
+    return endpoint.empty() ? cached_remote_endpoint_ : endpoint;
 }
 
 bool Session::is_active() const {
@@ -216,6 +235,7 @@ bool Session::is_active() const {
 
 void Session::request_termination() {
     termination_requested_.store(true);
+    mark_disconnected(SessionDisconnectReason::LocalTermination);
     update_state(SessionState::COMPLETING);
     if (client_socket_) {
         client_socket_->shutdown();
@@ -262,6 +282,7 @@ void Session::initialize_session() {
             ec);
 
         if (ec) {
+            mark_disconnected(SessionDisconnectReason::GreetingReadFailed);
             throw std::runtime_error("Session greeting read failed: " + ec.message());
         }
 
@@ -283,14 +304,17 @@ void Session::initialize_session() {
     }
 
     if (total_read != sizeof(greeting)) {
+        mark_disconnected(SessionDisconnectReason::GreetingInvalid);
         throw std::runtime_error("Session greeting incomplete");
     }
 
     if (greeting.magic != kWorkerGreetingMagic) {
+        mark_disconnected(SessionDisconnectReason::GreetingInvalid);
         throw std::runtime_error("Session greeting magic mismatch");
     }
 
     if (greeting.version != kWorkerGreetingVersion) {
+        mark_disconnected(SessionDisconnectReason::GreetingInvalid);
         throw std::runtime_error("Session greeting version mismatch");
     }
 
@@ -328,6 +352,11 @@ void Session::update_state(SessionState new_state) {
 
 void Session::touch_last_seen_dispatcher() {
     last_seen_dispatcher_.store(std::chrono::system_clock::now(), std::memory_order_relaxed);
+}
+
+void Session::mark_disconnected(SessionDisconnectReason reason) {
+    disconnect_reason_.store(reason, std::memory_order_relaxed);
+    disconnected_at_.store(std::chrono::system_clock::now(), std::memory_order_relaxed);
 }
 
 void Session::record_task_sent() {

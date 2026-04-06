@@ -35,6 +35,14 @@ struct WorkerMonitoringSnapshot {
     bool dispatcher_fresh = false;
 };
 
+struct RecentDisconnectSnapshot {
+    uint64_t worker_node_id = 0;
+    uint32_t session_id = 0;
+    std::string remote_endpoint;
+    std::string reason;
+    int64_t disconnected_ts_ms = 0;
+};
+
 /**
  * \defgroup session_module Session Management Module
  * \ingroup task_messenger_dispatcher
@@ -141,6 +149,11 @@ public:
     std::vector<WorkerMonitoringSnapshot> get_worker_monitoring_snapshot(
         std::chrono::milliseconds freshness_window = std::chrono::seconds(15)) const;
 
+    /**
+     * \brief Return recently disconnected worker sessions retained for dashboard visibility.
+     */
+    std::vector<RecentDisconnectSnapshot> get_recent_disconnects_snapshot() const;
+
 private:
     // Core manager data
     std::shared_ptr<Logger> logger_;
@@ -153,10 +166,12 @@ private:
     // Active sessions storage (thread-safe access required)
     mutable std::mutex sessions_mutex_;
     std::unordered_map<uint32_t, std::shared_ptr<Session>> active_sessions_;
+    mutable std::vector<RecentDisconnectSnapshot> recent_disconnects_;
 
     // Helper methods
     uint32_t generate_session_id();
     void log_session_event(const std::string& event, uint32_t session_id, const std::string& details = "");
+    static std::string disconnect_reason_to_string(SessionDisconnectReason reason);
 };
 
 } // namespace session

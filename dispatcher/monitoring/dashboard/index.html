@@ -8,7 +8,7 @@
 
     <link href="assets/lib/bootstrap.min.css" rel="stylesheet" />
     <link href="assets/lib/tabulator_bootstrap5.min.css" rel="stylesheet" />
-    <link href="assets/css/dashboard.css" rel="stylesheet" />
+    <link href="assets/css/dashboard.css?v=20260405" rel="stylesheet" />
 
     <script defer src="assets/lib/alpine.min.js"></script>
   </head>
@@ -87,11 +87,45 @@
             <div id="workers-table" aria-label="Workers monitoring table"></div>
           </div>
         </section>
+
+        <section class="card table-card shadow-sm mt-3">
+          <div class="card-body p-2 p-md-3">
+            <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+              <h2 class="table-title mb-0">
+                Recent Disconnects
+                <span class="disconnect-count" x-text="recentDisconnects.length"></span>
+              </h2>
+              <div class="d-flex align-items-center gap-2">
+                <span class="table-hint">Retained for process lifetime (max 100)</span>
+                <button class="btn btn-sm btn-outline-secondary"
+                        type="button"
+                        @click="disconnectHistoryExpanded = !disconnectHistoryExpanded"
+                        x-text="disconnectHistoryExpanded ? 'Collapse' : 'Expand'"></button>
+              </div>
+            </div>
+            <div class="disconnect-list" x-show="disconnectHistoryExpanded && recentDisconnects.length > 0" x-cloak>
+              <template x-for="entry in recentDisconnects" :key="entry.session_id + '-' + entry.disconnected_ts_ms">
+                <div class="disconnect-row">
+                  <div class="disconnect-main">
+                    <span class="disconnect-node" x-text="entry.worker_node_id"></span>
+                    <span class="disconnect-reason" x-text="entry.reason"></span>
+                  </div>
+                  <div class="disconnect-meta">
+                    <span x-text="entry.remote_endpoint"></span>
+                    <span x-text="formatTimeAgo(entry.disconnected_ts_ms)"></span>
+                  </div>
+                </div>
+              </template>
+            </div>
+            <div class="table-hint px-1" x-show="disconnectHistoryExpanded && recentDisconnects.length === 0">No recent disconnects</div>
+            <div class="table-hint px-1" x-show="!disconnectHistoryExpanded">History collapsed</div>
+          </div>
+        </section>
       </main>
     </div>
 
     <script src="assets/lib/bootstrap.bundle.min.js"></script>
     <script src="assets/lib/tabulator.min.js"></script>
-    <script src="assets/js/app.js"></script>
+    <script src="assets/js/app.js?v=20260405"></script>
   </body>
 </html>

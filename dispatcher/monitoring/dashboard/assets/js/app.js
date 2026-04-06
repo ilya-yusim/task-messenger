@@ -22,6 +22,8 @@ function monitoringDashboard() {
     },
 
     workers: [],
+    recentDisconnects: [],
+    disconnectHistoryExpanded: true,
     table: null,
 
     init() {
@@ -229,7 +231,25 @@ function monitoringDashboard() {
         avg_roundtrip_ms: avgRoundtripMs,
         failure_rate_pct: failureRatePct,
         workers,
+        recent_disconnects: this.normalizeRecentDisconnects(p.recent_disconnects),
       };
+    },
+
+    normalizeRecentDisconnects(rows) {
+      if (!Array.isArray(rows)) {
+        return [];
+      }
+      const normalized = rows.map((row) => {
+        const r = row && typeof row === "object" ? row : {};
+        return {
+          worker_node_id: this.trimLeadingZerosHex(this.toStringValue(r.worker_node_id, "unknown")),
+          session_id: this.toNumber(r.session_id, 0),
+          remote_endpoint: this.toStringValue(r.remote_endpoint, "unknown"),
+          reason: this.toStringValue(r.reason, "unknown"),
+          disconnected_ts_ms: this.toNumber(r.disconnected_ts_ms, 0),
+        };
+      });
+      return normalized;
     },
 
     normalizeWorker(row) {
@@ -268,6 +288,7 @@ function monitoringDashboard() {
         : `${snapshot.failure_rate_pct.toFixed(1)}%`;
 
       this.workers = snapshot.workers;
+      this.recentDisconnects = snapshot.recent_disconnects;
       if (this.table) {
         this.table.replaceData(this.workers);
       }
@@ -310,6 +331,19 @@ function monitoringDashboard() {
         return "never";
       }
       return new Date(timestampMs).toLocaleTimeString();
+    },
+
+    formatTimeAgo(timestampMs) {
+      if (!Number.isFinite(timestampMs) || timestampMs <= 0) {
+        return "unknown";
+      }
+      const ageSec = Math.max(0, Math.floor((Date.now() - timestampMs) / 1000));
+      if (ageSec < 60) {
+        return `${ageSec}s ago`;
+      }
+      const mins = Math.floor(ageSec / 60);
+      const rem = ageSec % 60;
+      return `${mins}m ${rem}s ago`;
     },
 
     formatDurationSeconds(totalSeconds) {

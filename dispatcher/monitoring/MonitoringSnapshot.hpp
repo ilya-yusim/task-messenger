@@ -32,6 +32,7 @@ struct DispatcherMonitoringSnapshot {
     size_t task_pool_available = 0;
     size_t task_pool_waiting = 0;
     std::vector<session::WorkerMonitoringSnapshot> workers;
+    std::vector<session::RecentDisconnectSnapshot> recent_disconnects;
 };
 
 /** \brief Convert a ZeroTier node id to fixed-width lowercase hex. */
@@ -96,6 +97,16 @@ inline void to_json(nlohmann::json& j, const WorkerMonitoringSnapshot& worker) {
     };
 }
 
+inline void to_json(nlohmann::json& j, const RecentDisconnectSnapshot& rec) {
+    j = nlohmann::json{
+        {"worker_node_id", monitoring::format_node_id_hex(rec.worker_node_id)},
+        {"session_id", rec.session_id},
+        {"remote_endpoint", rec.remote_endpoint},
+        {"reason", rec.reason},
+        {"disconnected_ts_ms", rec.disconnected_ts_ms},
+    };
+}
+
 } // namespace session
 
 namespace monitoring {
@@ -115,6 +126,7 @@ inline void to_json(nlohmann::json& j, const DispatcherMonitoringSnapshot& snaps
         {"task_pool_available", snapshot.task_pool_available},
         {"task_pool_waiting", snapshot.task_pool_waiting},
         {"workers", snapshot.workers},
+        {"recent_disconnects", snapshot.recent_disconnects},
     };
 }
 

@@ -12,10 +12,15 @@ MonitoringSnapshotBuilder::MonitoringSnapshotBuilder(std::shared_ptr<Logger> log
 DispatcherMonitoringSnapshot MonitoringSnapshotBuilder::build() const {
     DispatcherMonitoringSnapshot snapshot{};
 
+    // Poll-driven monitor requests can be frequent; run maintenance via the
+    // server's throttled gate to avoid redundant cleanup scans.
+    server_.run_maintenance_if_due();
+
     // Phase A API is the canonical source for per-worker dispatcher-side state.
     auto* session_manager = server_.session_manager();
     if (session_manager) {
         snapshot.workers = session_manager->get_worker_monitoring_snapshot();
+        snapshot.recent_disconnects = session_manager->get_recent_disconnects_snapshot();
     }
 
     const auto [task_pool_available, task_pool_waiting] = server_.get_task_pool_stats();
@@ -90,12 +95,12 @@ std::string MonitoringSnapshotBuilder::derive_generator_status(
         return "degraded";
     }
     if (any_active) {
-        return "healthy";
+        return "active";
     }
     if (!any_assigned) {
         return "idle";
     }
-    return "healthy";
+    return "active";
 }
 
 } // namespace monitoring
