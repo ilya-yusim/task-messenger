@@ -43,7 +43,7 @@ function monitoringDashboard() {
 
     initWorkersTable() {
       this.table = new Tabulator("#workers-table", {
-        layout: "fitColumns",
+        layout: "fitDataStretch",
         placeholder: "No worker sessions yet",
         reactiveData: true,
         data: this.workers,
@@ -58,7 +58,7 @@ function monitoringDashboard() {
         },
         columns: [
           {
-            title: "Worker Node",
+            title: "Worker<br>Node",
             field: "worker_node_id",
             minWidth: 170,
             formatter: (cell) => {
@@ -126,10 +126,10 @@ function monitoringDashboard() {
             },
           },
           { title: "Sent", field: "tasks_sent", hozAlign: "right", width: 90 },
-          { title: "Completed", field: "tasks_completed", hozAlign: "right", width: 110 },
-          { title: "Failed", field: "tasks_failed", hozAlign: "right", width: 90 },
+          { title: "Completed", field: "tasks_completed", hozAlign: "right", minWidth: 110 },
+          { title: "Failed", field: "tasks_failed", hozAlign: "right", minWidth: 90 },
           {
-            title: "Avg Roundtrip",
+            title: "Avg<br>Roundtrip",
             field: "avg_roundtrip_ms",
             hozAlign: "right",
             minWidth: 130,
@@ -149,20 +149,20 @@ function monitoringDashboard() {
             formatter: (cell) => this.formatMinutesSeconds(cell.getValue()),
           },
           {
-            title: "Bytes Sent",
+            title: "Bytes<br>Sent",
             field: "bytes_sent",
             hozAlign: "right",
             minWidth: 115,
             formatter: (cell) => this.formatBytes(cell.getValue()),
           },
           {
-            title: "Bytes Received",
+            title: "Bytes<br>Received",
             field: "bytes_received",
             hozAlign: "right",
             minWidth: 135,
             formatter: (cell) => this.formatBytes(cell.getValue()),
           },
-          { title: "Remote Endpoint", field: "remote_endpoint", minWidth: 190, widthGrow: 2 },
+          { title: "Remote<br>Endpoint", field: "remote_endpoint", minWidth: 190, widthGrow: 2 },
         ],
       });
     },

@@ -121,6 +121,13 @@ body {
   font-weight: 700;
 }
 
+.tabulator .tabulator-header .tabulator-col .tabulator-col-content .tabulator-col-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  line-height: 1.2;
+}
+
 .state-badge {
   display: inline-block;
   padding: 0.15rem 0.45rem;
