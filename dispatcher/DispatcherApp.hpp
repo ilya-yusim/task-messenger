@@ -20,6 +20,16 @@
  */
 class DispatcherApp {
 public:
+    enum class LifecycleState {
+        Starting,
+        Running,
+        NoTasks,
+        NoWorkers,
+        Stopping,
+        Stopped,
+        Error,
+    };
+
     DispatcherApp();
     ~DispatcherApp();
 
@@ -75,6 +85,12 @@ public:
     /** \brief Dispatcher uptime in whole seconds. */
     uint64_t uptime_seconds() const;
 
+    /** \brief Get current dispatcher lifecycle state. */
+    LifecycleState lifecycle_state() const;
+
+    /** \brief Get lifecycle state as API-safe lowercase string. */
+    std::string lifecycle_state_string() const;
+
 private:
     static void install_signal_handlers();
 
@@ -82,6 +98,7 @@ private:
     std::unique_ptr<AsyncTransportServer> server_;
     std::unique_ptr<monitoring::MonitoringService> monitoring_service_;
     std::chrono::steady_clock::time_point start_time_{};
+    std::atomic<LifecycleState> lifecycle_state_{LifecycleState::Stopped};
 
     // Global shutdown flag — static so signal handler can access it
     static std::atomic<bool> s_shutdown_requested;

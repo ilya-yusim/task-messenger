@@ -42,20 +42,23 @@ inline std::string format_node_id_hex(uint64_t node_id) {
     return oss.str();
 }
 
-/** \brief Normalize dispatcher state enum values to API-safe strings. */
-inline std::string to_string(session::DispatcherMonitoringState state) {
+/** \brief Normalize session state enum values to API-safe strings. */
+inline std::string to_string(session::SessionState state) {
     switch (state) {
-    case session::DispatcherMonitoringState::Connecting:
-        return "connecting";
-    case session::DispatcherMonitoringState::AssignedActive:
-        return "assigned_active";
-    case session::DispatcherMonitoringState::AssignedIdle:
-        return "assigned_idle";
-    case session::DispatcherMonitoringState::AssignedStalled:
-        return "assigned_stalled";
-    case session::DispatcherMonitoringState::Unassigned:
-        return "unassigned";
-    case session::DispatcherMonitoringState::Unknown:
+    case session::SessionState::INITIALIZING:
+        return "initializing";
+    case session::SessionState::WAITING_FOR_TASK:
+        return "waiting_for_task";
+    case session::SessionState::PROCESSING_TASK:
+        return "processing_task";
+    case session::SessionState::ACTIVE:
+        return "active";
+    case session::SessionState::COMPLETING:
+        return "completing";
+    case session::SessionState::TERMINATED:
+        return "terminated";
+    case session::SessionState::ERROR_STATE:
+        return "error_state";
     default:
         return "unknown";
     }
@@ -84,7 +87,7 @@ inline void to_json(nlohmann::json& j, const WorkerMonitoringSnapshot& worker) {
         {"worker_node_id", monitoring::format_node_id_hex(worker.worker_node_id)},
         {"session_id", worker.session_id},
         {"remote_endpoint", worker.remote_endpoint},
-        {"dispatcher_state", monitoring::to_string(worker.dispatcher_state)},
+        {"worker_state", monitoring::to_string(worker.worker_state)},
         {"tasks_sent", worker.stats.tasks_sent},
         {"tasks_completed", worker.stats.tasks_completed},
         {"tasks_failed", worker.stats.tasks_failed},

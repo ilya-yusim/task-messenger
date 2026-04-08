@@ -18,32 +18,28 @@ namespace monitoring {
 class MonitoringSnapshotBuilder {
 public:
     using UptimeProvider = std::function<uint64_t()>;
+    using DispatcherStateProvider = std::function<std::string()>;
 
     /**
      * \brief Create snapshot builder bound to dispatcher runtime dependencies.
      * \param logger Shared logger.
      * \param server Dispatcher transport server (session/task data source).
      * \param uptime_provider Callback that returns dispatcher uptime in seconds.
+    * \param dispatcher_state_provider Callback that returns dispatcher lifecycle state.
      */
     MonitoringSnapshotBuilder(std::shared_ptr<Logger> logger,
                               AsyncTransportServer& server,
-                              UptimeProvider uptime_provider);
+                        UptimeProvider uptime_provider,
+                        DispatcherStateProvider dispatcher_state_provider);
 
     /** \brief Build a complete monitoring payload for a single request. */
     DispatcherMonitoringSnapshot build() const;
 
 private:
-    /**
-     * \brief Derive generator aggregate status from per-worker dispatcher state.
-     *
-     * This is a v1 heuristic and intentionally conservative when freshness is stale.
-     */
-    std::string derive_generator_status(
-        const std::vector<session::WorkerMonitoringSnapshot>& workers) const;
-
     std::shared_ptr<Logger> logger_;
     AsyncTransportServer& server_;
     UptimeProvider uptime_provider_;
+    DispatcherStateProvider dispatcher_state_provider_;
 };
 
 } // namespace monitoring

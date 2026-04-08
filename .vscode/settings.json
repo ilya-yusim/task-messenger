@@ -136,10 +136,13 @@
         "cblas",
         "Coro",
         "Dgemm",
+        "façade",
         "flatbuffers",
         "flatc",
+        "healthz",
         "httplib",
         "libzt",
+        "lifecycles",
         "makeself",
         "nlohmann",
         "nodiscard",
@@ -148,7 +151,10 @@
         "ptrs",
         "pycache",
         "reparsed",
-        "wraplock"
+        "TOCTOU",
+        "wouldblock",
+        "wraplock",
+        "zerotier"
     ],
     "C_Cpp.default.compileCommands": "c:\\Users\\iyusi\\projects\\task-messenger\\builddir/compile_commands.json",
     "chat.tools.terminal.autoApprove": {

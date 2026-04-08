@@ -70,6 +70,7 @@ Task<void> Session::run_coroutine() {
                 logger_->debug("Session " + std::to_string(session_id_) + ": Awaiting task from shared pool");
 
                 // Get next task from shared pool (suspends if empty)
+                update_state(SessionState::WAITING_FOR_TASK);
                 task = co_await shared_task_queue_->get_next_task();
                 task_acquired = true;
                 
@@ -81,6 +82,7 @@ Task<void> Session::run_coroutine() {
 
                 // Send the task to the worker
                 record_task_sent();
+                update_state(SessionState::PROCESSING_TASK);
 
                 auto wire_header = task.header_view();
                 const auto payload_bytes = task.payload_bytes();
@@ -131,6 +133,8 @@ Task<void> Session::run_coroutine() {
                 stats_.total_task_roundtrip_time += rt_span;
                 stats_.last_task_roundtrip_time = rt_span;
                 stats_.timed_tasks += 1;
+
+                update_state(SessionState::ACTIVE);
 
                 // Check response success
                 if (response.skill_id == wire_header.skill_id) {
@@ -229,7 +233,10 @@ std::string Session::get_client_endpoint() const {
 
 bool Session::is_active() const {
     const auto state = state_.load();
-    return (state == SessionState::ACTIVE || state == SessionState::COMPLETING) &&
+    return (state == SessionState::ACTIVE ||
+            state == SessionState::WAITING_FOR_TASK ||
+            state == SessionState::PROCESSING_TASK ||
+            state == SessionState::COMPLETING) &&
            client_socket_ && client_socket_->is_open() && !termination_requested_.load();
 }
 
@@ -245,6 +252,54 @@ void Session::request_termination() {
 bool Session::is_completed() const {
     const auto state = state_.load();
     return state == SessionState::TERMINATED || state == SessionState::ERROR_STATE;
+}
+
+bool Session::probe_connection_liveness() {
+    // Only probe while the coroutine is suspended waiting for a task.
+    if (state_.load(std::memory_order_relaxed) != SessionState::WAITING_FOR_TASK) {
+        return false;
+    }
+    if (!client_socket_) {
+        return false;
+    }
+    auto* sock = client_socket_->socket();
+    if (!sock) {
+        return false;
+    }
+
+    char probe_byte;
+    size_t bytes_read = 0;
+    std::error_code ec;
+    bool completed = sock->try_read(&probe_byte, 1, bytes_read, ec);
+
+    // try_read returns false with bytes_read==0 when it would block (peer alive).
+    if (!completed && bytes_read == 0) {
+        return false; // Connection is alive — no data, no error.
+    }
+
+    // If we get here, the peer either closed (result==0 → ec set) or a real
+    // error occurred.  In both cases the connection is dead.
+    if (ec) {
+        if (ec == std::errc::not_connected || ec == std::errc::connection_reset ||
+            ec == std::errc::connection_aborted) {
+            mark_disconnected(SessionDisconnectReason::RemoteClosed);
+        } else {
+            mark_disconnected(SessionDisconnectReason::TransportError);
+        }
+    } else {
+        // completed==true with no error and bytes_read==0 shouldn't happen per
+        // current backend, but treat it as a graceful close just in case.
+        mark_disconnected(SessionDisconnectReason::RemoteClosed);
+    }
+
+    logger_->info("Session " + std::to_string(session_id_) +
+                  ": Liveness probe detected disconnect (ec=" +
+                  (ec ? ec.message() : "none") + ")");
+    update_state(SessionState::TERMINATED);
+    // Shut down the socket so the suspended coroutine (if it resumes) will
+    // observe a closed connection and exit cleanly.
+    client_socket_->shutdown();
+    return true;
 }
 
 void Session::initialize_session() {

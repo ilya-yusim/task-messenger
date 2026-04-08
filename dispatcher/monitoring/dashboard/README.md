@@ -28,12 +28,29 @@ Expected payload fields (top level):
 - `workers_waiting`
 - `workers` (array)
 
+KPI rendering notes:
+
+- The dashboard header shows a combined `WORKERS (WAITING)` card rendered as `N (M)`.
+- `N` is `worker_count`.
+- `M` is `workers_waiting` from the backend payload.
+- Backend computes `workers_waiting` by counting worker rows in `waiting_for_task` state.
+
+`generator_status` values:
+
+- `starting`: dispatcher process is initializing runtime subsystems.
+- `running`: dispatcher is running with queued tasks and at least one active session.
+- `no_tasks`: dispatcher is running but currently has no queued tasks.
+- `no_workers`: dispatcher has queued tasks but has no active sessions.
+- `stopping`: dispatcher shutdown is in progress.
+- `stopped`: dispatcher has fully stopped.
+- `error`: dispatcher startup/runtime encountered a fatal error state.
+
 Expected worker fields:
 
 - `worker_node_id`
 - `session_id`
 - `remote_endpoint`
-- `dispatcher_state`
+- `worker_state`
 - `dispatcher_fresh`
 - `tasks_sent`
 - `tasks_completed`

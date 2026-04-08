@@ -11,7 +11,7 @@
 |----------|--------|
 | Static asset hosting | Served from MonitoringService routes (same host + port as `/api/monitor`) |
 | Default poll interval | 1000 ms |
-| Header KPIs | worker_count · generator_status · task_queue_size · workers_waiting · uptime_seconds · avg_roundtrip aggregate · failure rate aggregate |
+| Header KPIs | workers(waiting) · generator_status · task_queue_size · uptime_seconds · avg_roundtrip aggregate · failure rate aggregate |
 | Frontend stack | Alpine.js + Bootstrap + Tabulator |
 | Asset directory | `dispatcher/monitoring/dashboard/` |
 
@@ -172,3 +172,18 @@ Goal: Asset path resolution works in both dev and installed layouts; Meson updat
 - WebSocket push / realtime streaming
 - Historical metrics persistence
 - Cloud / router extraction work
+
+---
+
+## Current KPI semantics
+
+- `WORKERS (WAITING)` is displayed as `N (M)`.
+- `N` is `worker_count`.
+- `M` is `workers_waiting` from the monitoring API payload.
+- Backend derives `workers_waiting` by counting workers in `waiting_for_task` state.
+- `generator_status` is DispatcherApp-owned and reports:
+- `starting`, `running`, `no_tasks`, `no_workers`, `stopping`, `stopped`, or `error`.
+- Criteria while dispatcher base lifecycle is `running`:
+- `no_tasks` when task queue size is 0.
+- `no_workers` when task queue has tasks but active session count is 0.
+- `running` when task queue has tasks and active session count is greater than 0 (including workers that are currently busy).

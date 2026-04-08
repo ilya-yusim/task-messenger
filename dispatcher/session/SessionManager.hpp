@@ -16,20 +16,11 @@
 
 namespace session {
 
-enum class DispatcherMonitoringState {
-    Connecting,
-    AssignedActive,
-    AssignedIdle,
-    AssignedStalled,
-    Unassigned,
-    Unknown
-};
-
 struct WorkerMonitoringSnapshot {
     uint64_t worker_node_id = 0;
     uint32_t session_id = 0;
     std::string remote_endpoint;
-    DispatcherMonitoringState dispatcher_state = DispatcherMonitoringState::Unknown;
+    SessionState worker_state = SessionState::INITIALIZING;
     SessionStats stats;
     int64_t last_seen_dispatcher_ts_ms = 0;
     bool dispatcher_fresh = false;
@@ -127,10 +118,14 @@ public:
     void enqueue_tasks(std::vector<TaskMessage> tasks);
 
     /**
-    * \brief Get task queue statistics.
-    * \return Current task queue size and waiting session count.
+    * \brief Get the number of available tasks in the queue.
      */
-    std::pair<size_t, size_t> get_task_queue_stats() const;
+    size_t get_task_queue_size() const;
+
+    /**
+    * \brief Get the number of workers currently waiting on the queue.
+     */
+    size_t get_task_queue_waiting_workers_count() const;
 
     /**
     * \brief Get the shared task queue for async task submission.

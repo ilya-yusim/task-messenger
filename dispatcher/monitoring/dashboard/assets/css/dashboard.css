@@ -129,25 +129,44 @@ body {
   font-weight: 700;
 }
 
-.state-assigned-active {
+.state-active {
   color: var(--accent);
   background: var(--accent-soft);
 }
 
-.state-assigned-stalled {
-  color: var(--warn);
-  background: var(--warn-soft);
+.state-processing-task {
+  color: #1a7f37;
+  background: #dafbe1;
 }
 
-.state-unknown,
-.state-connecting {
+.state-initializing {
   color: var(--danger);
   background: var(--danger-soft);
 }
 
-.state-unassigned {
+.state-completing {
   color: var(--neutral);
   background: var(--neutral-soft);
+}
+
+.state-terminated {
+  color: var(--neutral);
+  background: var(--neutral-soft);
+}
+
+.state-error-state {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.state-waiting-for-task {
+  color: var(--warn);
+  background: var(--warn-soft);
+}
+
+.state-unknown {
+  color: var(--danger);
+  background: var(--danger-soft);
 }
 
 .fresh-indicator {

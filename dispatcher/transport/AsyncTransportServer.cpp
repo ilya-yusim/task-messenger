@@ -90,8 +90,16 @@ void AsyncTransportServer::run_maintenance_if_due() noexcept {
     maybe_run_maintenance();
 }
 
-std::pair<size_t, size_t> AsyncTransportServer::get_task_queue_stats() const {
-    return session_manager_->get_task_queue_stats();
+size_t AsyncTransportServer::get_task_queue_size() const {
+    return session_manager_->get_task_queue_size();
+}
+
+size_t AsyncTransportServer::get_active_session_count() const {
+    return session_manager_->get_active_session_count();
+}
+
+size_t AsyncTransportServer::get_task_queue_waiting_workers_count() const {
+    return session_manager_->get_task_queue_waiting_workers_count();
 }
 
 std::shared_ptr<TaskMessageQueue> AsyncTransportServer::task_queue() const {

@@ -121,6 +121,9 @@ void ZeroTierSocket::setup_socket(int fd) {
     
     // Enable TCP_NODELAY by default for low-latency scatter-send messaging
     set_no_delay(true);
+
+    // Enable TCP keepalive so the OS detects dead peers on idle connections
+    zts_set_keepalive(fd, 1);
 }
 
 bool ZeroTierSocket::set_no_delay(bool enable) {

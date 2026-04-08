@@ -30,11 +30,11 @@ class TaskMessageQueue;
  */
 class TaskQueueAwaitable {
 private:
-    TaskMessageQueue* pool_;
+    TaskMessageQueue* queue_;
     std::optional<TaskMessage> result_;
 
 public:
-    explicit TaskQueueAwaitable(TaskMessageQueue* pool) : pool_(pool) {}
+    explicit TaskQueueAwaitable(TaskMessageQueue* queue) : queue_(queue) {}
 
     // Awaitable interface
     bool await_ready();
@@ -66,7 +66,7 @@ private:
         std::coroutine_handle<> handle;
         TaskQueueAwaitable* awaiter; // pointer to suspended awaiter to fill result before resuming
     };
-    std::queue<Waiter> waiting_sessions_;
+    std::queue<Waiter> waiting_workers_;
     std::atomic<bool> shutdown_{false};
 
     friend class TaskQueueAwaitable;
@@ -135,7 +135,7 @@ public:
      * @brief Get number of sessions waiting for tasks
      * @return Number of suspended coroutines waiting for tasks
      */
-    size_t waiting_count() const;
+    size_t waiting_workers_count() const;
 
 private:
     /**

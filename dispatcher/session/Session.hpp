@@ -31,6 +31,8 @@ namespace session {
  */
 enum class SessionState {
     INITIALIZING,
+    WAITING_FOR_TASK,
+    PROCESSING_TASK,
     ACTIVE,
     COMPLETING,
     TERMINATED,
@@ -93,6 +95,8 @@ public:
     std::string get_state() const {
         switch (state_.load()) {
             case SessionState::INITIALIZING: return "INITIALIZING";
+            case SessionState::WAITING_FOR_TASK: return "WAITING_FOR_TASK";
+            case SessionState::PROCESSING_TASK: return "PROCESSING_TASK";
             case SessionState::ACTIVE: return "ACTIVE";
             case SessionState::COMPLETING: return "COMPLETING";
             case SessionState::TERMINATED: return "TERMINATED";
@@ -160,6 +164,18 @@ public:
      * \brief Check if the session task is completed.
      */
     bool is_completed() const;
+
+    /**
+     * \brief Probe the socket to detect a disconnected peer.
+     *
+     * Performs a non-blocking 1-byte read.  If the peer has closed
+     * the connection (FIN / RST) the session is moved to TERMINATED.
+     * Safe to call while the session coroutine is suspended in
+     * WAITING_FOR_TASK; a no-op in any other state.
+     *
+     * \return true if a disconnect was detected and the session was terminated.
+     */
+    bool probe_connection_liveness();
 
 private:
     // Core session data

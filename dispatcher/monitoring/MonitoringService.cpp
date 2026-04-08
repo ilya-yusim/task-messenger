@@ -15,10 +15,11 @@ namespace monitoring {
 
 MonitoringService::MonitoringService(std::shared_ptr<Logger> logger,
                                      AsyncTransportServer& server,
-                                     MonitoringSnapshotBuilder::UptimeProvider uptime_provider)
+                         MonitoringSnapshotBuilder::UptimeProvider uptime_provider,
+                         MonitoringSnapshotBuilder::DispatcherStateProvider dispatcher_state_provider)
     : logger_(std::move(logger)),
       server_(server),
-      snapshot_builder_(logger_, server_, std::move(uptime_provider)),
+    snapshot_builder_(logger_, server_, std::move(uptime_provider), std::move(dispatcher_state_provider)),
             http_server_(std::make_unique<httplib::Server>()) {
         // Override cpp-httplib default pool sizing to keep monitoring overhead minimal.
         http_server_->new_task_queue = [] {

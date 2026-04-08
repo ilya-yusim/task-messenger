@@ -5,36 +5,6 @@
 namespace {
 constexpr std::size_t kRecentDisconnectHistoryCap = 100;
 
-session::DispatcherMonitoringState map_dispatcher_state(const session::Session& s, const session::SessionStats& stats) {
-    constexpr auto kStallGraceWindow = std::chrono::seconds(2);
-
-    switch (s.state()) {
-        case session::SessionState::INITIALIZING:
-            return session::DispatcherMonitoringState::Connecting;
-        case session::SessionState::ACTIVE: {
-            const auto completed_or_failed = stats.tasks_completed + stats.tasks_failed;
-            if (stats.tasks_sent > completed_or_failed) {
-                return session::DispatcherMonitoringState::AssignedActive;
-            }
-
-            // No in-flight tasks: treat as active while dispatcher activity is still recent.
-            const auto now = std::chrono::system_clock::now();
-            const auto last_seen = s.get_last_seen_dispatcher();
-            if ((now - last_seen) <= kStallGraceWindow) {
-                return session::DispatcherMonitoringState::AssignedActive;
-            }
-
-            return session::DispatcherMonitoringState::AssignedStalled;
-        }
-        case session::SessionState::COMPLETING:
-        case session::SessionState::TERMINATED:
-        case session::SessionState::ERROR_STATE:
-            return session::DispatcherMonitoringState::Unassigned;
-        default:
-            return session::DispatcherMonitoringState::Unknown;
-    }
-}
-
 int64_t to_epoch_ms(std::chrono::system_clock::time_point tp) {
     return std::chrono::duration_cast<std::chrono::milliseconds>(tp.time_since_epoch()).count();
 }
@@ -141,6 +111,13 @@ void SessionManager::terminate_all_sessions() {
 size_t SessionManager::cleanup_completed_sessions() {
     std::lock_guard<std::mutex> lock(sessions_mutex_);
     const auto now = std::chrono::system_clock::now();
+
+    // Probe idle sessions for peer disconnects before the cleanup scan.
+    for (auto& [id, session] : active_sessions_) {
+        if (session) {
+            session->probe_connection_liveness();
+        }
+    }
     
     size_t cleaned_up = 0;
     
@@ -221,11 +198,12 @@ void SessionManager::enqueue_tasks(std::vector<TaskMessage> tasks) {
     }
 }
 
-std::pair<size_t, size_t> SessionManager::get_task_queue_stats() const {
-    if (task_queue_) {
-        return {task_queue_->size(), task_queue_->waiting_count()};
-    }
-    return {0, 0};
+size_t SessionManager::get_task_queue_size() const {
+    return task_queue_ ? task_queue_->size() : 0;
+}
+
+size_t SessionManager::get_task_queue_waiting_workers_count() const {
+    return task_queue_ ? task_queue_->waiting_workers_count() : 0;
 }
 
 void SessionManager::print_comprehensive_statistics() const {
@@ -235,7 +213,7 @@ void SessionManager::print_comprehensive_statistics() const {
     
     if (active_sessions_.empty()) {
         logger_->info("No active sessions");
-        auto [available_tasks, waiting_sessions] = get_task_queue_stats();
+        const auto available_tasks = get_task_queue_size();
         logger_->info("Task Queue: " + std::to_string(available_tasks) + " tasks available");
         logger_->info("========================================");
         return;
@@ -279,7 +257,8 @@ void SessionManager::print_comprehensive_statistics() const {
         }
     }
     
-    auto [available_tasks, waiting_sessions] = get_task_queue_stats();
+    const auto available_tasks = get_task_queue_size();
+    const auto waiting_sessions = get_task_queue_waiting_workers_count();
     
     logger_->info("=== SUMMARY ===");
     logger_->info("Total Sessions: " + std::to_string(active_sessions_.size()));
@@ -314,8 +293,8 @@ std::vector<WorkerMonitoringSnapshot> SessionManager::get_worker_monitoring_snap
         row.worker_node_id = session->get_worker_node_id();
         row.session_id = session_id;
         row.remote_endpoint = session->get_client_endpoint();
+        row.worker_state = session->state();
         row.stats = session->get_stats();
-        row.dispatcher_state = map_dispatcher_state(*session, row.stats);
 
         const auto last_seen = session->get_last_seen_dispatcher();
         row.last_seen_dispatcher_ts_ms = std::chrono::duration_cast<std::chrono::milliseconds>(

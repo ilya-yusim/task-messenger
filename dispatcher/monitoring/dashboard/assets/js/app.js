@@ -73,16 +73,19 @@ function monitoringDashboard() {
           },
           {
             title: "State",
-            field: "dispatcher_state",
+            field: "worker_state",
             minWidth: 160,
             headerFilter: "list",
             headerFilterParams: {
               values: {
                 "": "all",
-                assigned_active: "assigned_active",
-                assigned_stalled: "assigned_stalled",
-                connecting: "connecting",
-                unassigned: "unassigned",
+                initializing: "initializing",
+                waiting_for_task: "waiting_for_task",
+                processing_task: "processing_task",
+                active: "active",
+                completing: "completing",
+                terminated: "terminated",
+                error_state: "error_state",
                 unknown: "unknown",
               },
             },
@@ -226,7 +229,7 @@ function monitoringDashboard() {
         generator_status: this.toStringValue(p.generator_status, "unknown"),
         worker_count: this.toNumber(p.worker_count, workers.length),
         task_queue_size: this.toNumber(p.task_queue_size, null),
-        workers_waiting: this.toNumber(p.workers_waiting, null),
+        workers_waiting: this.toNumber(p.workers_waiting, 0),
         uptime_seconds: this.toNumber(p.uptime_seconds, null),
         avg_roundtrip_ms: avgRoundtripMs,
         failure_rate_pct: failureRatePct,
@@ -258,7 +261,7 @@ function monitoringDashboard() {
         worker_node_id: this.toStringValue(w.worker_node_id, "unknown"),
         session_id: this.toStringValue(w.session_id, ""),
         remote_endpoint: this.toStringValue(w.remote_endpoint, ""),
-        dispatcher_state: this.toStringValue(w.dispatcher_state, "unknown"),
+        worker_state: this.toStringValue(w.worker_state, "unknown"),
         dispatcher_fresh: this.toBoolean(w.dispatcher_fresh, false),
         tasks_sent: this.toNumber(w.tasks_sent, 0),
         tasks_completed: this.toNumber(w.tasks_completed, 0),
@@ -276,7 +279,7 @@ function monitoringDashboard() {
       this.listenPort = snapshot.listen_port;
 
       this.kpi.worker_count = snapshot.worker_count;
-      this.kpi.generator_status = snapshot.generator_status;
+      this.kpi.generator_status = this.formatGeneratorStatus(snapshot.generator_status);
       this.kpi.task_queue_size = snapshot.task_queue_size;
       this.kpi.workers_waiting = snapshot.workers_waiting;
       this.kpi.uptime_seconds = this.formatDurationSeconds(snapshot.uptime_seconds);
@@ -384,14 +387,20 @@ function monitoringDashboard() {
 
     stateClassFor(state) {
       switch (state) {
-        case "assigned_active":
-          return "state-assigned-active";
-        case "assigned_stalled":
-          return "state-assigned-stalled";
-        case "unassigned":
-          return "state-unassigned";
-        case "connecting":
-          return "state-connecting";
+        case "processing_task":
+          return "state-processing-task";
+        case "active":
+          return "state-active";
+        case "waiting_for_task":
+          return "state-waiting-for-task";
+        case "initializing":
+          return "state-initializing";
+        case "completing":
+          return "state-completing";
+        case "terminated":
+          return "state-terminated";
+        case "error_state":
+          return "state-error-state";
         case "unknown":
         default:
           return "state-unknown";
@@ -420,6 +429,27 @@ function monitoringDashboard() {
         return "--";
       }
       return String(value);
+    },
+
+    formatGeneratorStatus(status) {
+      switch (String(status || "")) {
+        case "no_tasks":
+          return "No tasks";
+        case "no_workers":
+          return "No workers";
+        case "starting":
+          return "Starting";
+        case "running":
+          return "Running";
+        case "stopping":
+          return "Stopping";
+        case "stopped":
+          return "Stopped";
+        case "error":
+          return "Error";
+        default:
+          return status;
+      }
     },
   };
 }

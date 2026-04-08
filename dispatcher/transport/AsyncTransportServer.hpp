@@ -78,10 +78,19 @@ public:
     void enqueue_tasks(std::vector<TaskMessage> tasks);
 
     /**
-        * \brief Get task queue statistics for monitoring.
-     * \return Pair of (available_tasks, waiting_sessions)
+        * \brief Get the number of tasks currently available in the queue.
      */
-    std::pair<size_t, size_t> get_task_queue_stats() const;
+    size_t get_task_queue_size() const;
+
+    /**
+     * \brief Get number of currently active worker sessions.
+     */
+    size_t get_active_session_count() const;
+
+    /**
+     * \brief Get the number of workers currently blocked waiting for tasks.
+     */
+    size_t get_task_queue_waiting_workers_count() const;
 
     /**
      * \brief Dump IO-thread counters plus session-level statistics.

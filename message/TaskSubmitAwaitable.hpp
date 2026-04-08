@@ -18,7 +18,7 @@
  * 
  * Usage:
  *   auto [request, response] = generate_task_data_typed(skill_id);
- *   auto& result = co_await submit_task(pool, response_ctx, task_id, 
+ *   auto& result = co_await submit_task(queue, response_ctx, task_id, 
  *                                        std::move(request), std::move(response));
  *   if (result.is_success()) { ... }
  */
@@ -26,18 +26,18 @@ class TaskSubmitAwaitable {
 public:
     /**
      * \brief Construct an awaitable for task submission with optional pre-allocated response buffer.
-     * \param pool Task message pool to enqueue the task
+     * \param queue Task message queue. Holds the tasks to be processed.
      * \param response_ctx ResponseContext where completion will be posted
      * \param task_id Unique task identifier
      * \param request Request payload buffer (ownership transferred)
      * \param response_buffer Pre-allocated response buffer (ownership transferred), or nullptr
      */
-    TaskSubmitAwaitable(std::shared_ptr<TaskMessageQueue> pool,
+    TaskSubmitAwaitable(std::shared_ptr<TaskMessageQueue> queue,
                         std::shared_ptr<ResponseContext> response_ctx,
                         uint32_t task_id,
                         std::unique_ptr<PayloadBufferBase> request,
                         std::unique_ptr<PayloadBufferBase> response_buffer = nullptr)
-        : pool_(std::move(pool))
+        : queue_(std::move(queue))
         , response_ctx_(std::move(response_ctx))
         , task_id_(task_id)
         , request_(std::move(request))
@@ -65,8 +65,8 @@ public:
             : TaskMessage(task_id_, std::move(request_));
         task.set_completion_source(completion_source_);
         
-        // Enqueue to pool - Session will pick it up
-        pool_->add_task(std::move(task));
+        // Enqueue the task - Session will pick it up
+        queue_->add_task(std::move(task));
     }
     
     /**
@@ -78,7 +78,7 @@ public:
     }
 
 private:
-    std::shared_ptr<TaskMessageQueue> pool_;
+    std::shared_ptr<TaskMessageQueue> queue_;
     std::shared_ptr<ResponseContext> response_ctx_;
     uint32_t task_id_;
     std::unique_ptr<PayloadBufferBase> request_;
@@ -88,7 +88,7 @@ private:
 
 /**
  * \brief Convenience function to create a submit awaitable with optional pre-allocated response buffer.
- * \param pool Task message pool to enqueue the task
+ * \param queue Task message queue. Holds the tasks to be processed.
  * \param response_ctx ResponseContext where completion will be posted
  * \param task_id Unique task identifier
  * \param request Request payload buffer (ownership transferred)
@@ -97,16 +97,16 @@ private:
  * 
  * Usage:
  *   auto [request, response] = generate_task_data_typed(skill_id);
- *   auto& result = co_await submit_task(pool, response_ctx, task_id, 
+ *   auto& result = co_await submit_task(queue, response_ctx, task_id, 
  *                                        std::move(request), std::move(response));
  */
 inline TaskSubmitAwaitable submit_task(
-    std::shared_ptr<TaskMessageQueue> pool,
+    std::shared_ptr<TaskMessageQueue> queue,
     std::shared_ptr<ResponseContext> response_ctx,
     uint32_t task_id,
     std::unique_ptr<PayloadBufferBase> request,
     std::unique_ptr<PayloadBufferBase> response_buffer = nullptr) 
 {
-    return TaskSubmitAwaitable(std::move(pool), std::move(response_ctx), 
+    return TaskSubmitAwaitable(std::move(queue), std::move(response_ctx), 
                                 task_id, std::move(request), std::move(response_buffer));
 }

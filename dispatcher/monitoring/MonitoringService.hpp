@@ -24,7 +24,8 @@ public:
     /** \brief Construct service with runtime dependencies injected. */
     MonitoringService(std::shared_ptr<Logger> logger,
                       AsyncTransportServer& server,
-                      MonitoringSnapshotBuilder::UptimeProvider uptime_provider);
+                      MonitoringSnapshotBuilder::UptimeProvider uptime_provider,
+                      MonitoringSnapshotBuilder::DispatcherStateProvider dispatcher_state_provider);
     ~MonitoringService();
 
     /** \brief Start listening and spawn acceptor thread. */

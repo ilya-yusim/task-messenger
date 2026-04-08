@@ -12,7 +12,7 @@
 
 // Design overview:
 // - await_ready tries to opportunistically grab a task without locking callers.
-// - await_suspend records the awaiting coroutine and stores a pointer so the pool
+// - await_suspend records the awaiting coroutine and stores a pointer so the queue
 //   can populate the result prior to resumption.
 // - add_task/add_tasks prefer waking suspended sessions before growing the deque,
 //   preserving FIFO order for both tasks and waiters.
@@ -20,7 +20,7 @@
 
 bool TaskQueueAwaitable::await_ready() {
     TaskMessage task;
-    if (pool_->try_get_task_immediately(task)) {
+    if (queue_->try_get_task_immediately(task)) {
         result_ = std::move(task);
         return true;
     }
@@ -28,32 +28,32 @@ bool TaskQueueAwaitable::await_ready() {
 }
 
 void TaskQueueAwaitable::await_suspend(std::coroutine_handle<> handle) {
-    // If pool is shut down, resume immediately with invalid task
-    if (pool_->shutdown_.load()) {
+    // If queue is shut down, resume immediately with invalid task
+    if (queue_->shutdown_.load()) {
         handle.resume();
         return;
     }
 
-    std::unique_lock lock(pool_->mutex_);
+    std::unique_lock lock(queue_->mutex_);
 
-    // Check again after acquiring lock if pool is shut down
-    if (pool_->shutdown_.load()) {
+    // Check again after acquiring lock if queue is shut down
+    if (queue_->shutdown_.load()) {
         lock.unlock();
         handle.resume();
         return;
     }
 
     // Try to get a task
-    if (!pool_->tasks_.empty()) {
-        result_ = std::move(pool_->tasks_.front());
-        pool_->tasks_.pop_front();
+    if (!queue_->tasks_.empty()) {
+        result_ = std::move(queue_->tasks_.front());
+        queue_->tasks_.pop_front();
         lock.unlock();
         handle.resume();
         return;
     }
 
     // No task available, add to waiting sessions
-    pool_->waiting_sessions_.push({handle, this});
+    queue_->waiting_workers_.push({handle, this});
 }
 
 void TaskMessageQueue::add_task(TaskMessage task) {
@@ -63,9 +63,9 @@ void TaskMessageQueue::add_task(TaskMessage task) {
 
     std::unique_lock lock(mutex_);
 
-    if (!waiting_sessions_.empty()) {
-        auto waiter = waiting_sessions_.front();
-        waiting_sessions_.pop();
+    if (!waiting_workers_.empty()) {
+        auto waiter = waiting_workers_.front();
+        waiting_workers_.pop();
 
         if (waiter.awaiter) {
             waiter.awaiter->result_ = std::move(task);
@@ -89,9 +89,9 @@ void TaskMessageQueue::add_tasks(std::vector<TaskMessage> tasks) {
     std::unique_lock lock(mutex_);
 
     for (auto& task : tasks) {
-        if (!waiting_sessions_.empty()) {
-            auto waiter = waiting_sessions_.front();
-            waiting_sessions_.pop();
+        if (!waiting_workers_.empty()) {
+            auto waiter = waiting_workers_.front();
+            waiting_workers_.pop();
 
             if (waiter.awaiter) {
                 waiter.awaiter->result_ = std::move(task);
@@ -129,7 +129,7 @@ void TaskMessageQueue::shutdown() {
     std::queue<Waiter> waiters_to_resume;
     {
         std::lock_guard lock(mutex_);
-        std::swap(waiters_to_resume, waiting_sessions_);
+        std::swap(waiters_to_resume, waiting_workers_);
     }
 
     while (!waiters_to_resume.empty()) {
@@ -139,9 +139,9 @@ void TaskMessageQueue::shutdown() {
     }
 }
 
-size_t TaskMessageQueue::waiting_count() const {
+size_t TaskMessageQueue::waiting_workers_count() const {
     std::lock_guard lock(mutex_);
-    return waiting_sessions_.size();
+    return waiting_workers_.size();
 }
 
 bool TaskMessageQueue::try_get_task_immediately(TaskMessage& task) {
@@ -160,9 +160,9 @@ bool TaskMessageQueue::try_get_task_immediately(TaskMessage& task) {
 }
 
 void TaskMessageQueue::resume_waiting_session() {
-    if (!waiting_sessions_.empty()) {
-        auto waiter = waiting_sessions_.front();
-        waiting_sessions_.pop();
+    if (!waiting_workers_.empty()) {
+        auto waiter = waiting_workers_.front();
+        waiting_workers_.pop();
         waiter.handle.resume();
     }
 }
