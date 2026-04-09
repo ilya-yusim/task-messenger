@@ -124,6 +124,16 @@ void ZeroTierSocket::setup_socket(int fd) {
 
     // Enable TCP keepalive so the OS detects dead peers on idle connections
     zts_set_keepalive(fd, 1);
+
+    // Tune keepalive timers for faster dead-peer detection.
+    // lwIP defaults are 2 hours idle / 75s interval / 9 probes (~2h11m).
+    // With 30s/5s/3 the stack detects a silently-dead peer in ~45s.
+    int keepidle  = 30;  // seconds before first probe
+    int keepintvl = 5;   // seconds between probes
+    int keepcnt   = 3;   // probes before declaring dead
+    zts_bsd_setsockopt(fd, ZTS_IPPROTO_TCP, ZTS_TCP_KEEPIDLE,  &keepidle,  sizeof(keepidle));
+    zts_bsd_setsockopt(fd, ZTS_IPPROTO_TCP, ZTS_TCP_KEEPINTVL, &keepintvl, sizeof(keepintvl));
+    zts_bsd_setsockopt(fd, ZTS_IPPROTO_TCP, ZTS_TCP_KEEPCNT,   &keepcnt,   sizeof(keepcnt));
 }
 
 bool ZeroTierSocket::set_no_delay(bool enable) {
@@ -216,6 +226,7 @@ bool ZeroTierSocket::check_connect_complete(std::error_code& error) {
     char ip_str[ZTS_IP_MAX_STR_LEN];
     unsigned short port;
     
+    zts_errno = 0; // Clear errno before call
     if (zts_getpeername(socket_fd_, ip_str, sizeof(ip_str), &port) == ZTS_ERR_OK) {
         // Successfully got peer address - connection is complete
         error = std::error_code{};
@@ -246,6 +257,7 @@ std::shared_ptr<IAsyncStream> ZeroTierSocket::try_accept(std::error_code& error)
     struct zts_sockaddr_in client_addr;
     zts_socklen_t client_len = sizeof(client_addr);
     
+    zts_errno = 0; // Clear errno before call
     int client_fd = zts_bsd_accept(socket_fd_, (struct zts_sockaddr*)&client_addr, &client_len);
     
     if (client_fd >= 0) {
@@ -282,6 +294,7 @@ bool ZeroTierSocket::try_read(void* buffer, size_t size, size_t& bytes_read, std
     // Non-blocking read: attempt to read available data
     // Returns true only when operation completes (full buffer or error/disconnect)
     // Returns false with bytes_read > 0 for partial progress (caller must retry with adjusted buffer)
+    zts_errno = 0; // Clear errno before call
     ssize_t result = zts_recv(socket_fd_, buffer, size, 0);
 
     if (result > 0) {
@@ -328,6 +341,7 @@ bool ZeroTierSocket::try_write(const void* buffer, size_t size, size_t& bytes_wr
     // Non-blocking write: attempt to write data
     // Returns true only when operation completes (full buffer or error)
     // Returns false with bytes_written > 0 for partial progress (caller must retry with adjusted buffer)
+    zts_errno = 0; // Clear errno before call
     ssize_t result = zts_send(socket_fd_, buffer, size, 0);
     
     if (result > 0) {
