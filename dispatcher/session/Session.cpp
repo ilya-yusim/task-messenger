@@ -27,6 +27,7 @@ Session::Session(std::shared_ptr<transport::CoroSocketAdapter> client_socket,
     , session_id_(session_id)
     , logger_(std::move(logger))
     , shared_task_queue_(std::move(shared_task_queue))
+    , cancel_token_(std::make_shared<CancellationToken>())
     , state_(SessionState::INITIALIZING)
     , termination_requested_(false) {
     if (!client_socket_ || !logger_ || !shared_task_queue_) {
@@ -71,7 +72,7 @@ Task<void> Session::run_coroutine() {
 
                 // Get next task from shared pool (suspends if empty)
                 update_state(SessionState::WAITING_FOR_TASK);
-                task = co_await shared_task_queue_->get_next_task();
+                task = co_await shared_task_queue_->get_next_task(cancel_token_);
                 task_acquired = true;
                 
                 // Check if we got a valid task (pool might be shutting down)
@@ -242,6 +243,7 @@ bool Session::is_active() const {
 
 void Session::request_termination() {
     termination_requested_.store(true);
+    cancel_token_->cancel();
     mark_disconnected(SessionDisconnectReason::LocalTermination);
     update_state(SessionState::COMPLETING);
     if (client_socket_) {
@@ -250,6 +252,7 @@ void Session::request_termination() {
 }
 
 bool Session::is_completed() const {
+    if (!is_done()) return false;
     const auto state = state_.load();
     return state == SessionState::TERMINATED || state == SessionState::ERROR_STATE;
 }
@@ -296,10 +299,20 @@ bool Session::probe_connection_liveness() {
                   ": Liveness probe detected disconnect (ec=" +
                   (ec ? ec.message() : "none") + ")");
     update_state(SessionState::TERMINATED);
+    cancel_token_->cancel();
     // Shut down the socket so the suspended coroutine (if it resumes) will
     // observe a closed connection and exit cleanly.
     client_socket_->shutdown();
     return true;
+}
+
+void Session::cancel_queue_wait() {
+    shared_task_queue_->cancel_and_resume_waiter(cancel_token_);
+}
+
+bool Session::is_awaiting_teardown() const {
+    const auto s = state_.load();
+    return !is_done() && (s == SessionState::TERMINATED || s == SessionState::ERROR_STATE);
 }
 
 void Session::initialize_session() {

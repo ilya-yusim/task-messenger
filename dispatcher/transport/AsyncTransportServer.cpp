@@ -75,6 +75,10 @@ void AsyncTransportServer::stop() noexcept {
     if (io_) io_->stop();
     // Stop response context workers
     if (response_ctx_) response_ctx_->stop();
+    // Terminate all sessions, cancel their queue waiters, shut down the queue,
+    // then clean up so every coroutine reaches final_suspend before destruction.
+    session_manager_->terminate_all_sessions();
+    if (auto q = session_manager_->task_queue()) q->shutdown();
     cleanup_closed_connections();
     session_manager_->cleanup_completed_sessions();
     logger_->info("AsyncTransportServer: stopped");

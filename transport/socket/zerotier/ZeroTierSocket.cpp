@@ -227,6 +227,7 @@ bool ZeroTierSocket::check_connect_complete(std::error_code& error) {
     if (ZeroTierErrnoCompat::is_would_block_errno(zts_err) || 
         zts_err == ZTS_ENOTCONN) {
         // Still connecting
+        error = std::error_code{};
         return false;
     } else {
         // Connection failed
@@ -261,6 +262,7 @@ std::shared_ptr<IAsyncStream> ZeroTierSocket::try_accept(std::error_code& error)
         int zts_err = zts_errno;
         if (is_would_block_error(zts_err)) {
             // Would block, no connection available
+            error = std::error_code{};
             return nullptr;
         } else {
             // Error occurred
@@ -307,6 +309,7 @@ bool ZeroTierSocket::try_read(void* buffer, size_t size, size_t& bytes_read, std
         int zts_err = zts_errno;
         if (is_would_block_error(zts_err)) {
             // Would block - no data available yet
+            error = std::error_code{};
             return false;
         } else {
             error = translate_error(zts_err);
@@ -340,11 +343,13 @@ bool ZeroTierSocket::try_write(const void* buffer, size_t size, size_t& bytes_wr
     } else if (result == 0) {
         // Zero bytes written (unusual but possible)
         bytes_written = 0;
+        error = std::error_code{};
         return false;
     } else {
         bytes_written = 0;
         int zts_err = zts_errno;
         if (is_would_block_error(zts_err)) {
+            error = std::error_code{};
             return false; // Would block
         } else {
             error = translate_error(zts_err);

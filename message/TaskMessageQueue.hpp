@@ -2,6 +2,7 @@
 #pragma once
 
 #include "TaskMessage.hpp"
+#include "CancellationToken.hpp"
 #include "transport/coro/CoroTask.hpp"
 
 #include <queue>
@@ -10,6 +11,7 @@
 #include <coroutine>
 #include <optional>
 #include <atomic>
+#include <memory>
 #include <vector>
 
 /**
@@ -32,9 +34,11 @@ class TaskQueueAwaitable {
 private:
     TaskMessageQueue* queue_;
     std::optional<TaskMessage> result_;
+    std::shared_ptr<CancellationToken> token_;
 
 public:
-    explicit TaskQueueAwaitable(TaskMessageQueue* queue) : queue_(queue) {}
+    TaskQueueAwaitable(TaskMessageQueue* queue, std::shared_ptr<CancellationToken> token)
+        : queue_(queue), token_(std::move(token)) {}
 
     // Awaitable interface
     bool await_ready();
@@ -65,6 +69,7 @@ private:
     struct Waiter {
         std::coroutine_handle<> handle;
         TaskQueueAwaitable* awaiter; // pointer to suspended awaiter to fill result before resuming
+        std::shared_ptr<CancellationToken> token;
     };
     std::queue<Waiter> waiting_workers_;
     std::atomic<bool> shutdown_{false};
@@ -83,12 +88,13 @@ public:
 
     /**
      * @brief Get next task (awaitable - suspends if no tasks available)
+     * @param token Cancellation token for cooperative teardown.
      * @return TaskQueueAwaitable that can be co_awaited
      *
-        * Usage: auto task = co_await task_queue->get_next_task();
+     * Usage: auto task = co_await task_queue->get_next_task(cancel_token_);
      */
-    TaskQueueAwaitable get_next_task() {
-        return TaskQueueAwaitable(this);
+    TaskQueueAwaitable get_next_task(std::shared_ptr<CancellationToken> token) {
+        return TaskQueueAwaitable(this, std::move(token));
     }
 
     /**
@@ -136,6 +142,25 @@ public:
      * @return Number of suspended coroutines waiting for tasks
      */
     size_t waiting_workers_count() const;
+
+    /**
+     * @brief Remove cancelled waiters from the queue without resuming them.
+     *
+     * Housekeeping: prevents unbounded growth of stale entries when no new
+     * tasks arrive to trigger the lazy-skip path in add_task().
+     */
+    void drain_cancelled();
+
+    /**
+     * @brief Find the waiter associated with \p token, remove it from the
+     *        queue, fill it with an invalid TaskMessage, and resume it.
+     *
+     * The resumed coroutine runs synchronously on the caller's thread and
+     * is expected to observe the invalid task and exit its processing loop.
+     * If the waiter has already been dequeued (by add_task or shutdown),
+     * this is a safe no-op.
+     */
+    void cancel_and_resume_waiter(const std::shared_ptr<CancellationToken>& token);
 
 private:
     /**

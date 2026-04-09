@@ -105,6 +105,14 @@ void SessionManager::terminate_all_sessions() {
         }
     }
     
+    // Force-resume any coroutines still suspended in the task queue so they
+    // reach final_suspend and can be safely destroyed.
+    for (const auto& [session_id, session] : active_sessions_) {
+        if (session && session->is_awaiting_teardown()) {
+            session->cancel_queue_wait();
+        }
+    }
+    
     logger_->info("SessionManager: Requested termination of " + std::to_string(count) + " sessions");
 }
 
@@ -112,11 +120,26 @@ size_t SessionManager::cleanup_completed_sessions() {
     std::lock_guard<std::mutex> lock(sessions_mutex_);
     const auto now = std::chrono::system_clock::now();
 
-    // Probe idle sessions for peer disconnects before the cleanup scan.
+    // Pass 1: Probe idle sessions for peer disconnects.
     for (auto& [id, session] : active_sessions_) {
         if (session) {
             session->probe_connection_liveness();
         }
+    }
+
+    // Pass 2 (Option B): Resume coroutines that are in a terminal state but
+    // still suspended in the task queue.  The coroutine runs synchronously
+    // on this thread and reaches final_suspend, making is_done() true.
+    for (auto& [id, session] : active_sessions_) {
+        if (session && session->is_awaiting_teardown()) {
+            session->cancel_queue_wait();
+        }
+    }
+
+    // Pass 3 (Option A housekeeping): Discard any remaining cancelled waiter
+    // entries from the queue to prevent unbounded growth.
+    if (task_queue_) {
+        task_queue_->drain_cancelled();
     }
     
     size_t cleaned_up = 0;

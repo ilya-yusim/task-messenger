@@ -177,12 +177,29 @@ public:
      */
     bool probe_connection_liveness();
 
+    /**
+     * \brief Remove this session's waiter from the task queue and resume
+     *        its coroutine so it can reach final_suspend.
+     *
+     * Call when the session is in a terminal state but the coroutine is
+     * still suspended (is_awaiting_teardown() returns true).  The
+     * coroutine runs synchronously on the caller's thread.
+     */
+    void cancel_queue_wait();
+
+    /**
+     * \brief True when the session state is terminal but the coroutine
+     *        has not yet reached final_suspend.
+     */
+    bool is_awaiting_teardown() const;
+
 private:
     // Core session data
     std::shared_ptr<transport::CoroSocketAdapter> client_socket_;
     uint32_t session_id_;
     std::shared_ptr<Logger> logger_;
     std::shared_ptr<TaskMessageQueue> shared_task_queue_;  // Shared across all sessions
+    std::shared_ptr<CancellationToken> cancel_token_;       // Shared with TaskQueueAwaitable
     std::string cached_remote_endpoint_;
     
     // Session state
