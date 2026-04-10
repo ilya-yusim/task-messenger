@@ -9,6 +9,7 @@
 #include <atomic>
 #include <mutex>
 #include <cstdint>
+#include <chrono>
 #include "logger.hpp"
 #include "worker/ui/IWorkerService.hpp"
 #include "worker/processor/TaskProcessor.hpp"
@@ -72,6 +73,10 @@ private:
 
     std::string connection_status_{"Disconnected"};
     std::mutex status_mtx_;
+
+    /// Exponential backoff delay for reconnection after I/O errors.
+    std::chrono::seconds reconnect_delay_{1};
+    static constexpr std::chrono::seconds kMaxReconnectDelay{30};
 
     /** \brief Human-friendly formatter for byte counters. */
     std::string format_bytes(std::uint64_t bytes) const;
