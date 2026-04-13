@@ -58,7 +58,8 @@ bool send_worker_greeting_via_underlying_stream(transport::CoroSocketAdapter& ad
 } // namespace
 
 AsyncRuntime::AsyncRuntime(const std::string& host, int port, std::shared_ptr<Logger> logger)
-    : host_(host), port_(port), logger_(std::move(logger)) {}
+    : host_(host), port_(port), logger_(std::move(logger))
+    , inline_context_(transport::CoroIoContext::make_inline()) {}
 
 bool AsyncRuntime::connect() {
     std::error_code ec;
@@ -70,7 +71,7 @@ bool AsyncRuntime::connect() {
             sock = socket_;
         }
         if (!sock) {
-            auto new_socket = transport::CoroSocketAdapter::create_client(logger_);
+            auto new_socket = transport::CoroSocketAdapter::create_client(logger_, inline_context_);
             if (!new_socket) {
                 if (logger_) logger_->error("Failed to create async client socket");
                 return false;
@@ -167,10 +168,10 @@ bool AsyncRuntime::run_loop(TaskProcessor& processor) {
         return false;
     }
     
-    // Start coroutine and poll until complete
+    // Start coroutine and drive it inline via caller-driven polling
     auto coro = run_loop_coro(processor);
     while (!coro.done()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        inline_context_->poll_once_for(std::chrono::milliseconds(100));
     }
     
     // Get result - coro returns true on success, false on error

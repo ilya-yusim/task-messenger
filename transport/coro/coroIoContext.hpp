@@ -42,9 +42,17 @@ class CoroSocketAdapter; // fwd
  */
 class CoroIoContext : public std::enable_shared_from_this<CoroIoContext> {
 public:
-	/** \brief Construct an event loop; call `start()` or `run()` to begin processing. */
+	/** \brief Construct an event loop; call `start()` or use `poll_once()` to begin processing. */
 	CoroIoContext();
 	~CoroIoContext();
+
+	// --- Factories ---
+	/** \brief Create a caller-driven context with no background threads.
+	 *  Use `poll_once()` or `poll_once_for()` to drive processing inline. */
+	static std::shared_ptr<CoroIoContext> make_inline();
+	/** \brief Create a context backed by \p threads background worker threads.
+	 *  \param threads Number of event-loop threads (minimum 1). */
+	static std::shared_ptr<CoroIoContext> make_threaded(size_t threads = 1);
 
 	// --- Types ---
 	/** \brief Classification for per-category completion histograms. */
@@ -65,6 +73,14 @@ public:
 	void stop();
 	/** \brief True if loop is running and not yet stopped. */
 	bool is_running() const;
+
+	// --- Inline (caller-driven) polling ---
+	/** \brief Process one batch of pending operations without blocking.
+	 *  Intended for caller-driven loops that do not use background threads. */
+	void poll_once();
+	/** \brief Process pending operations, then wait up to \p timeout for new work.
+	 *  Returns immediately after processing if any operation completed. */
+	void poll_once_for(std::chrono::milliseconds timeout);
 
 	// --- Logger ---
 	/** \brief Set optional logger for info/error messages. */
@@ -149,6 +165,8 @@ public:
 private:
 	/** \brief Process all currently pending operations for a worker thread; requeues unfinished. */
 	void process_pending_ops(size_t thread_index);
+	/** \brief Lazily initialize per-thread stats for inline (caller-driven) polling. */
+	void ensure_inline_stats_();
 
 	/** \brief Internal representation of a pending operation awaiting readiness. */
 	struct PendingOp {
@@ -190,9 +208,7 @@ inline std::shared_ptr<CoroIoContext> get_default_context() {
 	std::lock_guard<std::mutex> lk(m);
 	auto s = weak.lock();
 	if (!s) {
-		s = std::make_shared<CoroIoContext>();
-		// Start with single thread; higher-level code (AsyncTransportServer, etc.) decides if multi-threading is needed.
-		s->start();
+		s = CoroIoContext::make_threaded(1);
 		weak = s;
 	}
 	return s;

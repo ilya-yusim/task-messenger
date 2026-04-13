@@ -14,7 +14,7 @@
 #include <cstdint>
 
 class Logger;
-namespace transport { class CoroSocketAdapter; }
+namespace transport { class CoroSocketAdapter; class CoroIoContext; }
 class TaskProcessor;
 
 /** \brief Runtime implementation backed by coroutine-enabled transport primitives. */
@@ -61,6 +61,7 @@ private:
     std::shared_ptr<Logger> logger_;
 
     std::shared_ptr<transport::CoroSocketAdapter> socket_;
+    std::shared_ptr<transport::CoroIoContext> inline_context_;  ///< Caller-driven I/O context (no background thread).
     mutable std::mutex socket_mtx_;
 
     std::atomic<std::uint64_t> tasks_completed_{0};
