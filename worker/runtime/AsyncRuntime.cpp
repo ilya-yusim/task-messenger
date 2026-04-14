@@ -116,6 +116,7 @@ bool AsyncRuntime::connect() {
 }
 
 void AsyncRuntime::disconnect() {
+    disconnect_requested_.store(true, std::memory_order_relaxed);
     std::shared_ptr<transport::CoroSocketAdapter> socket_to_close;
     {
         std::lock_guard<std::mutex> lk(socket_mtx_);
@@ -125,6 +126,10 @@ void AsyncRuntime::disconnect() {
     if (socket_to_close) {
         socket_to_close->close();
     }
+}
+
+bool AsyncRuntime::was_disconnect_requested() const {
+    return disconnect_requested_.load(std::memory_order_relaxed);
 }
 
 void AsyncRuntime::shutdown() {
@@ -186,8 +191,9 @@ Task<bool> AsyncRuntime::run_loop_coro(TaskProcessor& processor) {
         current_socket = socket_;
     }
     
-    // Clear any pending pause request from previous state (e.g., multiple pause presses while paused)
+    // Clear any pending pause/disconnect request from previous state
     pause_requested_.store(false, std::memory_order_relaxed);
+    disconnect_requested_.store(false, std::memory_order_relaxed);
     
     for (;;) {
         if (pause_requested_.load(std::memory_order_relaxed)) {
@@ -202,7 +208,11 @@ Task<bool> AsyncRuntime::run_loop_coro(TaskProcessor& processor) {
             co_await current_socket->async_read(&header, sizeof(header));
             bytes_received_.fetch_add(static_cast<std::uint64_t>(sizeof(header)), std::memory_order_relaxed);
         } catch (const std::exception& e) {
-            if (logger_) logger_->error(std::string{"async_read header failed: "} + e.what());
+            if (disconnect_requested_.load(std::memory_order_relaxed)) {
+                if (logger_) logger_->info("async_read header interrupted by disconnect request");
+            } else {
+                if (logger_) logger_->error(std::string{"async_read header failed: "} + e.what());
+            }
             co_return false;
         }
 
@@ -218,7 +228,11 @@ Task<bool> AsyncRuntime::run_loop_coro(TaskProcessor& processor) {
                 co_await current_socket->async_read(payload.data(), payload.size());
                 bytes_received_.fetch_add(static_cast<std::uint64_t>(payload.size()), std::memory_order_relaxed);
             } catch (const std::exception& e) {
-                if (logger_) logger_->error(std::string{"async_read body failed: "} + e.what());
+                if (disconnect_requested_.load(std::memory_order_relaxed)) {
+                    if (logger_) logger_->info("async_read body interrupted by disconnect request");
+                } else {
+                    if (logger_) logger_->error(std::string{"async_read body failed: "} + e.what());
+                }
                 co_return false;
             }
         }
@@ -249,7 +263,11 @@ Task<bool> AsyncRuntime::run_loop_coro(TaskProcessor& processor) {
             }
             bytes_sent_.fetch_add(static_cast<std::uint64_t>(header_span.size() + payload_span.size()), std::memory_order_relaxed);
         } catch (const std::exception& e) {
-            if (logger_) logger_->error(std::string{"async_write failed: "} + e.what());
+            if (disconnect_requested_.load(std::memory_order_relaxed)) {
+                if (logger_) logger_->info("async_write interrupted by disconnect request");
+            } else {
+                if (logger_) logger_->error(std::string{"async_write failed: "} + e.what());
+            }
             co_return false;
         }
         

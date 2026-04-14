@@ -86,7 +86,20 @@ void WorkerSession::start() {
             bool success = runtime_->run_loop(processor_);
             
             if (!success) {
-                // I/O error (dispatcher offline, connection lost, etc.)
+                // Was this a user-requested disconnect (socket closed externally)?
+                if (runtime_->was_disconnect_requested()) {
+                    disconnect_requested_.store(false, std::memory_order_relaxed);
+                    start_requested_.store(false, std::memory_order_relaxed);
+                    reconnect_delay_ = std::chrono::seconds{1};
+                    {
+                        std::lock_guard<std::mutex> lk(status_mtx_);
+                        connection_status_ = "Disconnected";
+                    }
+                    if (logger_) logger_->info("Runtime disconnected; awaiting next start request");
+                    continue;
+                }
+
+                // Genuine I/O error (dispatcher offline, connection lost, etc.)
                 if (logger_) logger_->error("Runtime: run_loop returned error; will reconnect in "
                     + std::to_string(reconnect_delay_.count()) + "s");
 
@@ -122,7 +135,7 @@ void WorkerSession::start() {
             
             runtime_->disconnect();
             disconnect_requested_.store(false, std::memory_order_relaxed);
-            
+            start_requested_.store(false, std::memory_order_relaxed); // Ensure we do not reconnect until user requests start
             {
                 std::lock_guard<std::mutex> lk(status_mtx_);
                 connection_status_ = "Disconnected";

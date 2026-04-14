@@ -168,8 +168,8 @@ public:
     /**
      * \brief Probe the socket to detect a disconnected peer.
      *
-     * Performs a non-blocking 1-byte read.  If the peer has closed
-     * the connection (FIN / RST) the session is moved to TERMINATED.
+     * Performs a non-consuming peek on the socket.  If the peer has
+     * closed the connection (FIN / RST) the session is moved to TERMINATED.
      * Safe to call while the session coroutine is suspended in
      * WAITING_FOR_TASK; a no-op in any other state.
      *

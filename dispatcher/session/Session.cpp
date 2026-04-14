@@ -270,18 +270,14 @@ bool Session::probe_connection_liveness() {
         return false;
     }
 
-    char probe_byte;
-    size_t bytes_read = 0;
     std::error_code ec;
-    bool completed = sock->try_read(&probe_byte, 1, bytes_read, ec);
+    bool alive = sock->check_alive(ec);
 
-    // try_read returns false with bytes_read==0 when it would block (peer alive).
-    if (!completed && bytes_read == 0) {
-        return false; // Connection is alive — no data, no error.
+    if (alive) {
+        return false; // Connection is alive — no disconnect detected.
     }
 
-    // If we get here, the peer either closed (result==0 → ec set) or a real
-    // error occurred.  In both cases the connection is dead.
+    // Peer closed or a transport error occurred.
     if (ec) {
         if (ec == std::errc::not_connected || ec == std::errc::connection_reset ||
             ec == std::errc::connection_aborted) {
@@ -290,8 +286,7 @@ bool Session::probe_connection_liveness() {
             mark_disconnected(SessionDisconnectReason::TransportError);
         }
     } else {
-        // completed==true with no error and bytes_read==0 shouldn't happen per
-        // current backend, but treat it as a graceful close just in case.
+        // check_alive returned dead with no error code — treat as graceful close.
         mark_disconnected(SessionDisconnectReason::RemoteClosed);
     }
 

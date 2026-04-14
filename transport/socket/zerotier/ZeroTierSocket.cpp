@@ -331,6 +331,39 @@ bool ZeroTierSocket::try_read(void* buffer, size_t size, size_t& bytes_read, std
     }
 }
 
+bool ZeroTierSocket::check_alive(std::error_code& error) {
+    if (socket_fd_ < 0) {
+        error = std::make_error_code(std::errc::bad_file_descriptor);
+        return false;
+    }
+
+    // Use ZTS_MSG_PEEK so no data is consumed from the receive buffer.
+    char peek_byte;
+    zts_errno = 0;
+    ssize_t result = zts_recv(socket_fd_, &peek_byte, 1, ZTS_MSG_PEEK);
+
+    if (result > 0) {
+        // Data available but not consumed — connection alive.
+        error = std::error_code{};
+        return true;
+    } else if (result == 0) {
+        // Peer performed orderly shutdown (FIN).
+        int zts_err = zts_errno;
+        error = (zts_err != 0) ? translate_error(zts_err)
+                               : std::make_error_code(std::errc::not_connected);
+        return false;
+    } else {
+        int zts_err = zts_errno;
+        if (is_would_block_error(zts_err)) {
+            // No data available, but socket is fine — connection alive.
+            error = std::error_code{};
+            return true;
+        }
+        error = translate_error(zts_err);
+        return false;
+    }
+}
+
 bool ZeroTierSocket::try_write(const void* buffer, size_t size, size_t& bytes_written, std::error_code& error) {
     if (socket_fd_ < 0) {
         error = std::make_error_code(std::errc::bad_file_descriptor);

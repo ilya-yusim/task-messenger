@@ -112,6 +112,12 @@ public:
      */
     bool try_write(const void* buffer, size_t size, size_t& bytes_written, std::error_code& error) override;
 
+    /** \brief Non-consuming liveness check via MSG_PEEK.
+     *  \param error Receives error on disconnect; cleared when alive.
+     *  \return true if alive; false if disconnected or errored.
+     */
+    bool check_alive(std::error_code& error) override;
+
     // === Blocking I/O operations (IBlockingStream) ===
     /** \brief Perform blocking connect operation.
      *  \param host Hostname or IP address.
