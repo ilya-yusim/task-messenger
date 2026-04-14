@@ -217,7 +217,7 @@ void SessionManager::enqueue_tasks(std::vector<TaskMessage> tasks) {
     if (task_queue_.get() && !tasks.empty()) {
         logger_->info("SessionManager: Enqueuing " + std::to_string(tasks.size()) + " external tasks");
         task_queue_->add_tasks(std::move(tasks));
-        logger_->info("SessionManager: Pool size now: " + std::to_string(task_queue_->size()));
+        logger_->info("SessionManager: Task queue size now: " + std::to_string(task_queue_->size()));
     }
 }
 

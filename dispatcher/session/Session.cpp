@@ -5,7 +5,6 @@
 #include <cassert>
 #include <chrono>
 #include <cstring>
-#include <thread>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -49,7 +48,18 @@ Session::Session(std::shared_ptr<transport::CoroSocketAdapter> client_socket,
 }
 
 void Session::run() {
-    initialize_session();
+    // Reset stats (no I/O — safe on the acceptor thread)
+    stats_.start_time = std::chrono::steady_clock::now();
+    stats_.tasks_sent = 0;
+    stats_.tasks_completed = 0;
+    stats_.tasks_failed = 0;
+    stats_.bytes_sent = 0;
+    stats_.bytes_received = 0;
+    stats_.total_task_roundtrip_time = std::chrono::nanoseconds{0};
+    stats_.last_task_roundtrip_time = std::chrono::nanoseconds{0};
+    stats_.timed_tasks = 0;
+    touch_last_seen_dispatcher();
+
     // Start the session coroutine and store the handle to keep it alive
     session_coroutine_ = std::make_unique<Task<void>>(run_coroutine());
 }
@@ -60,6 +70,29 @@ bool Session::is_done() const {
 
 Task<void> Session::run_coroutine() {
     try {
+        // Async greeting handshake — suspends coroutine if data isn't ready,
+        // freeing the acceptor thread to accept other connections.
+        WorkerGreeting greeting{};
+        co_await client_socket_->async_read(&greeting, sizeof(greeting));
+
+        if (greeting.magic != kWorkerGreetingMagic) {
+            mark_disconnected(SessionDisconnectReason::GreetingInvalid);
+            logger_->warning("Session " + std::to_string(session_id_) + ": greeting magic mismatch");
+            update_state(SessionState::ERROR_STATE);
+            finalize_session();
+            co_return;
+        }
+        if (greeting.version != kWorkerGreetingVersion) {
+            mark_disconnected(SessionDisconnectReason::GreetingInvalid);
+            logger_->warning("Session " + std::to_string(session_id_) + ": greeting version mismatch");
+            update_state(SessionState::ERROR_STATE);
+            finalize_session();
+            co_return;
+        }
+        worker_node_id_.store(greeting.node_id, std::memory_order_relaxed);
+        logger_->debug("Session " + std::to_string(session_id_) +
+                       ": captured worker_node_id=" + std::to_string(greeting.node_id));
+
         update_state(SessionState::ACTIVE);
         
         // Main task processing loop - pick up tasks from pool
@@ -308,81 +341,6 @@ void Session::cancel_queue_wait() {
 bool Session::is_awaiting_teardown() const {
     const auto s = state_.load();
     return !is_done() && (s == SessionState::TERMINATED || s == SessionState::ERROR_STATE);
-}
-
-void Session::initialize_session() {
-    stats_.start_time = std::chrono::steady_clock::now();
-    stats_.tasks_sent = 0;
-    stats_.tasks_completed = 0;
-    stats_.tasks_failed = 0;
-    stats_.bytes_sent = 0;
-    stats_.bytes_received = 0;
-    stats_.total_task_roundtrip_time = std::chrono::nanoseconds{0};
-    stats_.last_task_roundtrip_time = std::chrono::nanoseconds{0};
-    stats_.timed_tasks = 0;
-    touch_last_seen_dispatcher();
-
-    if (!client_socket_) {
-        return;
-    }
-
-    auto* sock = client_socket_->socket();
-    if (!sock) {
-        return;
-    }
-
-    WorkerGreeting greeting{};
-    size_t total_read = 0;
-    auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
-
-    while (std::chrono::steady_clock::now() < deadline && total_read < sizeof(greeting)) {
-        std::error_code ec;
-        size_t bytes_read = 0;
-        sock->try_read(
-            reinterpret_cast<char*>(&greeting) + total_read,
-            sizeof(greeting) - total_read,
-            bytes_read,
-            ec);
-
-        if (ec) {
-            mark_disconnected(SessionDisconnectReason::GreetingReadFailed);
-            throw std::runtime_error("Session greeting read failed: " + ec.message());
-        }
-
-        if (bytes_read > 0) {
-            total_read += bytes_read;
-            touch_last_seen_dispatcher();
-            if (total_read < sizeof(greeting)) {
-                deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
-            }
-            continue;
-        }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(5));
-    }
-
-    if (total_read == 0) {
-        logger_->debug("Session " + std::to_string(session_id_) + ": worker greeting not present; continuing in compatibility mode");
-        return;
-    }
-
-    if (total_read != sizeof(greeting)) {
-        mark_disconnected(SessionDisconnectReason::GreetingInvalid);
-        throw std::runtime_error("Session greeting incomplete");
-    }
-
-    if (greeting.magic != kWorkerGreetingMagic) {
-        mark_disconnected(SessionDisconnectReason::GreetingInvalid);
-        throw std::runtime_error("Session greeting magic mismatch");
-    }
-
-    if (greeting.version != kWorkerGreetingVersion) {
-        mark_disconnected(SessionDisconnectReason::GreetingInvalid);
-        throw std::runtime_error("Session greeting version mismatch");
-    }
-
-    worker_node_id_.store(greeting.node_id, std::memory_order_relaxed);
-    logger_->debug("Session " + std::to_string(session_id_) + ": captured worker_node_id=" + std::to_string(greeting.node_id));
 }
 
 void Session::finalize_session() {

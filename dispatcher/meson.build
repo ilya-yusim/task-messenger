@@ -20,7 +20,6 @@ tm_dispatcher_lib = static_library(
   'tm-dispatcher',
   sources: [
     'DispatcherApp.cpp',
-    'monitoring/HttpRequestHandler.cpp',
     'monitoring/MonitoringOptions.cpp',
     'monitoring/MonitoringService.cpp',
     'monitoring/MonitoringSnapshotBuilder.cpp',

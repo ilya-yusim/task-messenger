@@ -1,7 +1,6 @@
 #include "TaskMessageQueue.hpp"
 #include "transport/coro/CoroTask.hpp"
 
-#include <iostream>
 #include <utility>
 
 /**

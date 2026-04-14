@@ -271,10 +271,11 @@ Task<bool> AsyncRuntime::run_loop_coro(TaskProcessor& processor) {
             co_return false;
         }
         
-        auto new_completed = tasks_completed_.fetch_add(1ULL, std::memory_order_relaxed) + 1ULL;
+        tasks_completed_.fetch_add(1ULL, std::memory_order_relaxed);
         if (logger_) {
+            auto new_completed = tasks_completed_.load(std::memory_order_relaxed) + 1ULL;
             if ((new_completed % 10) == 0) {
-                logger_->info("Worker: completed " + std::to_string(new_completed) + " tasks");
+                logger_->debug("Worker: completed " + std::to_string(new_completed) + " tasks");
             }
         }
     }

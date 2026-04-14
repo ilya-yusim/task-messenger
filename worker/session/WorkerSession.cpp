@@ -12,6 +12,7 @@
 #include <sstream>
 #include <iomanip>
 #include <cstddef>
+#include <algorithm>
 
 WorkerSession::WorkerSession(const WorkerOptions& opts, std::shared_ptr<Logger> logger)
     : logger_(logger)

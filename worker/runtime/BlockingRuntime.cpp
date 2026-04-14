@@ -292,15 +292,18 @@ bool BlockingRuntime::run_loop(TaskProcessor& processor) {
         }
         bytes_sent_.fetch_add(frame_bytes_written, std::memory_order_relaxed);
         
-        auto new_completed = tasks_completed_.fetch_add(1ULL, std::memory_order_relaxed) + 1ULL;
-        if ((new_completed % 10) == 0 && logger_) {
-            logger_->info("Worker: completed " + std::to_string(new_completed) + " tasks");
+        tasks_completed_.fetch_add(1ULL, std::memory_order_relaxed);
+
+        if(logger_) {   
+            auto new_completed = tasks_completed_.load(std::memory_order_relaxed) + 1ULL;
+            if ((new_completed % 10) == 0 && logger_) {
+                logger_->debug("Worker: completed " + std::to_string(new_completed) + " tasks");
+            }
         }
     }
     
     return true;
 }
-
 void BlockingRuntime::pause() {
     pause_requested_.store(true, std::memory_order_relaxed);
 }

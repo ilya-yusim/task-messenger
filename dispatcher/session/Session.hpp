@@ -215,7 +215,6 @@ private:
     std::unique_ptr<Task<void>> session_coroutine_;
     
     // Session lifecycle helpers
-    void initialize_session();
     void finalize_session();
     void update_state(SessionState new_state);
     void touch_last_seen_dispatcher();
