@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Task Messenger Monitoring</title>
+
+
+    <link href="assets/lib/bootstrap.min.css" rel="stylesheet" />
+    <link href="assets/lib/tabulator_bootstrap5.min.css" rel="stylesheet" />
+    <link href="assets/css/dashboard.css?v=20260408f" rel="stylesheet" />
+
+    <script defer src="assets/lib/alpine.min.js"></script>
+  </head>
+  <body>
+    <div class="dashboard-shell" x-data="monitoringDashboard()">
+      <header class="container-fluid py-4 px-3 px-md-4 border-bottom border-opacity-25">
+        <div class="d-flex flex-wrap align-items-end justify-content-between gap-3">
+          <div>
+            <p class="eyebrow mb-1">Task Messenger</p>
+            <h1 class="display-title mb-0">Dispatcher Monitoring</h1>
+          </div>
+          <div class="text-end small text-muted">
+            <div>Host: <span x-text="listenHost"></span>:<span x-text="listenPort"></span></div>
+            <div>Last update: <span x-text="lastUpdateText"></span></div>
+          </div>
+        </div>
+      </header>
+
+      <main class="container-fluid py-4 px-3 px-md-4">
+        <section class="alert alert-danger" role="alert" x-show="errorMessage" x-cloak>
+          <strong>Monitoring error:</strong>
+          <span x-text="errorMessage"></span>
+        </section>
+
+        <section class="row g-3 mb-4">
+          <div class="col-6 col-md-4 col-xl-2">
+            <article class="kpi-card">
+              <p class="kpi-label">WORKERS (WAITING)</p>
+              <p class="kpi-value" x-text="`${formatNullable(kpi.worker_count)} (${formatNullable(kpi.workers_waiting)})`">--</p>
+            </article>
+          </div>
+          <div class="col-6 col-md-4 col-xl-2">
+            <article class="kpi-card">
+              <p class="kpi-label">Generator</p>
+              <p class="kpi-value" x-text="formatNullable(kpi.generator_status)">--</p>
+            </article>
+          </div>
+          <div class="col-6 col-md-4 col-xl-2">
+            <article class="kpi-card">
+              <p class="kpi-label">Task Queue Size</p>
+              <p class="kpi-value" x-text="formatNullable(kpi.task_queue_size)">--</p>
+            </article>
+          </div>
+          <div class="col-6 col-md-4 col-xl-2">
+            <article class="kpi-card">
+              <p class="kpi-label">Uptime</p>
+              <p class="kpi-value" x-text="formatNullable(kpi.uptime_seconds)">--</p>
+            </article>
+          </div>
+          <div class="col-6 col-md-4 col-xl-2">
+            <article class="kpi-card">
+              <p class="kpi-label">Avg Roundtrip</p>
+              <p class="kpi-value" x-text="formatNullable(kpi.avg_roundtrip_ms)">--</p>
+            </article>
+          </div>
+          <div class="col-12 col-md-4 col-xl-2">
+            <article class="kpi-card">
+              <p class="kpi-label">Failure Rate</p>
+              <p class="kpi-value" x-text="formatNullable(kpi.failure_rate_pct)">--</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="card table-card shadow-sm">
+          <div class="card-body p-2 p-md-3">
+            <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+              <h2 class="table-title mb-0">Worker Sessions</h2>
+              <span class="table-hint">Polling every 1000ms</span>
+            </div>
+            <div id="workers-table" aria-label="Workers monitoring table"></div>
+          </div>
+        </section>
+
+        <section class="card table-card shadow-sm mt-3">
+          <div class="card-body p-2 p-md-3">
+            <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+              <h2 class="table-title mb-0">
+                Recent Disconnects
+                <span class="disconnect-count" x-text="recentDisconnects.length"></span>
+              </h2>
+              <div class="d-flex align-items-center gap-2">
+                <span class="table-hint">Retained for process lifetime (max 100)</span>
+                <button class="btn btn-sm btn-outline-secondary"
+                        type="button"
+                        @click="disconnectHistoryExpanded = !disconnectHistoryExpanded"
+                        x-text="disconnectHistoryExpanded ? 'Collapse' : 'Expand'"></button>
+              </div>
+            </div>
+            <div class="disconnect-list" x-show="disconnectHistoryExpanded && recentDisconnects.length > 0" x-cloak>
+              <template x-for="entry in recentDisconnects" :key="entry.session_id + '-' + entry.disconnected_ts_ms">
+                <div class="disconnect-row">
+                  <div class="disconnect-main">
+                    <span class="disconnect-node" x-text="entry.worker_node_id"></span>
+                    <span class="disconnect-reason" x-text="entry.reason"></span>
+                  </div>
+                  <div class="disconnect-meta">
+                    <span x-text="entry.remote_endpoint"></span>
+                    <span x-text="formatTimeAgo(entry.disconnected_ts_ms)"></span>
+                  </div>
+                </div>
+              </template>
+            </div>
+            <div class="table-hint px-1" x-show="disconnectHistoryExpanded && recentDisconnects.length === 0">No recent disconnects</div>
+            <div class="table-hint px-1" x-show="!disconnectHistoryExpanded">History collapsed</div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="assets/lib/bootstrap.bundle.min.js"></script>
+    <script src="assets/lib/tabulator.min.js"></script>
+    <script src="assets/js/app.js?v=20260408f"></script>
+  </body>
+</html>

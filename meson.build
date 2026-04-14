@@ -51,6 +51,7 @@ add_project_arguments('-I' + meson.project_source_root(), language: 'cpp')
 # Override CLI11's warning_level to match ours and prevent D9025 warnings
 cli11_sp = subproject('CLI11', required : true, default_options: ['warning_level=3'])
 json_sp = subproject('nlohmann_json', required : true)
+httplib_sp = subproject('cpp-httplib', required : true)
 
 # Make CLI11 and nlohmann_json available to all subdirectories
 cli11_dep = declare_dependency()
@@ -61,6 +62,11 @@ endif
 json_dep = declare_dependency()
 if json_sp.found()
   json_dep = dependency('nlohmann_json', fallback: ['nlohmann_json', 'nlohmann_json_dep'])
+endif
+
+httplib_dep = declare_dependency()
+if httplib_sp.found()
+  httplib_dep = dependency('cpp-httplib', fallback: ['cpp-httplib', 'cpp_httplib_dep'])
 endif
 
 # ZeroTier networking library (via wrapper for CMake integration)
@@ -176,6 +182,14 @@ install_data(
   'config/vn-dispatcher-identity/identity.public',
   'config/vn-dispatcher-identity/identity.secret',
   install_dir: config_dir / 'vn-dispatcher-identity'
+)
+
+# Install dispatcher monitoring dashboard assets next to installed binaries.
+# MonitoringService resolves installed UI assets from <bindir>/dashboard.
+install_subdir(
+  'dispatcher/monitoring/dashboard',
+  install_dir: get_option('bindir') / 'dashboard',
+  strip_directory: true,
 )
 
 # =============================================================================

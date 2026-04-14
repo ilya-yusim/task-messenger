@@ -14,7 +14,7 @@
 
 #include "logger.hpp"
 #include "message/ResponseContext.hpp"
-#include "message/TaskMessagePool.hpp"
+#include "message/TaskMessageQueue.hpp"
 #include "transport/coro/CoroTask.hpp"
 #include "transport/coro/coroIoContext.hpp"
 #include "transport/coro/CoroSocketAdapter.hpp"
@@ -78,10 +78,19 @@ public:
     void enqueue_tasks(std::vector<TaskMessage> tasks);
 
     /**
-     * \brief Get task pool statistics for monitoring.
-     * \return Pair of (available_tasks, waiting_sessions)
+        * \brief Get the number of tasks currently available in the queue.
      */
-    std::pair<size_t, size_t> get_task_pool_stats() const;
+    size_t get_task_queue_size() const;
+
+    /**
+     * \brief Get number of currently active worker sessions.
+     */
+    size_t get_active_session_count() const;
+
+    /**
+     * \brief Get the number of workers currently blocked waiting for tasks.
+     */
+    size_t get_task_queue_waiting_workers_count() const;
 
     /**
      * \brief Dump IO-thread counters plus session-level statistics.
@@ -95,10 +104,30 @@ public:
     std::shared_ptr<ResponseContext> response_context() const { return response_ctx_; }
 
     /**
-     * \brief Get the shared task pool for async task submission.
-     * \return Shared pointer to the TaskMessagePool (never null after construction).
+        * \brief Get the shared task queue for async task submission.
+     * \return Shared pointer to the TaskMessageQueue (never null after construction).
      */
-    std::shared_ptr<TaskMessagePool> task_pool() const;
+    std::shared_ptr<TaskMessageQueue> task_queue() const;
+
+    /**
+     * \brief Access session manager for monitoring snapshot queries.
+     */
+    session::SessionManager* session_manager() const noexcept { return session_manager_.get(); }
+
+    /**
+     * \brief Access listening server stream interface for transport-level metadata.
+     */
+    std::shared_ptr<IAsyncStream> server_stream() const noexcept {
+        return server_socket_ ? server_socket_->socket_ptr() : nullptr;
+    }
+
+    /**
+     * \brief Run transport/session maintenance when interval budget allows.
+     *
+     * Safe to call from monitoring/polling paths; internal throttling prevents
+     * redundant work when multiple clients poll concurrently.
+     */
+    void run_maintenance_if_due() noexcept;
 
 private:
     // Dedicated acceptor thread replaces coroutine accept loop
@@ -118,6 +147,7 @@ private:
     std::shared_ptr<transport::CoroSocketAdapter> server_socket_;
     std::thread acceptor_thread_{};
     std::chrono::steady_clock::time_point last_maintenance_run_{};
+    mutable std::mutex maintenance_mutex_;
 
     // Remember the listen endpoint for wake-up connections during shutdown
     std::string listen_host_{};

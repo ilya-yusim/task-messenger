@@ -2,10 +2,12 @@
 #pragma once
 
 #include "transport/AsyncTransportServer.hpp"
+#include "monitoring/MonitoringService.hpp"
 #include "message/TaskSubmitAwaitable.hpp"
 #include "logger.hpp"
 
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <memory>
 
@@ -18,6 +20,16 @@
  */
 class DispatcherApp {
 public:
+    enum class LifecycleState {
+        Starting,
+        Running,
+        NoTasks,
+        NoWorkers,
+        Stopping,
+        Stopped,
+        Error,
+    };
+
     DispatcherApp();
     ~DispatcherApp();
 
@@ -62,7 +74,7 @@ public:
         std::unique_ptr<TaskMessenger::Skills::PayloadBufferBase> response_buffer = nullptr);
 
     /** \brief Get the current number of tasks in the pool. */
-    size_t task_pool_size() const;
+    size_t task_queue_size() const;
 
     /** \brief Print transport server statistics to the logger. */
     void print_statistics() const;
@@ -70,11 +82,23 @@ public:
     /** \brief Get the logger. */
     std::shared_ptr<Logger> logger() const;
 
+    /** \brief Dispatcher uptime in whole seconds. */
+    uint64_t uptime_seconds() const;
+
+    /** \brief Get current dispatcher lifecycle state. */
+    LifecycleState lifecycle_state() const;
+
+    /** \brief Get lifecycle state as API-safe lowercase string. */
+    std::string lifecycle_state_string() const;
+
 private:
     static void install_signal_handlers();
 
     std::shared_ptr<Logger> logger_;
     std::unique_ptr<AsyncTransportServer> server_;
+    std::unique_ptr<monitoring::MonitoringService> monitoring_service_;
+    std::chrono::steady_clock::time_point start_time_{};
+    std::atomic<LifecycleState> lifecycle_state_{LifecycleState::Stopped};
 
     // Global shutdown flag — static so signal handler can access it
     static std::atomic<bool> s_shutdown_requested;

@@ -8,6 +8,8 @@
 #include "logger.hpp"
 #include <stdexcept>
 #include <cstring>
+#include <iomanip>
+#include <sstream>
 
 #ifdef _WIN32
     #include <winsock2.h>
@@ -119,6 +121,19 @@ void ZeroTierSocket::setup_socket(int fd) {
     
     // Enable TCP_NODELAY by default for low-latency scatter-send messaging
     set_no_delay(true);
+
+    // Enable TCP keepalive so the OS detects dead peers on idle connections
+    zts_set_keepalive(fd, 1);
+
+    // Tune keepalive timers for faster dead-peer detection.
+    // lwIP defaults are 2 hours idle / 75s interval / 9 probes (~2h11m).
+    // With 30s/5s/3 the stack detects a silently-dead peer in ~45s.
+    int keepidle  = 30;  // seconds before first probe
+    int keepintvl = 5;   // seconds between probes
+    int keepcnt   = 3;   // probes before declaring dead
+    zts_bsd_setsockopt(fd, ZTS_IPPROTO_TCP, ZTS_TCP_KEEPIDLE,  &keepidle,  sizeof(keepidle));
+    zts_bsd_setsockopt(fd, ZTS_IPPROTO_TCP, ZTS_TCP_KEEPINTVL, &keepintvl, sizeof(keepintvl));
+    zts_bsd_setsockopt(fd, ZTS_IPPROTO_TCP, ZTS_TCP_KEEPCNT,   &keepcnt,   sizeof(keepcnt));
 }
 
 bool ZeroTierSocket::set_no_delay(bool enable) {
@@ -211,6 +226,7 @@ bool ZeroTierSocket::check_connect_complete(std::error_code& error) {
     char ip_str[ZTS_IP_MAX_STR_LEN];
     unsigned short port;
     
+    zts_errno = 0; // Clear errno before call
     if (zts_getpeername(socket_fd_, ip_str, sizeof(ip_str), &port) == ZTS_ERR_OK) {
         // Successfully got peer address - connection is complete
         error = std::error_code{};
@@ -222,6 +238,7 @@ bool ZeroTierSocket::check_connect_complete(std::error_code& error) {
     if (ZeroTierErrnoCompat::is_would_block_errno(zts_err) || 
         zts_err == ZTS_ENOTCONN) {
         // Still connecting
+        error = std::error_code{};
         return false;
     } else {
         // Connection failed
@@ -240,6 +257,7 @@ std::shared_ptr<IAsyncStream> ZeroTierSocket::try_accept(std::error_code& error)
     struct zts_sockaddr_in client_addr;
     zts_socklen_t client_len = sizeof(client_addr);
     
+    zts_errno = 0; // Clear errno before call
     int client_fd = zts_bsd_accept(socket_fd_, (struct zts_sockaddr*)&client_addr, &client_len);
     
     if (client_fd >= 0) {
@@ -256,6 +274,7 @@ std::shared_ptr<IAsyncStream> ZeroTierSocket::try_accept(std::error_code& error)
         int zts_err = zts_errno;
         if (is_would_block_error(zts_err)) {
             // Would block, no connection available
+            error = std::error_code{};
             return nullptr;
         } else {
             // Error occurred
@@ -275,6 +294,7 @@ bool ZeroTierSocket::try_read(void* buffer, size_t size, size_t& bytes_read, std
     // Non-blocking read: attempt to read available data
     // Returns true only when operation completes (full buffer or error/disconnect)
     // Returns false with bytes_read > 0 for partial progress (caller must retry with adjusted buffer)
+    zts_errno = 0; // Clear errno before call
     ssize_t result = zts_recv(socket_fd_, buffer, size, 0);
 
     if (result > 0) {
@@ -302,11 +322,45 @@ bool ZeroTierSocket::try_read(void* buffer, size_t size, size_t& bytes_read, std
         int zts_err = zts_errno;
         if (is_would_block_error(zts_err)) {
             // Would block - no data available yet
+            error = std::error_code{};
             return false;
         } else {
             error = translate_error(zts_err);
             return true;
         }
+    }
+}
+
+bool ZeroTierSocket::check_alive(std::error_code& error) {
+    if (socket_fd_ < 0) {
+        error = std::make_error_code(std::errc::bad_file_descriptor);
+        return false;
+    }
+
+    // Use ZTS_MSG_PEEK so no data is consumed from the receive buffer.
+    char peek_byte;
+    zts_errno = 0;
+    ssize_t result = zts_recv(socket_fd_, &peek_byte, 1, ZTS_MSG_PEEK);
+
+    if (result > 0) {
+        // Data available but not consumed — connection alive.
+        error = std::error_code{};
+        return true;
+    } else if (result == 0) {
+        // Peer performed orderly shutdown (FIN).
+        int zts_err = zts_errno;
+        error = (zts_err != 0) ? translate_error(zts_err)
+                               : std::make_error_code(std::errc::not_connected);
+        return false;
+    } else {
+        int zts_err = zts_errno;
+        if (is_would_block_error(zts_err)) {
+            // No data available, but socket is fine — connection alive.
+            error = std::error_code{};
+            return true;
+        }
+        error = translate_error(zts_err);
+        return false;
     }
 }
 
@@ -320,6 +374,7 @@ bool ZeroTierSocket::try_write(const void* buffer, size_t size, size_t& bytes_wr
     // Non-blocking write: attempt to write data
     // Returns true only when operation completes (full buffer or error)
     // Returns false with bytes_written > 0 for partial progress (caller must retry with adjusted buffer)
+    zts_errno = 0; // Clear errno before call
     ssize_t result = zts_send(socket_fd_, buffer, size, 0);
     
     if (result > 0) {
@@ -335,11 +390,13 @@ bool ZeroTierSocket::try_write(const void* buffer, size_t size, size_t& bytes_wr
     } else if (result == 0) {
         // Zero bytes written (unusual but possible)
         bytes_written = 0;
+        error = std::error_code{};
         return false;
     } else {
         bytes_written = 0;
         int zts_err = zts_errno;
         if (is_would_block_error(zts_err)) {
+            error = std::error_code{};
             return false; // Would block
         } else {
             error = translate_error(zts_err);
@@ -446,6 +503,24 @@ bool ZeroTierSocket::is_open() const {
 
 std::string ZeroTierSocket::socket_type() const {
     return "zerotier_socket";
+}
+
+std::uint64_t ZeroTierSocket::node_id() const {
+    return current_node_id();
+}
+
+std::string ZeroTierSocket::node_id_hex() const {
+    return current_node_id_hex();
+}
+
+std::uint64_t ZeroTierSocket::current_node_id() {
+    return static_cast<std::uint64_t>(zts_node_get_id());
+}
+
+std::string ZeroTierSocket::current_node_id_hex() {
+    std::ostringstream ss;
+    ss << std::hex << std::setw(16) << std::setfill('0') << current_node_id();
+    return ss.str();
 }
 
 // === Blocking interface implementations ===

@@ -7,14 +7,59 @@
 #include "transport/coro/coroIoContext.hpp"
 #include "transport/coro/CoroTask.hpp"
 #include "transport/coro/CoroSocketAdapter.hpp"
+#include "transport/socket/IBlockingStream.hpp"
 #include "message/TaskMessage.hpp"
+#include "message/WorkerGreeting.hpp"
 #include "logger.hpp"
+#include <system_error>
 #include <thread>
 #include <chrono>
 #include <utility>
 
+namespace {
+bool send_worker_greeting_via_underlying_stream(transport::CoroSocketAdapter& adapter, std::error_code& ec) {
+    ec.clear();
+
+    WorkerGreeting greeting{};
+    greeting.magic = kWorkerGreetingMagic;
+    greeting.version = kWorkerGreetingVersion;
+
+    auto* stream = adapter.socket();
+    if (!stream) {
+        ec = std::make_error_code(std::errc::bad_file_descriptor);
+        return false;
+    }
+    greeting.node_id = stream->node_id();
+
+    // ZeroTierSocket also implements IBlockingStream, and this path keeps connect()
+    // synchronous while still using the async adapter for the run loop.
+    auto* blocking = dynamic_cast<IBlockingStream*>(stream);
+    if (!blocking) {
+        ec = std::make_error_code(std::errc::operation_not_supported);
+        return false;
+    }
+
+    const auto* data = reinterpret_cast<const char*>(&greeting);
+    size_t total = 0;
+    while (total < sizeof(greeting)) {
+        size_t bw = 0;
+        blocking->write(data + total, sizeof(greeting) - total, bw, ec);
+        if (ec) {
+            return false;
+        }
+        if (bw == 0) {
+            ec = std::make_error_code(std::errc::connection_reset);
+            return false;
+        }
+        total += bw;
+    }
+    return true;
+}
+} // namespace
+
 AsyncRuntime::AsyncRuntime(const std::string& host, int port, std::shared_ptr<Logger> logger)
-    : host_(host), port_(port), logger_(std::move(logger)) {}
+    : host_(host), port_(port), logger_(std::move(logger))
+    , inline_context_(transport::CoroIoContext::make_inline()) {}
 
 bool AsyncRuntime::connect() {
     std::error_code ec;
@@ -26,7 +71,7 @@ bool AsyncRuntime::connect() {
             sock = socket_;
         }
         if (!sock) {
-            auto new_socket = transport::CoroSocketAdapter::create_client(logger_);
+            auto new_socket = transport::CoroSocketAdapter::create_client(logger_, inline_context_);
             if (!new_socket) {
                 if (logger_) logger_->error("Failed to create async client socket");
                 return false;
@@ -51,6 +96,13 @@ bool AsyncRuntime::connect() {
             if (logger_) logger_->error(std::string{"Failed to connect: "} + ec.message());
             return false;
         }
+
+        if (!send_worker_greeting_via_underlying_stream(*sock, ec)) {
+            if (logger_) logger_->error(std::string{"Failed to send worker greeting: "} + ec.message());
+            sock->close();
+            return false;
+        }
+
         return true;
         
     } catch (const std::runtime_error& e) {
@@ -64,6 +116,7 @@ bool AsyncRuntime::connect() {
 }
 
 void AsyncRuntime::disconnect() {
+    disconnect_requested_.store(true, std::memory_order_relaxed);
     std::shared_ptr<transport::CoroSocketAdapter> socket_to_close;
     {
         std::lock_guard<std::mutex> lk(socket_mtx_);
@@ -73,6 +126,10 @@ void AsyncRuntime::disconnect() {
     if (socket_to_close) {
         socket_to_close->close();
     }
+}
+
+bool AsyncRuntime::was_disconnect_requested() const {
+    return disconnect_requested_.load(std::memory_order_relaxed);
 }
 
 void AsyncRuntime::shutdown() {
@@ -116,10 +173,10 @@ bool AsyncRuntime::run_loop(TaskProcessor& processor) {
         return false;
     }
     
-    // Start coroutine and poll until complete
+    // Start coroutine and drive it inline via caller-driven polling
     auto coro = run_loop_coro(processor);
     while (!coro.done()) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        inline_context_->poll_once_for(std::chrono::milliseconds(100));
     }
     
     // Get result - coro returns true on success, false on error
@@ -134,8 +191,9 @@ Task<bool> AsyncRuntime::run_loop_coro(TaskProcessor& processor) {
         current_socket = socket_;
     }
     
-    // Clear any pending pause request from previous state (e.g., multiple pause presses while paused)
+    // Clear any pending pause/disconnect request from previous state
     pause_requested_.store(false, std::memory_order_relaxed);
+    disconnect_requested_.store(false, std::memory_order_relaxed);
     
     for (;;) {
         if (pause_requested_.load(std::memory_order_relaxed)) {
@@ -150,7 +208,11 @@ Task<bool> AsyncRuntime::run_loop_coro(TaskProcessor& processor) {
             co_await current_socket->async_read(&header, sizeof(header));
             bytes_received_.fetch_add(static_cast<std::uint64_t>(sizeof(header)), std::memory_order_relaxed);
         } catch (const std::exception& e) {
-            if (logger_) logger_->error(std::string{"async_read header failed: "} + e.what());
+            if (disconnect_requested_.load(std::memory_order_relaxed)) {
+                if (logger_) logger_->info("async_read header interrupted by disconnect request");
+            } else {
+                if (logger_) logger_->error(std::string{"async_read header failed: "} + e.what());
+            }
             co_return false;
         }
 
@@ -166,7 +228,11 @@ Task<bool> AsyncRuntime::run_loop_coro(TaskProcessor& processor) {
                 co_await current_socket->async_read(payload.data(), payload.size());
                 bytes_received_.fetch_add(static_cast<std::uint64_t>(payload.size()), std::memory_order_relaxed);
             } catch (const std::exception& e) {
-                if (logger_) logger_->error(std::string{"async_read body failed: "} + e.what());
+                if (disconnect_requested_.load(std::memory_order_relaxed)) {
+                    if (logger_) logger_->info("async_read body interrupted by disconnect request");
+                } else {
+                    if (logger_) logger_->error(std::string{"async_read body failed: "} + e.what());
+                }
                 co_return false;
             }
         }
@@ -197,14 +263,19 @@ Task<bool> AsyncRuntime::run_loop_coro(TaskProcessor& processor) {
             }
             bytes_sent_.fetch_add(static_cast<std::uint64_t>(header_span.size() + payload_span.size()), std::memory_order_relaxed);
         } catch (const std::exception& e) {
-            if (logger_) logger_->error(std::string{"async_write failed: "} + e.what());
+            if (disconnect_requested_.load(std::memory_order_relaxed)) {
+                if (logger_) logger_->info("async_write interrupted by disconnect request");
+            } else {
+                if (logger_) logger_->error(std::string{"async_write failed: "} + e.what());
+            }
             co_return false;
         }
         
-        auto new_completed = tasks_completed_.fetch_add(1ULL, std::memory_order_relaxed) + 1ULL;
+        tasks_completed_.fetch_add(1ULL, std::memory_order_relaxed);
         if (logger_) {
+            auto new_completed = tasks_completed_.load(std::memory_order_relaxed) + 1ULL;
             if ((new_completed % 10) == 0) {
-                logger_->info("Worker: completed " + std::to_string(new_completed) + " tasks");
+                logger_->debug("Worker: completed " + std::to_string(new_completed) + " tasks");
             }
         }
     }

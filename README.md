@@ -6,13 +6,13 @@ Task Messenger is a dispatcher/worker platform for streaming computational tasks
 
 - **Dispatcher** (`dispatcher/`): Accepts worker connections, runs coroutine sessions, and coordinates task fan-out via `AsyncTransportServer`, `SessionManager`, and mock `TaskGenerator` integrations.
 - **Workers** (`worker/`): Connect back to the dispatcher, execute tasks under pluggable runtimes (`BlockingRuntime`/`AsyncRuntime`), track metrics, and optionally expose a terminal UI using FTXUI.
-- **Messaging Primitives** (`message/`): Defines `TaskMessage`, `TaskMessagePool`, and helpers that serialize payloads, enforce framing, and provide coroutine-friendly hand-off between producers and sessions.
+- **Messaging Primitives** (`message/`): Defines `TaskMessage`, `TaskMessageQueue`, and helpers that serialize payloads, enforce framing, and provide coroutine-friendly hand-off between producers and sessions.
 - **Transport Layer** (`transport/`): Shared networking stack (coroutines, ZeroTier adapters, socket factories) powering both dispatcher and worker runtimes.
 
 ## System Flow (Mermaid)
 ```mermaid
 graph LR
-    App[Domain App / TaskGenerator] --> Pool[TaskMessagePool]
+    App[Domain App / TaskGenerator] --> Pool[TaskMessageQueue]
     Pool --> Dispatcher[Dispatcher Sessions]
     Dispatcher --> Transport[Async Transport Layer]
     Transport --> WorkerFleet[Workers]
@@ -176,6 +176,46 @@ Task Messenger provides distribution packages for both dispatcher and worker com
 ```bash
 ./extras/scripts/uninstall_linux.sh --component dispatcher
 ```
+
+## Monitoring Dashboard
+
+The dispatcher ships with a browser dashboard served by the in-process monitoring HTTP server.
+
+- URL: `http://127.0.0.1:9090/`
+- API endpoint: `http://127.0.0.1:9090/api/monitor`
+- Health endpoint: `http://127.0.0.1:9090/healthz`
+
+### Quick Start (Development)
+
+1. Build the project:
+
+```bash
+meson compile -C builddir
+```
+
+2. Run a generator (starts dispatcher + monitoring server):
+
+```bash
+builddir/generators/auto-refill/tm-generator-auto-refill -c config/config-dispatcher.json
+```
+
+3. Run a worker in another terminal:
+
+```bash
+builddir/worker/tm-worker -c config/config-worker.json --mode blocking
+```
+
+4. Open the dashboard URL in your browser.
+
+### Runtime Path Resolution
+
+MonitoringService resolves dashboard assets in this order:
+
+1. `DASHBOARD_DIR` compile-time define (set by Meson option `-Ddashboard_dir=...`)
+2. Development layout under the repository (`dispatcher/monitoring/dashboard`)
+3. Installed layout next to the executable (`<bindir>/dashboard`)
+
+If no dashboard directory is found, monitoring APIs continue to work and only static UI serving is skipped.
 
 ## Documentation
 - Generated API/user docs: `meson compile -C builddir-dispatcher docs` then open `builddir-dispatcher/doxygen/html/index.html`.

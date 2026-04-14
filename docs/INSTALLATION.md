@@ -520,6 +520,26 @@ After installation, you can run the applications:
    ~/Library/Application\ Support/TaskMessenger/dispatcher/tm-dispatcher --help
    ```
 
+### Accessing the Dispatcher Dashboard
+
+When a dispatcher-backed generator is running, the monitoring dashboard is served locally by the monitoring HTTP service.
+
+1. Start the generator/dispatcher process.
+2. Start one or more workers.
+3. Open `http://127.0.0.1:9090/` in a browser.
+
+Useful endpoints:
+
+- Dashboard UI: `http://127.0.0.1:9090/`
+- Monitoring API: `http://127.0.0.1:9090/api/monitor`
+- Health check: `http://127.0.0.1:9090/healthz`
+
+Notes:
+
+- Dashboard static files are installed to `<bindir>/dashboard`.
+- If the UI path is missing, `/api/monitor` and `/healthz` still function.
+- If the dashboard does not load, test `/healthz` first to confirm the service is running.
+
 ## Getting Help
 
 For additional help:

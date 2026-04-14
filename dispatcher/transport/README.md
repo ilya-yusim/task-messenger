@@ -18,7 +18,7 @@ graph TD
     Server -->|boot| IoThreads[CoroIoContext threads]
     Server -->|forward accepted socket| SessMgr[SessionManager]
     SessMgr --> Session[Session coroutine]
-    Session --> Pool[TaskMessagePool]
+    Session --> Pool[TaskMessageQueue]
     Pool --> Worker[workerMain]
 ```
 

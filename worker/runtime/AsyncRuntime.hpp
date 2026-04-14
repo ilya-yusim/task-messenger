@@ -14,7 +14,7 @@
 #include <cstdint>
 
 class Logger;
-namespace transport { class CoroSocketAdapter; }
+namespace transport { class CoroSocketAdapter; class CoroIoContext; }
 class TaskProcessor;
 
 /** \brief Runtime implementation backed by coroutine-enabled transport primitives. */
@@ -33,6 +33,8 @@ public:
     bool connect() override;
     /** \copydoc IRuntimeMode::disconnect */
     void disconnect() override;
+    /** \copydoc IRuntimeMode::was_disconnect_requested */
+    bool was_disconnect_requested() const override;
     /** \copydoc IRuntimeMode::release */
     void release() override;
     /** \copydoc IRuntimeMode::shutdown */
@@ -61,6 +63,7 @@ private:
     std::shared_ptr<Logger> logger_;
 
     std::shared_ptr<transport::CoroSocketAdapter> socket_;
+    std::shared_ptr<transport::CoroIoContext> inline_context_;  ///< Caller-driven I/O context (no background thread).
     mutable std::mutex socket_mtx_;
 
     std::atomic<std::uint64_t> tasks_completed_{0};
@@ -68,4 +71,5 @@ private:
     std::atomic<std::uint64_t> bytes_received_{0};
 
     std::atomic<bool> pause_requested_{false};
+    std::atomic<bool> disconnect_requested_{false};
 };

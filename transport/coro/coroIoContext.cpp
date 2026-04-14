@@ -30,7 +30,40 @@ CoroIoContext::CoroIoContext() {
 
 CoroIoContext::~CoroIoContext() { stop(); }
 
+std::shared_ptr<CoroIoContext> CoroIoContext::make_inline() {
+    return std::make_shared<CoroIoContext>();
+}
+
+std::shared_ptr<CoroIoContext> CoroIoContext::make_threaded(size_t threads) {
+    auto ctx = std::make_shared<CoroIoContext>();
+    ctx->start(threads);
+    return ctx;
+}
+
 void CoroIoContext::start() { start(1); }
+
+void CoroIoContext::poll_once() {
+    ensure_inline_stats_();
+    try {
+        process_pending_ops(0);
+    } catch (const std::exception& e) {
+        if (logger_) logger_->error("Exception in poll_once: " + std::string(e.what()));
+    }
+}
+
+void CoroIoContext::poll_once_for(std::chrono::milliseconds timeout) {
+    ensure_inline_stats_();
+    try {
+        process_pending_ops(0);
+    } catch (const std::exception& e) {
+        if (logger_) logger_->error("Exception in poll_once_for: " + std::string(e.what()));
+    }
+    // Wait for new work or timeout; avoids busy-spinning when idle.
+    std::unique_lock<std::mutex> lk(pending_mutex_);
+    pending_cv_.wait_for(lk, timeout, [this]() {
+        return !pending_ops_.empty();
+    });
+}
 
 void CoroIoContext::start(size_t threads) {
     if (threads == 0) threads = 1;
@@ -190,6 +223,16 @@ void CoroIoContext::register_pending(PendingOpCategory category, std::function<b
         pending_ops_.push_back(std::move(op));
     }
     wake_();
+}
+
+void CoroIoContext::ensure_inline_stats_() {
+    // One-time initialization for caller-driven polling (no start() call).
+    // Safe to check without lock: thread_count_ is atomic and only grows.
+    if (thread_count_.load(std::memory_order_acquire) == 0) {
+        thread_count_.store(1, std::memory_order_release);
+        per_thread_operations_processed_ = std::make_unique<std::atomic<size_t>[]>(1);
+        per_thread_operations_processed_[0].store(0, std::memory_order_relaxed);
+    }
 }
 
 std::vector<size_t> CoroIoContext::get_completion_attempt_histogram() const {

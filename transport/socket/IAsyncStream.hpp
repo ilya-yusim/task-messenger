@@ -36,4 +36,16 @@ struct IAsyncStream : public virtual IClientSocket, public virtual IServerSocket
      * with an adjusted buffer pointer and remaining length.
      */
     virtual bool try_write(const void* buffer, size_t size, size_t& bytes_written, std::error_code& error) = 0;
+
+    /**
+     * \brief Non-consuming connection liveness check.
+     *
+     * Uses MSG_PEEK to probe the socket without consuming data.
+     *
+     * \param[out] error  Set to the transport error when a disconnect or
+     *                    error is detected; cleared otherwise.
+     * \return \c true if the connection appears alive (would-block or data
+     *         available); \c false if a disconnect or error was detected.
+     */
+    virtual bool check_alive(std::error_code& error) = 0;
 };

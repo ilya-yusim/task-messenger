@@ -18,6 +18,8 @@ public:
     virtual bool connect() = 0;
     /** \brief Close the active socket while keeping resources available. */
     virtual void disconnect() = 0;
+    /** \brief Whether a user-initiated disconnect interrupted the last run_loop. */
+    virtual bool was_disconnect_requested() const = 0;
     /** \brief Release all socket resources, leaving the transport network. */
     virtual void release() = 0;
     /** \brief Interrupt blocking operations and begin shutdown. */

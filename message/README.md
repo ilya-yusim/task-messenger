@@ -4,20 +4,20 @@ Utilities in `message/` format task payloads and distribute them to dispatcher s
 
 ## Responsibilities
 - Serialize dispatcher<->worker traffic into a contiguous `{TaskHeader + payload}` buffer (`TaskMessage`).
-- Provide a coroutine-friendly queue (`TaskMessagePool`) so acceptor sessions can `co_await` new work.
+- Provide a coroutine-friendly queue (`TaskMessageQueue`) so acceptor sessions can `co_await` new work.
 - Track timing metadata to help latency tooling (`TaskMessage::get_age`).
 
 ## Key Types
 - `TaskHeader`: fixed-width framing that travels on the wire ahead of every payload.
 - `TaskMessage`: owns the contiguous storage, validates payload sizes, and exposes header/payload views.
-- `TaskMessagePool` + `TaskAwaitable`: awaitable bridge between producers (task generators, RPC handlers) and consumers (session coroutines).
+- `TaskMessageQueue` + `TaskQueueAwaitable`: awaitable bridge between producers (task generators, RPC handlers) and consumers (session coroutines).
 
 > All public entry points are tagged with `\ingroup message_module` so Doxygen groups them under *Task Message Module*.
 
 ## Data Flow (Mermaid)
 ```mermaid
 graph TD
-    TG[TaskGenerator / Dispatcher API] -->|enqueue| Pool(TaskMessagePool)
+    TG[TaskGenerator / Dispatcher API] -->|enqueue| Pool(TaskMessageQueue)
     Pool -->|co_await get_next_task| Session[Session coroutine]
     Session -->|serialize header+payload| Transport[transport::CoroSocketAdapter]
     Transport --> Worker[workerMain]
@@ -28,8 +28,8 @@ graph TD
 ```mermaid
 sequenceDiagram
     participant Prod as Producer thread
-    participant Pool as TaskMessagePool
-    participant Await as TaskAwaitable
+    participant Pool as TaskMessageQueue
+    participant Await as TaskQueueAwaitable
     participant Sess as Session coroutine
 
     Sess->>Pool: co_await get_next_task()

@@ -5,6 +5,7 @@
 #include "skills/registry/PayloadBuffer.hpp"
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
@@ -30,6 +31,11 @@ struct TaskHeader {
     uint32_t body_size;  ///< Size of following payload (bytes)
     uint32_t skill_id;   ///< Skill identifier for dispatch
 };
+
+static_assert(sizeof(TaskHeader) == 12, "TaskHeader wire size changed — update protocol version");
+static_assert(offsetof(TaskHeader, task_id) == 0);
+static_assert(offsetof(TaskHeader, body_size) == 4);
+static_assert(offsetof(TaskHeader, skill_id) == 8);
 
 /**
  * \brief Zero-copy message buffer carrying header, payload, and timing metadata.

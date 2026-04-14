@@ -75,6 +75,10 @@ void AsyncTransportServer::stop() noexcept {
     if (io_) io_->stop();
     // Stop response context workers
     if (response_ctx_) response_ctx_->stop();
+    // Terminate all sessions, cancel their queue waiters, shut down the queue,
+    // then clean up so every coroutine reaches final_suspend before destruction.
+    session_manager_->terminate_all_sessions();
+    if (auto q = session_manager_->task_queue()) q->shutdown();
     cleanup_closed_connections();
     session_manager_->cleanup_completed_sessions();
     logger_->info("AsyncTransportServer: stopped");
@@ -86,12 +90,24 @@ void AsyncTransportServer::enqueue_tasks(std::vector<TaskMessage> tasks) {
     maybe_run_maintenance();
 }
 
-std::pair<size_t, size_t> AsyncTransportServer::get_task_pool_stats() const {
-    return session_manager_->get_task_pool_stats();
+void AsyncTransportServer::run_maintenance_if_due() noexcept {
+    maybe_run_maintenance();
 }
 
-std::shared_ptr<TaskMessagePool> AsyncTransportServer::task_pool() const {
-    return session_manager_->task_pool();
+size_t AsyncTransportServer::get_task_queue_size() const {
+    return session_manager_->get_task_queue_size();
+}
+
+size_t AsyncTransportServer::get_active_session_count() const {
+    return session_manager_->get_active_session_count();
+}
+
+size_t AsyncTransportServer::get_task_queue_waiting_workers_count() const {
+    return session_manager_->get_task_queue_waiting_workers_count();
+}
+
+std::shared_ptr<TaskMessageQueue> AsyncTransportServer::task_queue() const {
+    return session_manager_->task_queue();
 }
 
 void AsyncTransportServer::print_transporter_statistics() const noexcept {
@@ -165,7 +181,9 @@ void AsyncTransportServer::start_acceptor_thread() {
 
 void AsyncTransportServer::maybe_run_maintenance() noexcept {
     using namespace std::chrono;
-    constexpr auto interval = std::chrono::milliseconds(2000);
+    constexpr auto interval = std::chrono::milliseconds(1000);
+
+    std::lock_guard<std::mutex> lock(maintenance_mutex_);
     const auto now = steady_clock::now();
     if (now - last_maintenance_run_ >= interval) {
         session_manager_->cleanup_completed_sessions();

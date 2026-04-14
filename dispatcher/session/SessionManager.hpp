@@ -3,7 +3,7 @@
 
 #include "Session.hpp"
 #include "SessionStats.hpp"
-#include "../../message/TaskMessagePool.hpp"
+#include "../../message/TaskMessageQueue.hpp"
 #include "transport/coro/CoroSocketAdapter.hpp"
 #include "transport/coro/CoroTask.hpp"
 #include "logger.hpp"
@@ -12,8 +12,27 @@
 #include <mutex>
 #include <atomic>
 #include <unordered_map>
+#include <chrono>
 
 namespace session {
+
+struct WorkerMonitoringSnapshot {
+    uint64_t worker_node_id = 0;
+    uint32_t session_id = 0;
+    std::string remote_endpoint;
+    SessionState worker_state = SessionState::INITIALIZING;
+    SessionStats stats;
+    int64_t last_seen_dispatcher_ts_ms = 0;
+    bool dispatcher_fresh = false;
+};
+
+struct RecentDisconnectSnapshot {
+    uint64_t worker_node_id = 0;
+    uint32_t session_id = 0;
+    std::string remote_endpoint;
+    std::string reason;
+    int64_t disconnected_ts_ms = 0;
+};
 
 /**
  * \defgroup session_module Session Management Module
@@ -34,7 +53,7 @@ namespace session {
  * Responsibilities:
  * - Create `Session` objects per accepted connection.
  * - Track active sessions, stats, and lifecycle transitions.
- * - Provide enqueue/inspection helpers for the shared `TaskMessagePool`.
+ * - Provide enqueue/inspection helpers for the shared `TaskMessageQueue`.
  */
 class SessionManager {
 public:
@@ -94,32 +113,47 @@ public:
 
 
     /**
-    * \brief Enqueue externally generated tasks into the task pool.
+    * \brief Enqueue externally generated tasks into the task queue.
      */
     void enqueue_tasks(std::vector<TaskMessage> tasks);
 
     /**
-    * \brief Get task pool statistics.
-    * \return Current task pool size and waiting session count.
+    * \brief Get the number of available tasks in the queue.
      */
-    std::pair<size_t, size_t> get_task_pool_stats() const;
+    size_t get_task_queue_size() const;
 
     /**
-     * \brief Get the shared task pool for async task submission.
-     * \return Shared pointer to the TaskMessagePool.
+    * \brief Get the number of workers currently waiting on the queue.
      */
-    std::shared_ptr<TaskMessagePool> task_pool() const { return task_pool_; }
+    size_t get_task_queue_waiting_workers_count() const;
 
     /**
-    * \brief Print comprehensive statistics for all sessions and the task pool.
+    * \brief Get the shared task queue for async task submission.
+     * \return Shared pointer to the TaskMessageQueue.
+     */
+    std::shared_ptr<TaskMessageQueue> task_queue() const { return task_queue_; }
+
+    /**
+    * \brief Print comprehensive statistics for all sessions and the task queue.
      */
     void print_comprehensive_statistics() const;
+
+    /**
+     * \brief Build per-worker monitoring snapshots for dashboard/proxy layers.
+     */
+    std::vector<WorkerMonitoringSnapshot> get_worker_monitoring_snapshot(
+        std::chrono::milliseconds freshness_window = std::chrono::seconds(15)) const;
+
+    /**
+     * \brief Return recently disconnected worker sessions retained for dashboard visibility.
+     */
+    std::vector<RecentDisconnectSnapshot> get_recent_disconnects_snapshot() const;
 
 private:
     // Core manager data
     std::shared_ptr<Logger> logger_;
     // Task management
-    std::shared_ptr<TaskMessagePool> task_pool_;
+    std::shared_ptr<TaskMessageQueue> task_queue_;
     
     // Session tracking
     std::atomic<uint32_t> next_session_id_;
@@ -127,10 +161,12 @@ private:
     // Active sessions storage (thread-safe access required)
     mutable std::mutex sessions_mutex_;
     std::unordered_map<uint32_t, std::shared_ptr<Session>> active_sessions_;
+    mutable std::vector<RecentDisconnectSnapshot> recent_disconnects_;
 
     // Helper methods
     uint32_t generate_session_id();
     void log_session_event(const std::string& event, uint32_t session_id, const std::string& details = "");
+    static std::string disconnect_reason_to_string(SessionDisconnectReason reason);
 };
 
 } // namespace session

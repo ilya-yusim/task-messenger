@@ -32,7 +32,7 @@
 		{
 			"label": "Meson Install",
 			"type": "shell",
-			"command": "meson install -C builddir",
+			"command": "meson install -C builddir --destdir install-staging",
 			"group": "build",
 			"problemMatcher": []
 		},

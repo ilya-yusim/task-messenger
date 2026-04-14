@@ -12,6 +12,7 @@
 #include <sstream>
 #include <iomanip>
 #include <cstddef>
+#include <algorithm>
 
 WorkerSession::WorkerSession(const WorkerOptions& opts, std::shared_ptr<Logger> logger)
     : logger_(logger)
@@ -58,7 +59,8 @@ void WorkerSession::start() {
                 continue;
             }
             
-            // Connection successful
+            // Connection successful — reset backoff
+            reconnect_delay_ = std::chrono::seconds{1};
             {
                 std::lock_guard<std::mutex> lk(status_mtx_);
                 connection_status_ = "Connected";
@@ -85,9 +87,41 @@ void WorkerSession::start() {
             bool success = runtime_->run_loop(processor_);
             
             if (!success) {
-                if (logger_) logger_->error("Runtime: run_loop returned error");
+                // Was this a user-requested disconnect (socket closed externally)?
+                if (runtime_->was_disconnect_requested()) {
+                    disconnect_requested_.store(false, std::memory_order_relaxed);
+                    start_requested_.store(false, std::memory_order_relaxed);
+                    reconnect_delay_ = std::chrono::seconds{1};
+                    {
+                        std::lock_guard<std::mutex> lk(status_mtx_);
+                        connection_status_ = "Disconnected";
+                    }
+                    if (logger_) logger_->info("Runtime disconnected; awaiting next start request");
+                    continue;
+                }
+
+                // Genuine I/O error (dispatcher offline, connection lost, etc.)
+                if (logger_) logger_->error("Runtime: run_loop returned error; will reconnect in "
+                    + std::to_string(reconnect_delay_.count()) + "s");
+
+                // Close the dirty socket so the next connect() starts fresh
+                runtime_->disconnect();
+
+                {
+                    std::lock_guard<std::mutex> lk(status_mtx_);
+                    connection_status_ = "Disconnected";
+                }
+
+                // Re-arm so the outer loop retries connection
+                start_requested_.store(true, std::memory_order_relaxed);
+
+                // Exponential backoff before next attempt
+                std::this_thread::sleep_for(reconnect_delay_);
+                reconnect_delay_ = std::min(reconnect_delay_ * 2, kMaxReconnectDelay);
+                continue;
             } else {
-                // Run loop exited cleanly (paused)
+                // Run loop exited cleanly (paused) — reset backoff
+                reconnect_delay_ = std::chrono::seconds{1};
                 {
                     std::lock_guard<std::mutex> lk(status_mtx_);
                     connection_status_ = "Paused";
@@ -102,7 +136,7 @@ void WorkerSession::start() {
             
             runtime_->disconnect();
             disconnect_requested_.store(false, std::memory_order_relaxed);
-            
+            start_requested_.store(false, std::memory_order_relaxed); // Ensure we do not reconnect until user requests start
             {
                 std::lock_guard<std::mutex> lk(status_mtx_);
                 connection_status_ = "Disconnected";

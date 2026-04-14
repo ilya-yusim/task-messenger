@@ -7,6 +7,7 @@
 #include "transport/socket/IBlockingStream.hpp"
 #include "transport/socket/SocketFactory.hpp"
 #include "message/TaskMessage.hpp"
+#include "message/WorkerGreeting.hpp"
 #include "skills/registry/PayloadBuffer.hpp"
 #include "logger.hpp"
 
@@ -78,6 +79,29 @@ bool write_response(IBlockingStream& s, uint32_t task_id,
     }
     return true;
 }
+
+bool send_worker_greeting(IBlockingStream& s, std::error_code& ec) {
+    WorkerGreeting greeting{};
+    greeting.magic = kWorkerGreetingMagic;
+    greeting.version = kWorkerGreetingVersion;
+    greeting.node_id = s.node_id();
+
+    const auto* data = reinterpret_cast<const char*>(&greeting);
+    size_t total = 0;
+    while (total < sizeof(greeting)) {
+        size_t bw = 0;
+        s.write(data + total, sizeof(greeting) - total, bw, ec);
+        if (ec) {
+            return false;
+        }
+        if (bw == 0) {
+            ec = std::make_error_code(std::errc::connection_reset);
+            return false;
+        }
+        total += bw;
+    }
+    return true;
+}
 } // namespace
 
 BlockingRuntime::BlockingRuntime(const std::string& host, int port, std::shared_ptr<Logger> logger)
@@ -119,6 +143,13 @@ bool BlockingRuntime::connect() {
             if (logger_) logger_->error(std::string{"Failed to connect: "} + ec.message());
             return false;
         }
+
+        if (!send_worker_greeting(*sock, ec)) {
+            if (logger_) logger_->error(std::string{"Failed to send worker greeting: "} + ec.message());
+            sock->close();
+            return false;
+        }
+
         return true;
         
     } catch (const std::runtime_error& e) {
@@ -132,6 +163,7 @@ bool BlockingRuntime::connect() {
 }
 
 void BlockingRuntime::disconnect() {
+    disconnect_requested_.store(true, std::memory_order_relaxed);
     std::shared_ptr<IBlockingStream> socket_to_close;
     {
         std::lock_guard<std::mutex> lk(socket_mtx_);
@@ -141,6 +173,10 @@ void BlockingRuntime::disconnect() {
     if (socket_to_close) {
         socket_to_close->close();
     }
+}
+
+bool BlockingRuntime::was_disconnect_requested() const {
+    return disconnect_requested_.load(std::memory_order_relaxed);
 }
 
 void BlockingRuntime::shutdown() {
@@ -184,8 +220,9 @@ bool BlockingRuntime::run_loop(TaskProcessor& processor) {
         return false;
     }
     
-    // Clear any pending pause request from previous state (e.g., multiple pause presses while paused)
+    // Clear any pending pause/disconnect request from previous state
     pause_requested_.store(false, std::memory_order_relaxed);
+    disconnect_requested_.store(false, std::memory_order_relaxed);
     
     for (;;) {
         if (pause_requested_.load(std::memory_order_relaxed)) {
@@ -201,11 +238,19 @@ bool BlockingRuntime::run_loop(TaskProcessor& processor) {
         
         try {
             if (!read_task(*current_socket, header, payload, ec, frame_bytes_read)) {
-                if (logger_) logger_->error("read_task failed: " + ec.message());
+                if (disconnect_requested_.load(std::memory_order_relaxed)) {
+                    if (logger_) logger_->info("read_task interrupted by disconnect request");
+                } else {
+                    if (logger_) logger_->error("read_task failed: " + ec.message());
+                }
                 return false;
             }
         } catch (const std::system_error& se) {
-            if (logger_) logger_->error("read_task exception: " + std::string(se.what()));
+            if (disconnect_requested_.load(std::memory_order_relaxed)) {
+                if (logger_) logger_->info("read_task interrupted by disconnect request");
+            } else {
+                if (logger_) logger_->error("read_task exception: " + std::string(se.what()));
+            }
             return false;
         }
         bytes_received_.fetch_add(frame_bytes_read, std::memory_order_relaxed);
@@ -230,24 +275,35 @@ bool BlockingRuntime::run_loop(TaskProcessor& processor) {
         
         try {
             if (!write_response(*current_socket, header.task_id, std::move(response), ec, frame_bytes_written)) {
-                if (logger_) logger_->error("write_response failed: " + ec.message());
+                if (disconnect_requested_.load(std::memory_order_relaxed)) {
+                    if (logger_) logger_->info("write_response interrupted by disconnect request");
+                } else {
+                    if (logger_) logger_->error("write_response failed: " + ec.message());
+                }
                 return false;
             }
         } catch (const std::system_error& se) {
-            if (logger_) logger_->error("write_response exception: " + std::string(se.what()));
+            if (disconnect_requested_.load(std::memory_order_relaxed)) {
+                if (logger_) logger_->info("write_response interrupted by disconnect request");
+            } else {
+                if (logger_) logger_->error("write_response exception: " + std::string(se.what()));
+            }
             return false;
         }
         bytes_sent_.fetch_add(frame_bytes_written, std::memory_order_relaxed);
         
-        auto new_completed = tasks_completed_.fetch_add(1ULL, std::memory_order_relaxed) + 1ULL;
-        if ((new_completed % 10) == 0 && logger_) {
-            logger_->info("Worker: completed " + std::to_string(new_completed) + " tasks");
+        tasks_completed_.fetch_add(1ULL, std::memory_order_relaxed);
+
+        if(logger_) {   
+            auto new_completed = tasks_completed_.load(std::memory_order_relaxed) + 1ULL;
+            if ((new_completed % 10) == 0 && logger_) {
+                logger_->debug("Worker: completed " + std::to_string(new_completed) + " tasks");
+            }
         }
     }
     
     return true;
 }
-
 void BlockingRuntime::pause() {
     pause_requested_.store(true, std::memory_order_relaxed);
 }
