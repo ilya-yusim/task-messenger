@@ -9,6 +9,13 @@
 			"problemMatcher": []
 		},
 		{
+			"label": "Meson Setup",
+			"type": "shell",
+			"command": "meson setup builddir --buildtype=${input:mesonBuildType}",
+			"group": "build",
+			"problemMatcher": []
+		},
+		{
 			"label": "Meson Reconfigure with Native File",
 			"type": "shell",
 			"command": "meson setup --reconfigure builddir --native-file %XDG_DATA_HOME%/meson/native/meson.ini",
@@ -134,6 +141,17 @@
 			"dependsOn": [
 				"Run Blocking Worker",
 				"Run Async Worker"
+			],
+			"dependsOrder": "parallel",
+			"group": {
+				"kind": "test",
+				"isDefault": false
+			}
+		},{
+			"label": "Run Blocking Worker and Async Worker (Linux)",
+			"dependsOn": [
+				"Run Blocking Worker (Linux)",
+				"Run Async Worker (Linux)"
 			],
 			"dependsOrder": "parallel",
 			"group": {

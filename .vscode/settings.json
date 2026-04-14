@@ -163,5 +163,6 @@
             "matchCommandLine": true
         }
     },
+    "cmake.ignoreCMakeListsMissing": true,
     // "cmake.sourceDirectory": "C:/Users/iyusi/repo/task-messenger/subprojects/ftxui/doc"
 }

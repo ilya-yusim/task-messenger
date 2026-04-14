@@ -156,7 +156,7 @@ std::unique_ptr<PayloadBufferBase> SkillRegistry::create_test_request_buffer(
 
 size_t SkillRegistry::get_test_case_count(uint32_t skill_id) const {
     auto factory = get_payload_factory(skill_id);
-    return factory ? factory->get_test_case_count() : 0;
+    return factory ? factory->test_case_count() : 0;
 }
 
 VerificationResult SkillRegistry::verify_response(

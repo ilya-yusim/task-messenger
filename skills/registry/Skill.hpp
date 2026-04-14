@@ -189,7 +189,7 @@ public:
      * @brief Get the number of available test cases.
      * @return Number of test cases from Derived::get_test_case_count().
      */
-    [[nodiscard]] size_t get_test_case_count() const noexcept override {
+    [[nodiscard]] size_t test_case_count() const noexcept override {
         return Derived::get_test_case_count();
     }
 

@@ -74,7 +74,7 @@ public:
      * @brief Get the number of available test cases.
      * @return Number of test cases this skill provides.
      */
-    [[nodiscard]] virtual size_t get_test_case_count() const noexcept = 0;
+    [[nodiscard]] virtual size_t test_case_count() const noexcept = 0;
 
     /**
      * @brief Verify a worker's response against locally computed result.
