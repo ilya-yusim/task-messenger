@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Download prebuilt OpenBLAS binaries and prepare them for MSVC linking.
+"""Download and prepare OpenBLAS for the current platform.
 
-Called by meson.build during configure on Windows. On Linux, system packages
-are used instead (apt install libopenblas-dev, etc.).
+Called by meson.build during configure.
 
 Workflow:
-  1. Download the prebuilt archive from GitHub Releases.
+  1. Download the archive (prebuilt zip on Windows, source tarball on Linux)
+     from GitHub Releases.
   2. Verify SHA-256 if a checksum is recorded in checksums.json.
   3. Extract to the output directory, stripping the archive's root folder.
-  4. On Windows/MSVC: generate an import library (openblas.lib) from the DLL
+  4. On Linux: build from source via make (NO_FORTRAN=1, CBLAS only).
+  5. On Windows/MSVC: generate an import library (openblas.lib) from the DLL
      using dumpbin + lib so that cl.exe can link against it.
 """
 
@@ -20,6 +21,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import urllib.request
 import zipfile
@@ -120,6 +122,49 @@ def generate_msvc_import_lib(dll_path: Path, lib_path: Path) -> bool:
 
 
 # ---------------------------------------------------------------------------
+# Linux source build
+# ---------------------------------------------------------------------------
+
+def build_openblas_from_source(src_dir: Path, install_prefix: Path) -> None:
+    """Build OpenBLAS from source and install to *install_prefix*."""
+    nproc = os.cpu_count() or 2
+
+    common_flags = [
+        "NO_FORTRAN=1",
+        "NO_LAPACK=1",
+        "USE_OPENMP=0",
+    ]
+
+    print(f"Building OpenBLAS from source ({nproc} parallel jobs) …")
+    result = subprocess.run(
+        ["make", f"-j{nproc}"] + common_flags,
+        cwd=src_dir,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"Build failed:\n{result.stderr[-2000:]}", file=sys.stderr)
+        sys.exit(1)
+    print("  Build succeeded")
+
+    if install_prefix.exists():
+        shutil.rmtree(install_prefix)
+    install_prefix.mkdir(parents=True, exist_ok=True)
+
+    print(f"Installing to {install_prefix} …")
+    result = subprocess.run(
+        ["make", f"PREFIX={install_prefix}"] + common_flags + ["install"],
+        cwd=src_dir,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"Install failed:\n{result.stderr[-2000:]}", file=sys.stderr)
+        sys.exit(1)
+    print("  Install succeeded")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
@@ -153,6 +198,14 @@ def main() -> None:
                 "archive_name": f"OpenBLAS-{version}-x64.zip",
                 "strip_prefix": "",
             }
+        elif platform_key.startswith("linux"):
+            info = {
+                "url": f"https://github.com/OpenMathLib/OpenBLAS/releases/download/v{version}/OpenBLAS-{version}.tar.gz",
+                "sha256": "",
+                "archive_name": f"OpenBLAS-{version}.tar.gz",
+                "strip_prefix": f"OpenBLAS-{version}",
+                "build_from_source": True,
+            }
         else:
             print(
                 f"No prebuilt binary URL for '{platform_key}'. "
@@ -165,6 +218,7 @@ def main() -> None:
     expected_sha: str = info.get("sha256", "")
     strip_prefix: str = info.get("strip_prefix", "")
     archive_name: str = info.get("archive_name", url.rsplit("/", 1)[-1])
+    build_from_source: bool = info.get("build_from_source", False)
 
     # --- download ---------------------------------------------------------
     with tempfile.TemporaryDirectory() as tmpdir:
@@ -200,6 +254,18 @@ def main() -> None:
             if archive_name.endswith(".zip"):
                 with zipfile.ZipFile(archive) as zf:
                     zf.extractall(extract_dir)
+            elif archive_name.endswith((".tar.gz", ".tgz")):
+                with tarfile.open(archive, "r:gz") as tf:
+                    # Security: reject absolute paths or directory traversal
+                    for member in tf.getmembers():
+                        member_path = Path(member.name)
+                        if member_path.is_absolute() or ".." in member_path.parts:
+                            print(f"Refusing suspicious path: {member.name}", file=sys.stderr)
+                            sys.exit(1)
+                    try:
+                        tf.extractall(extract_dir, filter="data")
+                    except TypeError:
+                        tf.extractall(extract_dir)  # Python < 3.12
             else:
                 print(f"Unsupported archive format: {archive_name}", file=sys.stderr)
                 sys.exit(1)
@@ -233,13 +299,16 @@ def main() -> None:
                 print("Archive appears empty after extraction", file=sys.stderr)
                 sys.exit(1)
 
-        # --- copy to output -----------------------------------------------
-        if outdir.exists():
-            shutil.rmtree(outdir)
-        shutil.copytree(src, outdir)
+        # --- build from source or copy to output --------------------------
+        if build_from_source:
+            build_openblas_from_source(src, outdir)
+        else:
+            if outdir.exists():
+                shutil.rmtree(outdir)
+            shutil.copytree(src, outdir)
 
     # --- Windows: generate MSVC import library if needed ----------------
-    if platform_key.startswith("windows"):
+    if not build_from_source and platform_key.startswith("windows"):
         lib_dir = outdir / "lib"
         # Check for import library at the archive root (flat layout) or in lib/
         msvc_lib = outdir / "libopenblas.lib"

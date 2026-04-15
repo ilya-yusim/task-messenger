@@ -107,7 +107,59 @@ elif host_machine.system() == 'windows'
   endif
 
 # =============================================================================
-# Linux / other — system package
+# Linux — download source and build locally
+# =============================================================================
+elif host_machine.system() == 'linux'
+  # Read pinned version
+  version_file = join_paths(meson.current_source_dir(), 'UPSTREAM_VERSION')
+  ver_data = run_command(py, '-c',
+    'import pathlib,sys; print(pathlib.Path(sys.argv[1]).read_text().strip())',
+    version_file, check: true)
+  openblas_version = ver_data.stdout().strip()
+
+  dist_dir = join_paths(meson.current_source_dir(), 'dist', 'linux-x64')
+
+  # Download and build if not already present (idempotent — checks for cblas.h)
+  if not fs.exists(join_paths(dist_dir, 'include', 'cblas.h'))
+    message('📦 Downloading and building OpenBLAS ' + openblas_version + ' from source …')
+    dl = run_command(py,
+      join_paths(meson.current_source_dir(), 'download_openblas.py'),
+      '--version', openblas_version,
+      '--outdir', dist_dir,
+      '--checksums', join_paths(meson.current_source_dir(), 'checksums.json'),
+      check: false)
+    if dl.returncode() != 0
+      warning('OpenBLAS source build failed:')
+      warning(dl.stderr())
+    else
+      message(dl.stdout())
+    endif
+  else
+    message('✅ OpenBLAS ' + openblas_version + ' already present in dist/')
+  endif
+
+  # Try to find the built library
+  if fs.exists(join_paths(dist_dir, 'include', 'cblas.h'))
+    openblas_lib = cc.find_library('openblas',
+      dirs: [join_paths(dist_dir, 'lib')],
+      required: false)
+    if openblas_lib.found()
+      openblas_dep = declare_dependency(
+        dependencies: [openblas_lib],
+        include_directories: include_directories('dist' / 'linux-x64' / 'include'),
+      )
+      message('✅ Using locally-built OpenBLAS ' + openblas_version)
+    else
+      warning('Built OpenBLAS not linkable — trying system fallback')
+      openblas_dep = dependency('openblas', required: false)
+    endif
+  else
+    warning('Source build appears to have failed — trying system fallback')
+    openblas_dep = dependency('openblas', required: false)
+  endif
+
+# =============================================================================
+# Other platforms — system package
 # =============================================================================
 else
   openblas_dep = dependency('openblas', required: false)

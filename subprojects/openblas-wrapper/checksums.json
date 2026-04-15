@@ -5,6 +5,13 @@
       "sha256": "4cbd0e5daa3fb083b18f5e5fa6eefe79e2f2c51a6d539f98a3c6309a21160042",
       "archive_name": "OpenBLAS-0.3.28-x64.zip",
       "strip_prefix": ""
+    },
+    "linux-x64": {
+      "url": "https://github.com/OpenMathLib/OpenBLAS/releases/download/v0.3.28/OpenBLAS-0.3.28.tar.gz",
+      "sha256": "f1003466ad074e9b0c8d421a204121100b0751c96fc6fcf3d1456bd12f8a00a1",
+      "archive_name": "OpenBLAS-0.3.28.tar.gz",
+      "strip_prefix": "OpenBLAS-0.3.28",
+      "build_from_source": true
     }
   }
 }
