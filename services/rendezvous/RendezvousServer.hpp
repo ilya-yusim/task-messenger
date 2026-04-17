@@ -11,7 +11,7 @@
 #include <string>
 #include <thread>
 
-struct IBlockingServerSocket;
+struct IServerSocket;
 namespace httplib { class Server; }
 
 namespace rendezvous {
@@ -84,7 +84,7 @@ private:
     std::atomic<bool> running_{false};
 
     // VN listener
-    std::shared_ptr<IBlockingServerSocket> vn_server_socket_;
+    std::shared_ptr<IServerSocket> vn_server_socket_;
     std::thread vn_thread_;
 
     // HTTP listener

@@ -8,7 +8,8 @@
 
 #include "RendezvousServer.hpp"
 
-#include "transport/socket/IBlockingServerSocket.hpp"
+#include "transport/socket/IServerSocket.hpp"
+#include "transport/socket/IBlockingStream.hpp"
 #include "transport/socket/SocketFactory.hpp"
 #include "processUtils.hpp"
 
@@ -89,8 +90,8 @@ void RendezvousServer::vn_accept_loop() {
     while (running_.load(std::memory_order_relaxed)) {
         try {
             std::error_code ec;
-            auto client = vn_server_socket_->accept_blocking(ec, std::chrono::milliseconds(500));
-            if (!client) {
+            auto client_socket = vn_server_socket_->accept(ec);
+            if (!client_socket) {
                 if (ec && running_.load(std::memory_order_relaxed)) {
                     if (logger_)
                         logger_->error("RendezvousServer: VN accept error: " + ec.message());
@@ -100,10 +101,12 @@ void RendezvousServer::vn_accept_loop() {
             }
 
             if (!running_.load(std::memory_order_relaxed)) {
-                try { client->close(); } catch (...) {}
+                try { client_socket->close(); } catch (...) {}
                 break;
             }
 
+            // create_blocking_server() produces Blocking children → safe downcast
+            auto client = std::dynamic_pointer_cast<IBlockingStream>(client_socket);
             try {
                 handle_connection(*client);
             } catch (const std::exception& ex) {

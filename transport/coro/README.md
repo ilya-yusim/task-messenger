@@ -41,7 +41,7 @@ Task<void> echo_client(std::shared_ptr<Logger> log) {
 }
 ```
 
-Server accept sketch (dedicated acceptor thread + blocking accept):
+Server accept sketch (dedicated acceptor thread + timed accept):
 
 ```cpp
 void accept_loop(std::shared_ptr<CoroSocketAdapter> server, std::shared_ptr<Logger> log) {

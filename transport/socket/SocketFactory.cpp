@@ -9,7 +9,6 @@
 // New role-based interfaces
 #include "IAsyncStream.hpp"
 #include "IServerSocket.hpp"
-#include "IBlockingServerSocket.hpp"
 #include "zerotier/ZeroTierSocket.hpp" // kept private to implementation
 #include "zerotier/ZeroTierNodeService.hpp" // for logger injection when provided
 #include "SocketTypeOptions.hpp"
@@ -82,7 +81,7 @@ std::shared_ptr<IBlockingStream> SocketFactory::create_blocking_client(std::shar
     }
 }
 
-std::shared_ptr<IBlockingServerSocket> SocketFactory::create_blocking_server(std::shared_ptr<Logger> logger) {
+std::shared_ptr<IServerSocket> SocketFactory::create_blocking_server(std::shared_ptr<Logger> logger) {
     ensure_socket_type_resolved();
     switch (default_type_) {
         case SocketType::ZeroTier: {
@@ -94,6 +93,21 @@ std::shared_ptr<IBlockingServerSocket> SocketFactory::create_blocking_server(std
         }
         default:
             throw std::invalid_argument("Unsupported socket type for SocketFactory blocking server");
+    }
+}
+
+std::shared_ptr<IServerSocket> SocketFactory::create_server(std::shared_ptr<Logger> logger) {
+    ensure_socket_type_resolved();
+    switch (default_type_) {
+        case SocketType::ZeroTier: {
+            if (logger) {
+                transport::ZeroTierNodeService::instance().set_logger(logger);
+                return ZeroTierSocket::create(std::move(logger));
+            }
+            return ZeroTierSocket::create();
+        }
+        default:
+            throw std::invalid_argument("Unsupported socket type for SocketFactory server");
     }
 }
 

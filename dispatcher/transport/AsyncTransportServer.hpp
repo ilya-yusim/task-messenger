@@ -115,10 +115,10 @@ public:
     session::SessionManager* session_manager() const noexcept { return session_manager_.get(); }
 
     /**
-     * \brief Access listening server stream interface for transport-level metadata.
+     * \brief Access listening server socket interface for transport-level metadata.
      */
-    std::shared_ptr<IAsyncStream> server_stream() const noexcept {
-        return server_socket_ ? server_socket_->socket_ptr() : nullptr;
+    std::shared_ptr<IServerSocket> server_stream() const noexcept {
+        return server_socket_ ? server_socket_->server_socket_ptr() : nullptr;
     }
 
     /**

@@ -13,7 +13,6 @@
 struct IAsyncStream;
 struct IServerSocket;
 struct IBlockingStream;
-struct IBlockingServerSocket;
 
 #include <memory>
 #include "logger.hpp"
@@ -45,7 +44,9 @@ public:
     /** \brief Create a blocking client stream with optional logger injection. */
     static std::shared_ptr<IBlockingStream> create_blocking_client(std::shared_ptr<Logger> logger);
     /** \brief Create a blocking server socket with optional logger injection. */
-    static std::shared_ptr<IBlockingServerSocket> create_blocking_server(std::shared_ptr<Logger> logger);
+    static std::shared_ptr<IServerSocket> create_blocking_server(std::shared_ptr<Logger> logger);
+    /** \brief Create a non-blocking server socket (listen + accept) with optional logger injection. */
+    static std::shared_ptr<IServerSocket> create_server(std::shared_ptr<Logger> logger);
 
 private:
     // Static-only: prevent instantiation

@@ -8,7 +8,7 @@ Role-based socket interfaces and implementations for both non-blocking and block
 - `IAsyncStream`: Non-blocking read/write stream API (`try_read`, `try_write`).
 - `IBlockingStream`: Blocking read/write/connect counterparts.
 - `IClientSocket`: Client connect interface with blocking semantics.
-- `IServerSocket`: Server role providing `start_listening` (non-throwing, bool-returning), `try_accept`, and a timed `blocking_accept` fallback.
+- `IServerSocket`: Server role providing `start_listening` (non-throwing, bool-returning) and a unified timed `accept` that returns `shared_ptr<IClientSocket>`. The factory controls whether children are non-blocking (`IAsyncStream`) or blocking (`IBlockingStream`).
 - `SocketFactory`: Resolves a concrete backend at runtime and constructs role objects.
 - `SocketTypeOptions`: Registers and retrieves backend type options (CLI/JSON integration).
 - `message/TaskMessage.hpp`: Lightweight framing structures (via `TaskHeader`) used by higher layers when exchanging task payloads.
@@ -17,14 +17,14 @@ Role-based socket interfaces and implementations for both non-blocking and block
 ## Design Principles
 
 - **Role separation**: Small interfaces for specific responsibilities keep implementations simple and testable.
-- **Non-blocking semantics**: `try_*` methods return a boolean completion status (or `nullptr` for accept). They clear `std::error_code` on pending states and set it only on non-transient failures.
+- **Non-blocking semantics**: `try_*` methods return a boolean completion status. They clear `std::error_code` on pending states and set it only on non-transient failures.
 - **Blocking semantics**: Blocking methods report completion through `std::error_code` and never throw for normal I/O errors.
-- **Timed accept**: `IServerSocket::blocking_accept` provides a timed, responsive accept. The interface supplies a portable fallback loop using short sleeps over `try_accept`; backends may override with native timed accept (e.g., the ZeroTier implementation).
+- **Timed accept**: `IServerSocket::accept` provides a timed, responsive accept. Backends use native timed accept (e.g., SO_RCVTIMEO on ZeroTier/lwIP) to keep the thread nearly idle under no load while bounding shutdown latency. The factory determines child socket mode (non-blocking or blocking).
 - **Backend encapsulation**: Factories and options hide library-specific headers and flags from higher layers.
 
 ## Typical Flows
 
-### Non-Blocking Server Loop
+### Timed Accept (Non-Blocking Children)
 ```cpp
 #include "SocketFactory.hpp"
 #include "IServerSocket.hpp"
@@ -32,47 +32,45 @@ Role-based socket interfaces and implementations for both non-blocking and block
 #include <system_error>
 
 std::error_code ec;
-auto server = SocketFactory::create_server(/*type*/ "zerotier");
+auto server = SocketFactory::create_server(/*logger*/ nullptr);
 if (!server->start_listening("0.0.0.0", 5555, /*backlog*/ 128)) {
-  // Handle startup failure (already logged by backend)
-  return;
-}
-
-for (;;) {
-    auto client = server->try_accept(ec);
-    if (client) {
-        // Handle connected client (non-blocking I/O via IAsyncStream)
-    } else if (ec) {
-        // Non-transient failure; log and break
-        break;
-    }
-    // Do other work / yield to coroutine loop
-}
-```
-
-### Timed Blocking Accept
-```cpp
-#include "SocketFactory.hpp"
-#include "IServerSocket.hpp"
-#include <chrono>
-#include <system_error>
-
-std::error_code ec;
-auto server = SocketFactory::create_server("zerotier");
-if (!server->start_listening("0.0.0.0", 5555, 128)) {
-  // Handle startup failure before entering loop
   return;
 }
 
 while (!shutdown_requested()) {
-    auto client = server->blocking_accept(ec, std::chrono::milliseconds(500));
+    auto client = server->accept(ec);
     if (client) {
-        // Process client immediately
+        // Factory created a NonBlocking server → children are IAsyncStream
+        auto stream = std::dynamic_pointer_cast<IAsyncStream>(client);
+        // Handle connected client (non-blocking I/O)
     } else if (ec) {
-        // Fatal error
+        break; // Non-transient failure
+    }
+    // Timeout or transient; loop and re-check shutdown flag
+}
+```
+
+### Timed Accept (Blocking Children)
+```cpp
+#include "SocketFactory.hpp"
+#include "IServerSocket.hpp"
+#include "IBlockingStream.hpp"
+#include <system_error>
+
+std::error_code ec;
+auto server = SocketFactory::create_blocking_server(/*logger*/ nullptr);
+if (!server->start_listening("0.0.0.0", 5555, 128)) {
+  return;
+}
+
+while (!shutdown_requested()) {
+    auto client = server->accept(ec);
+    if (client) {
+        // Factory created a Blocking server → children are IBlockingStream
+        auto stream = std::dynamic_pointer_cast<IBlockingStream>(client);
+        // Use blocking read()/write() directly
+    } else if (ec) {
         break;
-    } else {
-        // Timeout or transient; loop and re-check shutdown flag
     }
 }
 ```
@@ -114,13 +112,14 @@ if (stream->try_read(buf, sizeof(buf), n, ec)) {
 sequenceDiagram
   participant App
   participant Server as IServerSocket
-  participant Stream as IAsyncStream
+  participant Client as IClientSocket
   App->>Server: start_listening(host, port, backlog)
   loop Accept Loop
-    App->>Server: try_accept(ec)
+    App->>Server: accept(ec)
     alt Available
-      Server-->>App: Stream (connected)
-    else Would-block/Timeout
+      Server-->>App: IClientSocket (connected)
+      App->>App: dynamic_pointer_cast to IAsyncStream or IBlockingStream
+    else Timeout / Transient
       Server-->>App: nullptr (ec cleared)
     else Error
       Server-->>App: nullptr (ec set)

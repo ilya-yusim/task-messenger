@@ -159,65 +159,55 @@ interface combines server listen/accept with blocking-stream delivery:
   stream is not a server.  This diamond also forces `CoroSocketAdapter` to
   forward server methods through a stream interface.
 
-### Design
+### Design (Implemented)
 
-Introduce `IBlockingServerSocket` — a server-role interface that accepts
-blocking streams:
+A single `IServerSocket::accept()` method returns `shared_ptr<IClientSocket>`.
+The factory that created the server socket controls whether children are
+non-blocking (`IAsyncStream`) or blocking (`IBlockingStream`).
 
-```cpp
-// transport/socket/IBlockingServerSocket.hpp
-struct IBlockingServerSocket : public virtual ISocketLifecycle {
-    virtual bool start_listening(const std::string& host, int port, int backlog) = 0;
-
-    virtual std::shared_ptr<IBlockingStream> accept_blocking(
-        std::error_code& error,
-        std::chrono::milliseconds timeout = std::chrono::milliseconds(500)) = 0;
-};
-```
-
-Interface hierarchy becomes:
+Interface hierarchy:
 
 ```
 ISocketLifecycle
 ├── IClientSocket : virtual ISocketLifecycle
 │   ├── IBlockingStream  (+blocking read/write)
-│   └── IAsyncStream     (+try_read/write, check_alive)  ← NO LONGER inherits IServerSocket
-├── IServerSocket : virtual ISocketLifecycle              ← async accept (existing)
-└── IBlockingServerSocket : virtual ISocketLifecycle      ← blocking accept → IBlockingStream (NEW)
+│   └── IAsyncStream     (+try_read/write, check_alive)  ← does NOT inherit IServerSocket
+└── IServerSocket : virtual ISocketLifecycle
+        accept() → shared_ptr<IClientSocket>
+        (SocketFactory::create_server       → NonBlocking children = IAsyncStream)
+        (SocketFactory::create_blocking_server → Blocking children = IBlockingStream)
 ```
 
-`ZeroTierSocket` implements all four leaf interfaces.  Code that only needs
-blocking server behaviour (like `RendezvousServer`) depends on
-`IBlockingServerSocket` and never sees `ZeroTierSocket`.
+`ZeroTierSocket` implements `IAsyncStream`, `IBlockingStream`, and
+`IServerSocket`.  Code that needs a blocking server (like `RendezvousServer`)
+calls `SocketFactory::create_blocking_server()` and downcasts accepted children
+to `IBlockingStream`.  Code that needs an async server (like the dispatcher
+acceptor via `CoroSocketAdapter`) calls `SocketFactory::create_server()` and
+downcasts to `IAsyncStream`.
 
-### Steps
+### Steps (Completed)
 
-#### 6a — Add `IBlockingServerSocket` (required)
+#### 6a — Unified `IServerSocket::accept()` (done)
 
-1. Create `transport/socket/IBlockingServerSocket.hpp`
-2. `ZeroTierSocket` inherits `IBlockingServerSocket`, implements `accept_blocking()`
-   (creates child socket from accepted fd in blocking mode)
-3. Add `SocketFactory::create_blocking_server(logger)` → `shared_ptr<IBlockingServerSocket>`
-4. Update `RendezvousServer`:
-   - Member type: `shared_ptr<IBlockingServerSocket>` instead of `shared_ptr<ZeroTierSocket>`
-   - `accept_blocking()` returns `shared_ptr<IBlockingStream>` — no more `dynamic_pointer_cast`
-   - Remove `#include "ZeroTierSocket.hpp"` from `RendezvousServer.cpp`
-   - Use `SocketFactory::create_blocking_server()` in `start()`
-5. Update `RendezvousClient` the same way — use `SocketFactory::create_blocking_client()`
-   instead of `ZeroTierSocket::create_blocking()` directly (if not already)
+1. `IServerSocket::accept()` returns `shared_ptr<IClientSocket>` with timed
+   blocking semantics (500ms hardcoded).  Child socket mode is inherited from the server.
+2. `ZeroTierSocket` implements a single `accept()` override.
+3. `SocketFactory::create_server()` → `shared_ptr<IServerSocket>` (NonBlocking).
+   `SocketFactory::create_blocking_server()` → `shared_ptr<IServerSocket>` (Blocking).
+4. `RendezvousServer` uses `IServerSocket` + `static_pointer_cast<IBlockingStream>`.
+5. `CoroSocketAdapter::blocking_accept()` delegates to `IServerSocket::accept()`
+   + `static_pointer_cast<IAsyncStream>`.
+6. Removed `IBlockingServerSocket` interface (no longer needed).
 
-#### 6b — Decouple `IAsyncStream` from `IServerSocket` (optional, larger refactor)
+#### 6b — Decouple `IAsyncStream` from `IServerSocket` (done)
 
-1. Remove `IServerSocket` from `IAsyncStream`'s inheritance list
+1. Removed `IServerSocket` from `IAsyncStream`'s inheritance list.
 2. `CoroSocketAdapter` stores two pointers in server mode:
    - `shared_ptr<IAsyncStream>` for I/O on connected streams
    - `shared_ptr<IServerSocket>` for listen/accept (populated by `create_server()`)
-3. `AsyncTransportServer` continues using `CoroSocketAdapter` unchanged
-4. `IAsyncStream::try_accept()` and `start_listening()` move out of the stream
-   interface
-5. Smoke-test dispatcher and worker (blocking + async paths)
+3. `AsyncTransportServer` continues using `CoroSocketAdapter` unchanged.
 
-**Files:** `transport/socket/IBlockingServerSocket.hpp` (new),
+**Files:** `transport/socket/IServerSocket.hpp`,
 `transport/socket/IAsyncStream.hpp`, `transport/socket/zerotier/ZeroTierSocket.hpp/.cpp`,
 `transport/socket/SocketFactory.hpp/.cpp`, `transport/coro/CoroSocketAdapter.hpp`,
 `services/rendezvous/RendezvousServer.hpp/.cpp`
