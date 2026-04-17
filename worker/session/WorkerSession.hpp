@@ -74,6 +74,10 @@ private:
     std::string connection_status_{"Disconnected"};
     std::mutex status_mtx_;
 
+    /// Attempt rendezvous discovery and update host_/port_ if a dispatcher is found.
+    /// Recreates the runtime when the endpoint changes.  Returns true on change.
+    bool try_discover_dispatcher();
+
     /// Exponential backoff delay for reconnection after I/O errors.
     std::chrono::seconds reconnect_delay_{1};
     static constexpr std::chrono::seconds kMaxReconnectDelay{30};

@@ -11,6 +11,8 @@
 #include <cstddef>
 #include <memory>
 
+namespace rendezvous { class RendezvousClient; }
+
 /**
  * \brief Application harness that encapsulates common dispatcher startup.
  *
@@ -97,6 +99,7 @@ private:
     std::shared_ptr<Logger> logger_;
     std::unique_ptr<AsyncTransportServer> server_;
     std::unique_ptr<monitoring::MonitoringService> monitoring_service_;
+    std::shared_ptr<rendezvous::RendezvousClient> rendezvous_client_;
     std::chrono::steady_clock::time_point start_time_{};
     std::atomic<LifecycleState> lifecycle_state_{LifecycleState::Stopped};
 

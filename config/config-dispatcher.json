@@ -10,6 +10,11 @@
     "listen_port": 9090,
     "snapshot_interval_ms": 1000
   },
+  "rendezvous": {
+    "enabled": false,
+    "host": "",
+    "port": 8088
+  },
   
   "zerotier": {
     "default_network": "159924d6303c474a",

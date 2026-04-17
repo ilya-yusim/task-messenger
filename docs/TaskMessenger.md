@@ -28,7 +28,40 @@ graph LR
     Dispatcher --> Net[Async Transport Server]
     Net --> Workers[Worker Sessions]
     Workers --> Metrics[Metrics/UI]
+    Dispatcher -- register/snapshot --> RV[Rendezvous Service]
+    Workers -- discover --> RV
+    RV -- dashboard --> Browser[Browser]
 ```
+
+## Rendezvous Service
+
+The optional **tm-rendezvous** service provides endpoint discovery and monitoring
+relay so that workers can locate a dispatcher without hard-coded addresses.
+
+- Dispatcher registers its virtual-network endpoint on startup and pushes
+  monitoring snapshots periodically.
+- Workers query the rendezvous service before their first connection and again
+  on reconnect after an I/O error.
+- A browser dashboard is served over regular TCP for live monitoring.
+
+### Enabling Rendezvous
+
+Add a `"rendezvous"` section to both dispatcher and worker config files:
+
+```json
+{
+  "rendezvous": {
+    "enabled": true,
+    "host": "<rendezvous VN IP>",
+    "port": 8088
+  }
+}
+```
+
+Or pass CLI flags: `--rendezvous-enabled true --rendezvous-host <ip> --rendezvous-port 8088`
+
+The rendezvous service itself is configured via `config/config-rendezvous.json`
+and launched as `tm-rendezvous -c config/config-rendezvous.json`.
 
 ## Doxygen Notes
 The Task Messenger main page serves as the Doxygen landing page. Regenerate docs via `meson compile -C builddir-dispatcher docs` to see the dispatcher/worker subgroups side-by-side.

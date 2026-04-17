@@ -145,6 +145,14 @@ subdir('skills')
 subdir('transport')
 
 # =============================================================================
+# Shared Rendezvous Client Library
+# =============================================================================
+
+# Rendezvous client library provides endpoint registration/discovery via
+# a lightweight ZeroTier-based rendezvous service.
+subdir('rendezvous')
+
+# =============================================================================
 # Build Targets
 # =============================================================================
 
@@ -158,6 +166,10 @@ endif
 
 if get_option('build_generators')
   subdir('generators')
+endif
+
+if get_option('build_rendezvous')
+  subdir('services/rendezvous')
 endif
 
 # Serialization tests (optional, for evaluating FlatBuffers/Cap'n Proto)
@@ -187,7 +199,7 @@ install_data(
 # Install dispatcher monitoring dashboard assets next to installed binaries.
 # MonitoringService resolves installed UI assets from <bindir>/dashboard.
 install_subdir(
-  'dispatcher/monitoring/dashboard',
+  'dashboard',
   install_dir: get_option('bindir') / 'dashboard',
   strip_directory: true,
 )

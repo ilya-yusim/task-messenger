@@ -5,11 +5,13 @@
 
 #include <atomic>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <thread>
 
 class AsyncTransportServer;
 namespace httplib { class Server; }
+namespace rendezvous { class RendezvousClient; }
 
 namespace monitoring {
 
@@ -34,8 +36,11 @@ public:
     /** \brief Stop accept loop and release listener resources. */
     void stop() noexcept;
 
-    /** \brief Whether the service currently considers itself running. */
+    /** rief Whether the service currently considers itself running. */
     bool is_running() const noexcept;
+
+    /** \brief Set rendezvous client for snapshot relay (thread-safe, nullable). */
+    void set_rendezvous_client(std::shared_ptr<rendezvous::RendezvousClient> client);
 
 private:
     /** \brief Blocking cpp-httplib listen loop run on the acceptor thread. */
@@ -48,7 +53,7 @@ private:
      *
      * Probes candidate locations in priority order:
      * 1. DASHBOARD_DIR compile-time define (set via Meson -DDASHBOARD_DIR=...).
-    * 2. Repository-relative dispatcher/monitoring/dashboard (dev/builddir layout).
+    * 2. Repository-relative dashboard/ (dev/builddir layout).
      * 3. Executable-relative ./dashboard (installed layout).
      *
      * Returns empty string if no candidate directory is found.
@@ -63,6 +68,10 @@ private:
     std::thread acceptor_thread_;
     std::string listen_host_;
     int listen_port_{0};
+
+    // Optional rendezvous client for snapshot relay (set after start).
+    mutable std::mutex rv_mtx_;
+    std::shared_ptr<rendezvous::RendezvousClient> rendezvous_client_;
 };
 
 } // namespace monitoring

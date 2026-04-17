@@ -12,6 +12,7 @@
 #include "ZeroTierNodeService.hpp" // Shared node + network lease
 #include "transport/socket/IAsyncStream.hpp"
 #include "transport/socket/IBlockingStream.hpp"
+#include "transport/socket/IBlockingServerSocket.hpp"
 #include <memory>
 #include <string>
 #include <system_error>
@@ -30,7 +31,7 @@ class Logger;
  *  \details Provides non-blocking and blocking operations using libzt. Cooperates
  *  with a process-wide ZeroTier node via \ref transport::ZeroTierNodeService.
  */
-class ZeroTierSocket : public virtual IAsyncStream, public virtual IBlockingStream {
+class ZeroTierSocket : public virtual IAsyncStream, public virtual IBlockingStream, public virtual IBlockingServerSocket {
 public:
     // Distinguish intended operating mode for the lifetime of this socket
     enum class SocketMode { NonBlocking, Blocking };
@@ -232,6 +233,14 @@ public:
      */
     std::shared_ptr<IAsyncStream> blocking_accept(std::error_code& error,
                                                   std::chrono::milliseconds timeout = std::chrono::milliseconds(500)) override;
+
+    /** \brief Timed blocking accept returning an IBlockingStream.
+     *  \details Identical to blocking_accept() but wraps the accepted fd in Blocking mode
+     *  so the caller can use synchronous read()/write() without casting.
+     *  \see IBlockingServerSocket::accept_blocking
+     */
+    std::shared_ptr<IBlockingStream> accept_blocking(std::error_code& error,
+                                                     std::chrono::milliseconds timeout = std::chrono::milliseconds(500)) override;
 
 private:
     // === Helper methods ===

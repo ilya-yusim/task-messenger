@@ -7,6 +7,9 @@
 #include "worker/runtime/IRuntimeMode.hpp"
 #include "worker/runtime/BlockingRuntime.hpp"
 #include "worker/runtime/AsyncRuntime.hpp"
+#include "rendezvous/RendezvousClient.hpp"
+#include "rendezvous/RendezvousOptions.hpp"
+#include <nlohmann/json.hpp>
 #include <thread>
 #include <chrono>
 #include <sstream>
@@ -29,8 +32,49 @@ WorkerSession::WorkerSession(const WorkerOptions& opts, std::shared_ptr<Logger> 
     }
 }
 
+bool WorkerSession::try_discover_dispatcher() {
+    if (!rendezvous_opts::get_enabled().value_or(false)) return false;
+
+    auto rv_host = rendezvous_opts::get_host();
+    auto rv_port = rendezvous_opts::get_port();
+    if (!rv_host || !rv_port) return false;
+
+    rendezvous::RendezvousClient client(*rv_host, *rv_port, logger_);
+    nlohmann::json result;
+    if (!client.discover_endpoint("dispatcher", result)) {
+        if (logger_) logger_->warning("Rendezvous: discovery failed; using configured endpoint");
+        return false;
+    }
+
+    std::string new_host = result.value("vn_host", "");
+    int new_port = result.value("vn_port", 0);
+    if (new_host.empty() || new_port == 0) {
+        if (logger_) logger_->warning("Rendezvous: invalid endpoint in discovery response");
+        return false;
+    }
+
+    if (new_host != host_ || new_port != port_) {
+        if (logger_) logger_->info("Rendezvous: discovered dispatcher at " + new_host + ":" + std::to_string(new_port));
+        host_ = new_host;
+        port_ = new_port;
+        // Recreate runtime with the discovered endpoint
+        if (mode_ == WorkerMode::Blocking) {
+            runtime_ = std::make_shared<BlockingRuntime>(host_, port_, logger_);
+        } else {
+            runtime_ = std::make_shared<AsyncRuntime>(host_, port_, logger_);
+        }
+        return true;
+    }
+
+    if (logger_) logger_->info("Rendezvous: dispatcher endpoint unchanged (" + host_ + ":" + std::to_string(port_) + ")");
+    return false;
+}
+
 void WorkerSession::start() {
     const char* mode_str = (mode_ == WorkerMode::Blocking) ? "blocking" : "async";
+
+    // Attempt rendezvous discovery before first connection
+    try_discover_dispatcher();
     
     // Control thread loop: respond to start/pause/disconnect/shutdown requests
     while (!shutdown_requested_.load(std::memory_order_relaxed)) {
@@ -111,6 +155,9 @@ void WorkerSession::start() {
                     std::lock_guard<std::mutex> lk(status_mtx_);
                     connection_status_ = "Disconnected";
                 }
+
+                // Re-discover dispatcher in case it moved to a new endpoint
+                try_discover_dispatcher();
 
                 // Re-arm so the outer loop retries connection
                 start_requested_.store(true, std::memory_order_relaxed);

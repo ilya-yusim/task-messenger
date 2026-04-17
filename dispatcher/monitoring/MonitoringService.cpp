@@ -4,6 +4,7 @@
 #include "MonitoringService.hpp"
 
 #include "MonitoringOptions.hpp"
+#include "rendezvous/RendezvousClient.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -84,6 +85,12 @@ bool MonitoringService::is_running() const noexcept {
     return running_.load(std::memory_order_relaxed);
 }
 
+void MonitoringService::set_rendezvous_client(
+        std::shared_ptr<rendezvous::RendezvousClient> client) {
+    std::lock_guard<std::mutex> lk(rv_mtx_);
+    rendezvous_client_ = std::move(client);
+}
+
 void MonitoringService::accept_loop() {
     if (!http_server_) {
         return;
@@ -107,15 +114,15 @@ std::string MonitoringService::resolve_dashboard_dir() {
 #endif
 
     // Priority 2: locate executable and walk up to dev layout
-    // (<builddir>/generators/<name>/<exe> → <repo>/dispatcher/monitoring/dashboard).
+    // (<builddir>/generators/<name>/<exe> → <repo>/dashboard).
     std::error_code ec;
     const auto exe_path = ProcessUtils::get_executable_path();
 
     if (!exe_path.empty()) {
         // Dev layout: <repo>/builddir/generators/<name>/<exe>
-        //  -> four parents up from exe path = <repo>, then dispatcher/monitoring/dashboard
+        //  -> four parents up from exe path = <repo>, then dashboard/
         auto candidate_dev = exe_path.parent_path().parent_path().parent_path().parent_path()
-                             / "dispatcher" / "monitoring" / "dashboard";
+                             / "dashboard";
         if (std::filesystem::is_directory(candidate_dev, ec)) {
             return candidate_dev.string();
         }
@@ -171,6 +178,16 @@ void MonitoringService::register_routes() {
     http_server_->Get("/api/monitor", [this](const httplib::Request&, httplib::Response& res) {
         const auto snapshot = snapshot_builder_.build();
         nlohmann::json body_json = snapshot;
+
+        // Fire-and-forget relay to rendezvous service (best-effort).
+        {
+            std::lock_guard<std::mutex> lk(rv_mtx_);
+            if (rendezvous_client_) {
+                try { rendezvous_client_->report_snapshot(body_json); }
+                catch (...) {}
+            }
+        }
+
         res.set_header("Cache-Control", "no-store");
         res.set_content(body_json.dump(), "application/json");
         res.status = 200;
@@ -181,6 +198,15 @@ void MonitoringService::register_routes() {
         (void)req;
         const auto snapshot = snapshot_builder_.build();
         nlohmann::json body_json = snapshot;
+
+        {
+            std::lock_guard<std::mutex> lk(rv_mtx_);
+            if (rendezvous_client_) {
+                try { rendezvous_client_->report_snapshot(body_json); }
+                catch (...) {}
+            }
+        }
+
         res.set_header("Cache-Control", "no-store");
         res.set_content(body_json.dump(), "application/json");
         res.status = 200;

@@ -2,6 +2,8 @@
 #include "DispatcherApp.hpp"
 #include "monitoring/MonitoringOptions.hpp"
 #include "options/Options.hpp"
+#include "rendezvous/RendezvousClient.hpp"
+#include "rendezvous/RendezvousOptions.hpp"
 
 #include <csignal>
 #include <string>
@@ -71,6 +73,48 @@ int DispatcherApp::start(int argc, char* argv[]) {
         logger_->info("Monitoring service disabled by configuration");
     }
 
+    // --- Stage 3b: Register with rendezvous service (optional, non-fatal) ---
+    if (rendezvous_opts::get_enabled().value_or(false)) {
+        auto rv_host = rendezvous_opts::get_host().value_or(std::string{});
+        auto rv_port = rendezvous_opts::get_port().value_or(8088);
+
+        if (!rv_host.empty()) {
+            rendezvous_client_ = std::make_shared<rendezvous::RendezvousClient>(
+                rv_host, rv_port, logger_);
+
+            // Determine this dispatcher's VN-visible address and listen port
+            // from the transport server's bound local endpoint (transport-agnostic).
+            std::string vn_ip;
+            int listen_port = 0;
+            if (auto stream = server_->server_stream()) {
+                auto ep = stream->local_endpoint(); // "ip:port"
+                if (auto colon = ep.rfind(':'); colon != std::string::npos) {
+                    vn_ip = ep.substr(0, colon);
+                    listen_port = std::stoi(ep.substr(colon + 1));
+                }
+            }
+
+            if (!vn_ip.empty()) {
+                if (rendezvous_client_->register_endpoint("dispatcher", "default",
+                                                          vn_ip, listen_port)) {
+                    logger_->info("Registered with rendezvous service at "
+                                  + rv_host + ":" + std::to_string(rv_port));
+                } else {
+                    logger_->warning("Failed to register with rendezvous service; continuing without");
+                }
+            } else {
+                logger_->warning("Could not determine VN IP address; skipping rendezvous registration");
+            }
+
+            // Share the client with monitoring service for snapshot relay.
+            if (monitoring_service_) {
+                monitoring_service_->set_rendezvous_client(rendezvous_client_);
+            }
+        } else {
+            logger_->warning("Rendezvous enabled but no host configured; skipping");
+        }
+    }
+
     // --- Stage 4: Install signal handlers ---
     install_signal_handlers();
 
@@ -81,6 +125,14 @@ int DispatcherApp::start(int argc, char* argv[]) {
 
 void DispatcherApp::stop() {
     lifecycle_state_.store(LifecycleState::Stopping, std::memory_order_relaxed);
+
+    // Best-effort unregister from rendezvous before tearing down transport.
+    if (rendezvous_client_) {
+        try {
+            rendezvous_client_->unregister_endpoint("dispatcher", "default");
+        } catch (...) {}
+        rendezvous_client_.reset();
+    }
 
     // Stop monitoring first because it depends on dispatcher-owned runtime objects.
     if (monitoring_service_) {
