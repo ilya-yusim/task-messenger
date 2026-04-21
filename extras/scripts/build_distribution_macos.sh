@@ -156,8 +156,8 @@ create_archive() {
     if [[ "$comp" == "dispatcher" ]]; then
         # Dispatcher: config + identity directory
         cp "$staging_prefix/etc/task-messenger/config-dispatcher.json" "$archive_root/config/"
-        if [ -d "$staging_prefix/etc/task-messenger/vn-dispatcher-identity" ]; then
-            cp -r "$staging_prefix/etc/task-messenger/vn-dispatcher-identity" "$archive_root/config/"
+        if [ -d "$staging_prefix/etc/task-messenger/vn-rendezvous-identity" ]; then
+            cp -r "$staging_prefix/etc/task-messenger/vn-rendezvous-identity" "$archive_root/config/"
         fi
     else
         # Worker: config only

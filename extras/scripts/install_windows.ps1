@@ -236,13 +236,13 @@ function Install-Component {
     
     # Copy identity directory for dispatcher to config directory (APPDATA)
     if ($Component -eq "dispatcher") {
-        $identityDir = Join-Path $configSourceDir "vn-dispatcher-identity"
+        $identityDir = Join-Path $configSourceDir "vn-rendezvous-identity"
         
         if (Test-Path $identityDir) {
             Copy-Item $identityDir $configDir -Recurse -Force
             
             # Set restrictive permissions on secret file (best effort - may require admin privileges)
-            $secretPath = Join-Path $configDir "vn-dispatcher-identity\identity.secret"
+            $secretPath = Join-Path $configDir "vn-rendezvous-identity\identity.secret"
             if (Test-Path $secretPath) {
                 try {
                     $acl = Get-Acl $secretPath

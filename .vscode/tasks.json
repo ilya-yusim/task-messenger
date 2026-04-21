@@ -238,6 +238,19 @@
 		}
 		,
 		{
+			"label": "Run Rendezvous Server",
+			"type": "shell",
+			"command": "builddir/services/rendezvous/tm-rendezvous.exe -c config/config-rendezvous.json",
+			"group": {
+				"kind": "test",
+				"isDefault": false
+			},
+			"presentation": {
+				"panel": "new"
+			},
+			"isBackground": true
+		},
+		{
 			"label": "Run multiple worker instances",
 			"type": "shell",
 			"command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}\\scripts\\run_workers.ps1\" -Count ${input:workerInstanceCount}",

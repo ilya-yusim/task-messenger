@@ -25,7 +25,7 @@ class TmDispatcher < Formula
     
     # Install config templates
     (etc/"task-messenger").install "config/config-dispatcher.json"
-    (etc/"task-messenger").install "config/vn-dispatcher-identity"
+    (etc/"task-messenger").install "config/vn-rendezvous-identity"
     
     # Install documentation
     doc.install Dir["doc/*"] if Dir.exist?("doc")
@@ -45,9 +45,9 @@ class TmDispatcher < Formula
     end
     
     # Copy identity directory if doesn't exist
-    identity_dir = "#{config_dir}/vn-dispatcher-identity"
+    identity_dir = "#{config_dir}/vn-rendezvous-identity"
     unless Dir.exist?(identity_dir)
-      FileUtils.cp_r("#{etc}/task-messenger/vn-dispatcher-identity", identity_dir)
+      FileUtils.cp_r("#{etc}/task-messenger/vn-rendezvous-identity", identity_dir)
       # Set restrictive permissions on secret file
       FileUtils.chmod(0600, "#{identity_dir}/identity.secret")
       ohai "Created identity at: #{identity_dir}"
@@ -62,7 +62,7 @@ class TmDispatcher < Formula
         ~/Library/Application Support/TaskMessenger/config/dispatcher/config-dispatcher.json
       
       Identity files:
-        ~/Library/Application Support/TaskMessenger/config/dispatcher/vn-dispatcher-identity/
+        ~/Library/Application Support/TaskMessenger/config/dispatcher/vn-rendezvous-identity/
       
       To start the dispatcher:
         tm-dispatcher -c "~/Library/Application Support/TaskMessenger/config/dispatcher/config-dispatcher.json"

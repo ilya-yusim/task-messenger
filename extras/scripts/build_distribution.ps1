@@ -139,7 +139,7 @@ function Create-Archive {
     
     # Copy dispatcher identity directory (only for dispatcher component)
     if ($Comp -eq "dispatcher") {
-        Copy-Item (Join-Path $CompStagingPrefix "etc\task-messenger\vn-dispatcher-identity") $ConfigDir -Recurse
+        Copy-Item (Join-Path $CompStagingPrefix "etc\task-messenger\vn-rendezvous-identity") $ConfigDir -Recurse
     }
     
     # Copy documentation

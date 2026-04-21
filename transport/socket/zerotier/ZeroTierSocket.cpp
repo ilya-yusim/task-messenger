@@ -869,7 +869,23 @@ std::string ZeroTierSocket::local_endpoint() const {
     unsigned short port;
     
     if (zts_getsockname(socket_fd_, ip_str, sizeof(ip_str), &port) == ZTS_ERR_OK) {
-        return std::string(ip_str) + ":" + std::to_string(port);
+        std::string ip = ip_str;
+        // When bound to all interfaces, substitute the actual ZT-assigned IPv4
+        // so callers get a routable address rather than 0.0.0.0.
+        if (ip == "0.0.0.0") {
+            uint64_t net_id = 0;
+            if (auto hex = transport::ZeroTierNodeService::get_configured_default_network_hex();
+                hex && !hex->empty()) {
+                net_id = std::strtoull(hex->c_str(), nullptr, 16);
+            }
+            if (net_id != 0) {
+                if (auto assigned = transport::ZeroTierNodeService::instance().get_ip_v4(net_id);
+                    assigned) {
+                    ip = *assigned;
+                }
+            }
+        }
+        return ip + ":" + std::to_string(port);
     }
     return "";
 }

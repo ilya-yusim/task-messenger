@@ -4,8 +4,8 @@
     "manager_port": 8080
   },
   "rendezvous": {
-    "enabled": false,
-    "host": "",
+    "enabled": true,
+    "host": "10.144.0.0",
     "port": 8088
   },
   "zerotier": {

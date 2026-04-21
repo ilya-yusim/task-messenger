@@ -41,7 +41,8 @@ int main(int argc, char* argv[]) {
     rendezvous::RendezvousServer::Config cfg;
     if (auto h = rendezvous_opts::get_host(); h && !h->empty()) cfg.vn_listen_host = *h;
     if (auto p = rendezvous_opts::get_port(); p) cfg.vn_listen_port = *p;
-    // HTTP dashboard defaults (could add dedicated options later)
+    if (auto dh = rendezvous_opts::get_dashboard_host(); dh && !dh->empty()) cfg.http_listen_host = *dh;
+    if (auto dp = rendezvous_opts::get_dashboard_port(); dp) cfg.http_listen_port = *dp;
 
     // --- Start ---
     rendezvous::RendezvousServer server(logger);

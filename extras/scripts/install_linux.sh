@@ -184,14 +184,14 @@ install_component() {
     # Copy identity directory for dispatcher (from config/ to component-specific XDG config directory)
     # Note: Fixed bug - previous version incorrectly looked for identity files in bin/
     if [ "$component" = "dispatcher" ]; then
-        local identity_dir="$config_source_dir/vn-dispatcher-identity"
+        local identity_dir="$config_source_dir/vn-rendezvous-identity"
         
         if [ -d "$identity_dir" ]; then
             mkdir -p "$config_dir"
             cp -r "$identity_dir" "$config_dir/"
             
             # Set restrictive permissions on secret file
-            local secret_path="$config_dir/vn-dispatcher-identity/identity.secret"
+            local secret_path="$config_dir/vn-rendezvous-identity/identity.secret"
             if [ -f "$secret_path" ]; then
                 chmod 600 "$secret_path"
                 print_success "Installed identity files with restricted permissions"
@@ -422,7 +422,7 @@ main() {
     print_info "Or use the full path: $INSTALL_DIR/bin/tm-$COMPONENT"
     print_info "Config file: $CONFIG_DIR/config-$COMPONENT.json"
     if [ "$COMPONENT" = "dispatcher" ]; then
-        print_info "Identity files: $CONFIG_DIR/vn-dispatcher-identity/"
+        print_info "Identity files: $CONFIG_DIR/vn-rendezvous-identity/"
     fi
     echo ""
 }

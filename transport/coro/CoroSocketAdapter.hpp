@@ -119,9 +119,8 @@ public:
         return "";
     }
 
-    /** \brief Timed blocking accept returning wrapped client adapter. Delegates to server socket. */
-    std::shared_ptr<CoroSocketAdapter> blocking_accept(std::error_code& error,
-                                                       std::chrono::milliseconds timeout = std::chrono::milliseconds(500)) {
+    /** \brief Blocking accept returning wrapped client adapter. Delegates to server socket. */
+    std::shared_ptr<CoroSocketAdapter> blocking_accept(std::error_code& error) {
         error.clear();
         if (!server_socket_) {
             error = std::make_error_code(std::errc::bad_file_descriptor);

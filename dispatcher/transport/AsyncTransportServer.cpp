@@ -150,7 +150,7 @@ void AsyncTransportServer::start_acceptor_thread() {
         while (running_) {
             try {
                 std::error_code ec;
-                auto client = server_socket_->blocking_accept(ec, std::chrono::milliseconds(500));
+                auto client = server_socket_->blocking_accept(ec);
                 if (!client) { 
                     if (ec && running_) {
                         if (logger_) logger_->error(std::string("AsyncTransportServer: accept error: ") + ec.message());

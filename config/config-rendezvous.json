@@ -2,9 +2,12 @@
   "rendezvous": {
     "enabled": true,
     "host": "0.0.0.0",
-    "port": 8088
+    "port": 8088,
+    "dashboard_host": "127.0.0.1",
+    "dashboard_port": 9091
   },
   "zerotier": {
-    "default_network": "159924d6303c474a"
+    "default_network": "159924d6303c474a",
+    "identity_path": "vn-rendezvous-identity"
   }
 }

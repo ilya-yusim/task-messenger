@@ -191,9 +191,9 @@ install_data('config/config-dispatcher.json', 'config/config-worker.json', insta
 
 # Install dispatcher's ZeroTier identity files (public/secret keys only)
 install_data(
-  'config/vn-dispatcher-identity/identity.public',
-  'config/vn-dispatcher-identity/identity.secret',
-  install_dir: config_dir / 'vn-dispatcher-identity'
+  'config/vn-rendezvous-identity/identity.public',
+  'config/vn-rendezvous-identity/identity.secret',
+  install_dir: config_dir / 'vn-rendezvous-identity'
 )
 
 # Install dispatcher monitoring dashboard assets next to installed binaries.

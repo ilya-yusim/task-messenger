@@ -181,7 +181,7 @@ create_archive() {
         
         mkdir -p "$archive_root/config"
         cp "$staging_prefix/etc/task-messenger/config-dispatcher.json" "$archive_root/config/"
-        cp -r "$staging_prefix/etc/task-messenger/vn-dispatcher-identity" "$archive_root/config/"
+        cp -r "$staging_prefix/etc/task-messenger/vn-rendezvous-identity" "$archive_root/config/"
         
         mkdir -p "$archive_root/doc"
         cp -r "$staging_prefix/share/doc/task-messenger/"* "$archive_root/doc/"
