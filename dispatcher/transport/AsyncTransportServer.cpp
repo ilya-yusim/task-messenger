@@ -57,7 +57,7 @@ bool AsyncTransportServer::start(const std::string& host, int port, int backlog)
 bool AsyncTransportServer::start(int backlog) {
     auto host = transport_server_opts::get_listen_host().value_or(std::string("0.0.0.0"));
     auto port = transport_server_opts::get_listen_port().value_or(8080);
-    if (logger_) logger_->info("AsyncTransportServer: resolved listen endpoint " + host + ":" + std::to_string(port));
+    if (logger_) logger_->info("AsyncTransportServer: configuration for listen endpoint " + host + ":" + std::to_string(port));
     return start(host, port, backlog);
 }
 

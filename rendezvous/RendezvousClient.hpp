@@ -38,6 +38,11 @@ public:
     /// Returns true on success.
     bool report_snapshot(const nlohmann::json& snapshot);
 
+    /// Push an already-serialized monitoring snapshot to the rendezvous service.
+    /// Avoids the parse/dump roundtrip when the caller has the payload in string form.
+    /// Returns true on success.
+    bool report_snapshot_json(const std::string& snapshot_json);
+
 private:
     /// Open a connection, perform a single request/response exchange, and close.
     /// Returns the response JSON string on success; std::nullopt on failure.

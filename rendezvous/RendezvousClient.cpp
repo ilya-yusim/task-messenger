@@ -75,7 +75,11 @@ bool RendezvousClient::discover_endpoint(const std::string& role,
 }
 
 bool RendezvousClient::report_snapshot(const nlohmann::json& snapshot) {
-    auto resp = exchange(MessageType::ReportSnapshot, snapshot.dump(),
+    return report_snapshot_json(snapshot.dump());
+}
+
+bool RendezvousClient::report_snapshot_json(const std::string& snapshot_json) {
+    auto resp = exchange(MessageType::ReportSnapshot, snapshot_json,
                          MessageType::ReportAck);
     if (!resp) return false;
 
