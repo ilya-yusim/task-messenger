@@ -45,7 +45,10 @@ function monitoringDashboard() {
       this.table = new Tabulator("#workers-table", {
         layout: "fitDataStretch",
         placeholder: "No worker sessions yet",
-        reactiveData: true,
+        // Stable row identity — Tabulator reconciles updates instead of
+        // tearing the table down on every poll, which was causing rows to
+        // flicker/vanish between /api/monitor ticks.
+        index: "session_id",
         data: this.workers,
         rowFormatter: (row) => {
           const data = row.getData();
@@ -293,7 +296,21 @@ function monitoringDashboard() {
       this.workers = snapshot.workers;
       this.recentDisconnects = snapshot.recent_disconnects;
       if (this.table) {
-        this.table.replaceData(this.workers);
+        // updateOrAddData keeps existing rows in place (reconciled by the
+        // configured index) and only mutates changed cells, then we remove
+        // rows whose session_id is no longer in the snapshot. This avoids
+        // the full teardown/rebuild that replaceData() performs, which was
+        // making worker rows briefly disappear between polls.
+        const keepIds = new Set(this.workers.map((w) => w.session_id));
+        this.table.updateOrAddData(this.workers).then(() => {
+          const toRemove = this.table
+            .getRows()
+            .filter((row) => !keepIds.has(row.getData().session_id))
+            .map((row) => row.getData().session_id);
+          if (toRemove.length > 0) {
+            this.table.deleteRow(toRemove).catch(() => {});
+          }
+        }).catch(() => {});
       }
 
       this.lastSuccessTimestampMs = snapshot.snapshot_timestamp_ms ?? Date.now();

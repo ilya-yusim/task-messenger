@@ -13,7 +13,8 @@
   "rendezvous": {
     "enabled": true,
     "host": "10.144.0.0",
-    "port": 8088
+    "port": 8088,
+    "snapshot_port": 8089
   },
   
   "zerotier": {

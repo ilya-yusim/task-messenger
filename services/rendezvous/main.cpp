@@ -43,6 +43,8 @@ int main(int argc, char* argv[]) {
     if (auto p = rendezvous_opts::get_port(); p) cfg.vn_listen_port = *p;
     if (auto dh = rendezvous_opts::get_dashboard_host(); dh && !dh->empty()) cfg.http_listen_host = *dh;
     if (auto dp = rendezvous_opts::get_dashboard_port(); dp) cfg.http_listen_port = *dp;
+    if (auto sh = rendezvous_opts::get_snapshot_listen_host(); sh && !sh->empty()) cfg.snapshot_listen_host = *sh;
+    if (auto sp = rendezvous_opts::get_snapshot_port(); sp) cfg.snapshot_listen_port = *sp;
 
     // --- Start ---
     rendezvous::RendezvousServer server(logger);

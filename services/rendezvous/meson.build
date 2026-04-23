@@ -12,6 +12,7 @@ tm_rendezvous_exe = executable(
     'main.cpp',
     'RendezvousServer.cpp',
     'RendezvousHttpHandler.cpp',
+    'SnapshotListener.cpp',
   ],
   dependencies: [
     rendezvous_dep,            # Shared rendezvous client/protocol library

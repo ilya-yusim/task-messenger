@@ -12,7 +12,7 @@
 
 class AsyncTransportServer;
 namespace httplib { class Server; }
-namespace rendezvous { class RendezvousClient; }
+namespace monitoring { class SnapshotReporter; }
 
 namespace monitoring {
 
@@ -40,8 +40,8 @@ public:
     /** \brief Whether the service currently considers itself running. */
     bool is_running() const noexcept;
 
-    /** \brief Set rendezvous client for snapshot relay (thread-safe, nullable). */
-    void set_rendezvous_client(std::shared_ptr<rendezvous::RendezvousClient> client);
+    /** \brief Set snapshot reporter for snapshot relay (thread-safe, nullable). */
+    void set_snapshot_reporter(std::shared_ptr<SnapshotReporter> reporter);
 
 private:
     /** \brief Blocking cpp-httplib listen loop run on the acceptor thread. */
@@ -81,10 +81,10 @@ private:
     int listen_port_{0};
     int snapshot_interval_ms_{1000};
 
-    // Optional rendezvous client for snapshot relay (set after start).
+    // Optional snapshot reporter for relay to rendezvous (set after start).
     mutable std::mutex rv_mtx_;
     std::condition_variable rv_cv_;
-    std::shared_ptr<rendezvous::RendezvousClient> rendezvous_client_;
+    std::shared_ptr<SnapshotReporter> snapshot_reporter_;
 
     // Cached serialized snapshot JSON, refreshed by the reporter thread and
     // served read-only to HTTP handlers so build() is called at most once per tick.

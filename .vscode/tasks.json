@@ -253,7 +253,7 @@
 		{
 			"label": "Run multiple worker instances",
 			"type": "shell",
-			"command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}\\scripts\\run_workers.ps1\" -Count ${input:workerInstanceCount}",
+			"command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}\\extras\\scripts\\run_workers.ps1\" -Count ${input:workerInstanceCount}",
 			"presentation": {
 				"panel": "new",
 				"reveal": "always",

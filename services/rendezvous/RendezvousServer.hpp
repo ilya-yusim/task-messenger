@@ -16,6 +16,8 @@ namespace httplib { class Server; }
 
 namespace rendezvous {
 
+class SnapshotListener;
+
 /// Registered endpoint tracked by the rendezvous service.
 struct RegisteredEndpoint {
     std::string role;
@@ -42,6 +44,8 @@ public:
         int         vn_listen_port = 8088;        ///< VN port for protocol traffic
         std::string http_listen_host = "0.0.0.0"; ///< HTTP interface for dashboard
         int         http_listen_port = 9090;       ///< HTTP port for dashboard
+        std::string snapshot_listen_host = "0.0.0.0"; ///< VN interface for snapshot relay
+        int         snapshot_listen_port = 8089;       ///< VN port for snapshot reports
         int         ttl_seconds = 30;              ///< Endpoint TTL
     };
 
@@ -69,7 +73,12 @@ private:
     std::string handle_register(const std::string& body);
     std::string handle_unregister(const std::string& body);
     std::string handle_discover(const std::string& body);
-    std::string handle_report(const std::string& body);
+
+    /// Snapshot ingestion entrypoint invoked by SnapshotListener for each
+    /// accepted ReportSnapshot frame. Stores the latest payload and bumps
+    /// the matching endpoint's last_seen timestamp.
+    void on_snapshot(const std::string& role, const std::string& name,
+                     const std::string& snapshot_json);
 
     // ── HTTP dashboard listener ─────────────────────────────────────────────
     void register_http_routes();
@@ -86,6 +95,9 @@ private:
     // VN listener
     std::shared_ptr<IServerSocket> vn_server_socket_;
     std::thread vn_thread_;
+
+    // Snapshot relay listener (separate VN port)
+    std::unique_ptr<SnapshotListener> snapshot_listener_;
 
     // HTTP listener
     std::unique_ptr<httplib::Server> http_server_;

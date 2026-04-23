@@ -8,6 +8,8 @@
 
 #include "RendezvousServer.hpp"
 
+#include "SnapshotListener.hpp"
+
 #include "transport/socket/IServerSocket.hpp"
 #include "transport/socket/IBlockingStream.hpp"
 #include "transport/socket/SocketFactory.hpp"
@@ -39,6 +41,22 @@ bool RendezvousServer::start(const Config& cfg) {
     register_http_routes();
     if (!bind_http(config_.http_listen_host, config_.http_listen_port)) {
         return false;
+    }
+
+    // --- Snapshot relay listener setup (separate VN port) ---
+    snapshot_listener_ = std::make_unique<SnapshotListener>(
+        logger_,
+        [this](const std::string& role, const std::string& name,
+               const std::string& snapshot_json) {
+            on_snapshot(role, name, snapshot_json);
+        });
+    if (!snapshot_listener_->start(config_.snapshot_listen_host,
+                                   config_.snapshot_listen_port)) {
+        // Non-fatal for the VN/HTTP listeners; snapshot dashboard data will
+        // simply remain empty until the listener can be restarted.
+        if (logger_)
+            logger_->warning("RendezvousServer: snapshot listener failed to start; continuing");
+        snapshot_listener_.reset();
     }
 
     running_.store(true, std::memory_order_relaxed);
@@ -73,6 +91,11 @@ void RendezvousServer::stop() noexcept {
     if (vn_server_socket_) {
         vn_server_socket_->close();
         vn_server_socket_.reset();
+    }
+
+    if (snapshot_listener_) {
+        snapshot_listener_->stop();
+        snapshot_listener_.reset();
     }
 
     stop_http();
@@ -133,7 +156,6 @@ void RendezvousServer::handle_connection(IBlockingStream& stream) {
     case MessageType::RegisterRequest:   resp_type = MessageType::RegisterResponse; break;
     case MessageType::UnregisterRequest: resp_type = MessageType::UnregisterResponse; break;
     case MessageType::DiscoverRequest:   resp_type = MessageType::DiscoverResponse; break;
-    case MessageType::ReportSnapshot:    resp_type = MessageType::ReportAck; break;
     default:
         if (logger_)
             logger_->warning("RendezvousServer: unknown message type "
@@ -149,7 +171,6 @@ std::string RendezvousServer::dispatch_message(MessageType type, const std::stri
     case MessageType::RegisterRequest:   return handle_register(body);
     case MessageType::UnregisterRequest: return handle_unregister(body);
     case MessageType::DiscoverRequest:   return handle_discover(body);
-    case MessageType::ReportSnapshot:    return handle_report(body);
     default:
         return R"({"ok":false,"error":"unknown message type"})";
     }
@@ -235,15 +256,13 @@ std::string RendezvousServer::handle_discover(const std::string& body) {
     }
 }
 
-std::string RendezvousServer::handle_report(const std::string& body) {
-    {
-        std::lock_guard<std::mutex> lk(state_mtx_);
-        last_snapshot_json_ = body;
-        if (endpoint_) {
-            endpoint_->last_seen = std::chrono::steady_clock::now();
-        }
+void RendezvousServer::on_snapshot(const std::string& role, const std::string& name,
+                                   const std::string& snapshot_json) {
+    std::lock_guard<std::mutex> lk(state_mtx_);
+    last_snapshot_json_ = snapshot_json;
+    if (endpoint_ && endpoint_->role == role && endpoint_->name == name) {
+        endpoint_->last_seen = std::chrono::steady_clock::now();
     }
-    return R"({"ok":true})";
 }
 
 } // namespace rendezvous

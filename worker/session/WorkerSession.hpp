@@ -16,6 +16,7 @@
 #include "worker/WorkerOptions.hpp"
 
 class IRuntimeMode;
+namespace rendezvous { class RendezvousClient; }
 
 // WorkerSession orchestrates connection lifecycle and implements IWorkerService
 // Runtime provides socket + I/O strategy (blocking vs async)
@@ -74,13 +75,32 @@ private:
     std::string connection_status_{"Disconnected"};
     std::mutex status_mtx_;
 
-    /// Attempt rendezvous discovery and update host_/port_ if a dispatcher is found.
-    /// Recreates the runtime when the endpoint changes.  Returns true on change.
-    bool try_discover_dispatcher();
+    /// Outcome of a discovery attempt.
+    enum class DiscoveryResult {
+        Disabled,   ///< Rendezvous mode is off — caller should use configured host/port.
+        Updated,    ///< Resolved a dispatcher and host_/port_ (and runtime) were changed.
+        Unchanged,  ///< Resolved the same endpoint that was already in use.
+        Cancelled,  ///< Shutdown or disconnect was requested before an endpoint resolved.
+    };
 
-    /// Exponential backoff delay for reconnection after I/O errors.
+    /// In rendezvous mode, block (with exponential backoff) until a live
+    /// dispatcher is resolved, shutdown is requested, or a UI disconnect
+    /// fires. In direct-connect mode, returns \c Disabled immediately.
+    /// Never falls back to the configured host/port when rendezvous is enabled.
+    DiscoveryResult try_discover_dispatcher();
+
+    /// Persistent client used for rendezvous discovery. Constructed once at
+    /// start() when rendezvous is enabled. Its first socket connect acquires
+    /// the VN lease, so no explicit join is required. Holding it on the
+    /// session lets shutdown() call cancel() to interrupt a blocked
+    /// discover_endpoint() exchange.
+    std::shared_ptr<rendezvous::RendezvousClient> rendezvous_client_;
+
+    /// Exponential backoff delay for reconnection after I/O errors (direct-
+    /// connect mode only; rendezvous mode uses the discovery retry loop to
+    /// pace reconnects).
     std::chrono::seconds reconnect_delay_{1};
-    static constexpr std::chrono::seconds kMaxReconnectDelay{30};
+    static constexpr std::chrono::seconds kMaxReconnectDelay{5};
 
     /** \brief Human-friendly formatter for byte counters. */
     std::string format_bytes(std::uint64_t bytes) const;

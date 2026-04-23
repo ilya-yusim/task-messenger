@@ -23,6 +23,7 @@ tm_dispatcher_lib = static_library(
     'monitoring/MonitoringOptions.cpp',
     'monitoring/MonitoringService.cpp',
     'monitoring/MonitoringSnapshotBuilder.cpp',
+    'monitoring/SnapshotReporter.cpp',
     'transport/AsyncTransportOptions.cpp',
     'transport/AsyncTransportServer.hpp',
     'transport/AsyncTransportServer.cpp',

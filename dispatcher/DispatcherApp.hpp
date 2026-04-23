@@ -10,8 +10,11 @@
 #include <chrono>
 #include <cstddef>
 #include <memory>
+#include <string>
+#include <thread>
 
 namespace rendezvous { class RendezvousClient; }
+namespace monitoring { class SnapshotReporter; }
 
 /**
  * \brief Application harness that encapsulates common dispatcher startup.
@@ -96,10 +99,17 @@ public:
 private:
     static void install_signal_handlers();
 
+    /** \brief Background loop that retries rendezvous registration until success or shutdown. */
+    void registration_loop(std::string rv_host, int rv_port,
+                           std::string vn_ip, int listen_port);
+
     std::shared_ptr<Logger> logger_;
     std::unique_ptr<AsyncTransportServer> server_;
     std::unique_ptr<monitoring::MonitoringService> monitoring_service_;
     std::shared_ptr<rendezvous::RendezvousClient> rendezvous_client_;
+    std::shared_ptr<monitoring::SnapshotReporter> snapshot_reporter_;
+    std::thread registration_thread_;
+    std::atomic<bool> registered_{false};
     std::chrono::steady_clock::time_point start_time_{};
     std::atomic<LifecycleState> lifecycle_state_{LifecycleState::Stopped};
 

@@ -4,7 +4,7 @@
 #include "MonitoringService.hpp"
 
 #include "MonitoringOptions.hpp"
-#include "rendezvous/RendezvousClient.hpp"
+#include "SnapshotReporter.hpp"
 
 #include <nlohmann/json.hpp>
 
@@ -106,11 +106,11 @@ bool MonitoringService::is_running() const noexcept {
     return running_.load(std::memory_order_relaxed);
 }
 
-void MonitoringService::set_rendezvous_client(
-        std::shared_ptr<rendezvous::RendezvousClient> client) {
+void MonitoringService::set_snapshot_reporter(
+        std::shared_ptr<SnapshotReporter> reporter) {
     {
         std::lock_guard<std::mutex> lk(rv_mtx_);
-        rendezvous_client_ = std::move(client);
+        snapshot_reporter_ = std::move(reporter);
     }
     rv_cv_.notify_all();
 }
@@ -149,19 +149,19 @@ void MonitoringService::report_loop() {
         }
 
         // Forward the freshly cached payload to the rendezvous server if attached.
-        std::shared_ptr<rendezvous::RendezvousClient> client;
+        std::shared_ptr<SnapshotReporter> reporter;
         {
             std::unique_lock<std::mutex> lk(rv_mtx_);
             rv_cv_.wait_for(lk, interval, [this]() {
                 return !running_.load(std::memory_order_relaxed);
             });
             if (!running_.load(std::memory_order_relaxed)) return;
-            client = rendezvous_client_;
+            reporter = snapshot_reporter_;
         }
 
-        if (client && payload) {
+        if (reporter && payload) {
             try {
-                client->report_snapshot_json(*payload);
+                reporter->report(*payload);
             } catch (const std::exception& ex) {
                 if (logger_) {
                     logger_->warning(std::string("MonitoringService: snapshot relay failed: ") + ex.what());

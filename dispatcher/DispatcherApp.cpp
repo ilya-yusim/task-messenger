@@ -1,12 +1,17 @@
 // DispatcherApp.cpp - Application harness for dispatcher infrastructure startup
 #include "DispatcherApp.hpp"
 #include "monitoring/MonitoringOptions.hpp"
+#include "monitoring/SnapshotReporter.hpp"
 #include "options/Options.hpp"
+#include "processUtils.hpp"
 #include "rendezvous/RendezvousClient.hpp"
 #include "rendezvous/RendezvousOptions.hpp"
 
+#include <algorithm>
+#include <chrono>
 #include <csignal>
 #include <string>
+#include <thread>
 
 std::atomic<bool> DispatcherApp::s_shutdown_requested{false};
 
@@ -77,10 +82,23 @@ int DispatcherApp::start(int argc, char* argv[]) {
     if (rendezvous_opts::get_enabled().value_or(false)) {
         auto rv_host = rendezvous_opts::get_host().value_or(std::string{});
         auto rv_port = rendezvous_opts::get_port().value_or(8088);
+        auto rv_snapshot_port = rendezvous_opts::get_snapshot_port().value_or(8089);
 
         if (!rv_host.empty()) {
             rendezvous_client_ = std::make_shared<rendezvous::RendezvousClient>(
                 rv_host, rv_port, logger_);
+
+            // Snapshot relay uses a dedicated VN port so a long-lived snapshot
+            // connection can't block registration/discovery exchanges.
+            snapshot_reporter_ = std::make_shared<monitoring::SnapshotReporter>(
+                rv_host, rv_snapshot_port, logger_);
+
+            // Share the reporter with monitoring service immediately; the
+            // reporter thread tolerates transient failures while the
+            // rendezvous server is unreachable.
+            if (monitoring_service_) {
+                monitoring_service_->set_snapshot_reporter(snapshot_reporter_);
+            }
 
             // Determine this dispatcher's VN-visible address and listen port
             // from the transport server's bound local endpoint (transport-agnostic).
@@ -95,20 +113,15 @@ int DispatcherApp::start(int argc, char* argv[]) {
             }
 
             if (!vn_ip.empty()) {
-                if (rendezvous_client_->register_endpoint("dispatcher", "default",
-                                                          vn_ip, listen_port)) {
-                    logger_->info("Registered with rendezvous service at "
-                                  + rv_host + ":" + std::to_string(rv_port));
-                } else {
-                    logger_->warning("Failed to register with rendezvous service; continuing without");
-                }
+                // Run registration on a background thread so startup is not blocked
+                // by rendezvous availability. The loop retries until success or
+                // shutdown is requested; tasks queued in the meantime simply wait
+                // for a worker to connect.
+                registration_thread_ = std::thread(
+                    &DispatcherApp::registration_loop, this,
+                    std::move(rv_host), rv_port, std::move(vn_ip), listen_port);
             } else {
                 logger_->warning("Could not determine VN IP address; skipping rendezvous registration");
-            }
-
-            // Share the client with monitoring service for snapshot relay.
-            if (monitoring_service_) {
-                monitoring_service_->set_rendezvous_client(rendezvous_client_);
             }
         } else {
             logger_->warning("Rendezvous enabled but no host configured; skipping");
@@ -126,20 +139,45 @@ int DispatcherApp::start(int argc, char* argv[]) {
 void DispatcherApp::stop() {
     lifecycle_state_.store(LifecycleState::Stopping, std::memory_order_relaxed);
 
-    // Best-effort unregister from rendezvous before tearing down transport.
+    // Signal shutdown to all background loops.
+    s_shutdown_requested.store(true, std::memory_order_relaxed);
+
+    // Cancel both rendezvous clients first: this interrupts any in-flight
+    // I/O in the registration thread (RendezvousClient) and in the monitoring
+    // reporter thread (SnapshotReporter). Subsequent calls return immediately,
+    // so neither thread can block shutdown.
     if (rendezvous_client_) {
-        try {
-            rendezvous_client_->unregister_endpoint("dispatcher", "default");
-        } catch (...) {}
-        rendezvous_client_.reset();
+        rendezvous_client_->cancel();
+    }
+    if (snapshot_reporter_) {
+        snapshot_reporter_->cancel();
     }
 
-    // Stop monitoring first because it depends on dispatcher-owned runtime objects.
+    // Stop monitoring before joining the registration thread. The reporter
+    // thread ticks every second and would otherwise keep calling report()
+    // until its own join, which happens inside monitoring_service_->stop().
     if (monitoring_service_) {
         logger_->info("Shutting down monitoring service...");
         monitoring_service_->stop();
         monitoring_service_.reset();
     }
+
+    // Join the registration thread now that no other thread is touching the
+    // rendezvous client.
+    if (registration_thread_.joinable()) {
+        registration_thread_.join();
+    }
+
+    // Best-effort unregister from rendezvous before tearing down transport.
+    if (rendezvous_client_) {
+        if (registered_.load(std::memory_order_acquire)) {
+            try {
+                rendezvous_client_->unregister_endpoint("dispatcher", "default");
+            } catch (...) {}
+        }
+        rendezvous_client_.reset();
+    }
+    snapshot_reporter_.reset();
 
     if (server_) {
         logger_->info("Shutting down server...");
@@ -148,6 +186,49 @@ void DispatcherApp::stop() {
     }
 
     lifecycle_state_.store(LifecycleState::Stopped, std::memory_order_relaxed);
+}
+
+void DispatcherApp::registration_loop(std::string rv_host, int rv_port,
+                                      std::string vn_ip, int listen_port) {
+    try { ProcessUtils::set_current_thread_name("RV-Registration"); } catch (...) {}
+
+    using namespace std::chrono_literals;
+    auto delay = 1s;
+    constexpr auto max_delay = 10s;
+
+    while (!s_shutdown_requested.load(std::memory_order_relaxed)) {
+        bool ok = false;
+        try {
+            ok = rendezvous_client_ &&
+                 rendezvous_client_->register_endpoint(
+                     "dispatcher", "default", vn_ip, listen_port);
+        } catch (...) {
+            ok = false;
+        }
+
+        if (ok) {
+            registered_.store(true, std::memory_order_release);
+            if (logger_) {
+                logger_->info("Registered with rendezvous service at "
+                              + rv_host + ":" + std::to_string(rv_port));
+            }
+            return;
+        }
+
+        if (logger_) {
+            logger_->warning("Rendezvous registration failed; retrying in "
+                             + std::to_string(delay.count()) + "s");
+        }
+
+        // Sleep in short slices so shutdown is observed promptly.
+        const auto deadline = std::chrono::steady_clock::now() + delay;
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (s_shutdown_requested.load(std::memory_order_relaxed)) return;
+            std::this_thread::sleep_for(100ms);
+        }
+
+        delay = std::min(delay * 2, max_delay);
+    }
 }
 
 bool DispatcherApp::shutdown_requested() const {

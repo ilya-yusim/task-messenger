@@ -9,6 +9,7 @@
 #include <httplib.h>
 
 #include "RendezvousServer.hpp"
+#include "SnapshotListener.hpp"
 #include "processUtils.hpp"
 
 #include <filesystem>
