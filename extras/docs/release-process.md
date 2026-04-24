@@ -32,7 +32,9 @@ Use `workflow_dispatch` on the Actions tab: **Actions → Release → Run workfl
 
 Inputs:
 
-- `os` (optional): restrict to one platform (`windows-latest`, `ubuntu-latest`, `self-hosted-macos`).
+- `os` (optional): restrict to one platform (`windows-latest`, `ubuntu-latest`, `macos`).
+- `macos_runner` (optional): `github-hosted` or `self-hosted`. Overrides
+  `vars.MACOS_RUNNER` for this run.
 - `component` (optional): `dispatcher`, `worker`, or `rendezvous`.
 - `skip_build` (optional): changelog-only dry run.
 
@@ -87,6 +89,33 @@ Output lands in `dist/`.
 - `tm-<component>-v<VERSION>-macos-arm64.tar.gz` (+ `.sha256`)
 
 where `<component>` is `dispatcher`, `worker`, or `rendezvous`.
+
+## Choosing a macOS runner
+
+The workflow can build macOS artifacts on either a GitHub-hosted runner
+(`macos-latest`, Apple Silicon) or a self-hosted ARM64 Mac. Selection order:
+
+1. `workflow_dispatch` input `macos_runner` (per-run override).
+2. Repository variable `vars.MACOS_RUNNER` (persistent default).
+3. Fallback: `github-hosted`.
+
+### Setting the repository variable
+
+Web UI: **Settings → Secrets and variables → Actions → Variables → New repository variable**.
+
+- **Name**: `MACOS_RUNNER`
+- **Value**: `github-hosted` or `self-hosted`
+
+Direct URL: `https://github.com/<owner>/<repo>/settings/variables/actions`.
+
+CLI alternative:
+
+```bash
+gh variable set MACOS_RUNNER --body "github-hosted"
+```
+
+Variables are plaintext and visible in logs; only use `${{ secrets.* }}` for
+sensitive values.
 
 ## Notes
 

@@ -19,7 +19,15 @@ on:
           - ''
           - 'windows-latest'
           - 'ubuntu-latest'
-          - 'self-hosted-macos'
+          - 'macos'
+      macos_runner:
+        description: 'macOS runner type (overrides vars.MACOS_RUNNER; leave empty for default)'
+        required: false
+        type: choice
+        options:
+          - ''
+          - 'github-hosted'
+          - 'self-hosted'
       component:
         description: 'Component to build (leave empty for all)'
         required: false
@@ -44,25 +52,47 @@ jobs:
       - name: Set up build matrix
         id: set-matrix
         shell: bash
+        env:
+          MACOS_RUNNER_INPUT: ${{ inputs.macos_runner }}
+          MACOS_RUNNER_VAR: ${{ vars.MACOS_RUNNER }}
         run: |
+          # Resolve macOS runner selection: input > repo var > default (github-hosted)
+          macos_choice="$MACOS_RUNNER_INPUT"
+          if [[ -z "$macos_choice" ]]; then
+            macos_choice="$MACOS_RUNNER_VAR"
+          fi
+          if [[ -z "$macos_choice" ]]; then
+            macos_choice="github-hosted"
+          fi
+          if [[ "$macos_choice" == "self-hosted" ]]; then
+            macos_os='[self-hosted, macOS, ARM64]'
+            macos_os_json='["self-hosted","macOS","ARM64"]'
+            macos_variant='self-hosted'
+          else
+            macos_os='macos-latest'
+            macos_os_json='"macos-latest"'
+            macos_variant='github-hosted'
+          fi
+          echo "Selected macOS runner: $macos_choice"
+
           matrix='{"include":['
           
-          # Define all possible configurations (os|os_json|os_name|os_filter|component)
+          # Define all possible configurations (os|os_json|os_name|os_filter|macos_variant|component)
           configs=(
-            "windows-latest|\"windows-latest\"|Windows|windows-latest|dispatcher"
-            "windows-latest|\"windows-latest\"|Windows|windows-latest|worker"
-            "windows-latest|\"windows-latest\"|Windows|windows-latest|rendezvous"
-            "ubuntu-latest|\"ubuntu-latest\"|Linux|ubuntu-latest|dispatcher"
-            "ubuntu-latest|\"ubuntu-latest\"|Linux|ubuntu-latest|worker"
-            "ubuntu-latest|\"ubuntu-latest\"|Linux|ubuntu-latest|rendezvous"
-            "[self-hosted, macOS, ARM64]|[\"self-hosted\",\"macOS\",\"ARM64\"]|macOS-ARM64|self-hosted-macos|dispatcher"
-            "[self-hosted, macOS, ARM64]|[\"self-hosted\",\"macOS\",\"ARM64\"]|macOS-ARM64|self-hosted-macos|worker"
-            "[self-hosted, macOS, ARM64]|[\"self-hosted\",\"macOS\",\"ARM64\"]|macOS-ARM64|self-hosted-macos|rendezvous"
+            "windows-latest|\"windows-latest\"|Windows|windows-latest||dispatcher"
+            "windows-latest|\"windows-latest\"|Windows|windows-latest||worker"
+            "windows-latest|\"windows-latest\"|Windows|windows-latest||rendezvous"
+            "ubuntu-latest|\"ubuntu-latest\"|Linux|ubuntu-latest||dispatcher"
+            "ubuntu-latest|\"ubuntu-latest\"|Linux|ubuntu-latest||worker"
+            "ubuntu-latest|\"ubuntu-latest\"|Linux|ubuntu-latest||rendezvous"
+            "${macos_os}|${macos_os_json}|macOS-ARM64|macos|${macos_variant}|dispatcher"
+            "${macos_os}|${macos_os_json}|macOS-ARM64|macos|${macos_variant}|worker"
+            "${macos_os}|${macos_os_json}|macOS-ARM64|macos|${macos_variant}|rendezvous"
           )
           
           first=true
           for config in "${configs[@]}"; do
-            IFS='|' read -r os os_json os_name os_filter component <<< "$config"
+            IFS='|' read -r os os_json os_name os_filter macos_variant component <<< "$config"
             
             # Check if this config should be included
             include=true
@@ -80,7 +110,7 @@ jobs:
                 matrix+=","
               fi
               first=false
-              matrix+="{\"os\":$os_json,\"os_name\":\"$os_name\",\"os_filter\":\"$os_filter\",\"component\":\"$component\"}"
+              matrix+="{\"os\":$os_json,\"os_name\":\"$os_name\",\"os_filter\":\"$os_filter\",\"macos_variant\":\"$macos_variant\",\"component\":\"$component\"}"
             fi
           done
           
@@ -138,13 +168,13 @@ jobs:
           sed -i '' "s/version:[[:space:]]*'[^']*'/version: '$version'/" meson.build
       
       - name: Set up Python
-        if: matrix.os_filter != 'self-hosted-macos'
+        if: matrix.macos_variant != 'self-hosted'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
       
       - name: Install Python dependencies
-        if: matrix.os_filter != 'self-hosted-macos'
+        if: matrix.macos_variant != 'self-hosted'
         run: |
           python -m pip install --upgrade pip
           pip install meson==1.9.2 ninja
@@ -162,13 +192,13 @@ jobs:
           refreshenv
       
       - name: Install macOS build dependencies
-        if: runner.os == 'macOS' && matrix.os_filter != 'self-hosted-macos'
+        if: runner.os == 'macOS' && matrix.macos_variant != 'self-hosted'
         run: |
           brew update
           brew install cmake pkg-config
       
       - name: Set up PATH for self-hosted macOS runner
-        if: runner.os == 'macOS' && matrix.os_filter == 'self-hosted-macos'
+        if: runner.os == 'macOS' && matrix.macos_variant == 'self-hosted'
         run: |
           echo "$HOME/Library/Python/3.14/bin" >> $GITHUB_PATH
       
