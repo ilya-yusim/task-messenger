@@ -220,11 +220,14 @@ function Install-Component {
         Exit-WithError "Binary not found: $binaryPath"
     }
     
-    # Copy shared library
+    # Copy shared libraries (zt-shared.dll, libopenblas.dll, and any other DLLs
+    # the bundle ships alongside the executable).
     $libDir = Join-Path $extractedDir "bin"
-    $dllPath = Join-Path $libDir "zt-shared.dll"
-    if (Test-Path $dllPath) {
-        Copy-Item $dllPath $InstallDir -Force
+    if (Test-Path $libDir) {
+        $dlls = Get-ChildItem -Path $libDir -Filter '*.dll' -File -ErrorAction SilentlyContinue
+        foreach ($dll in $dlls) {
+            Copy-Item $dll.FullName $InstallDir -Force
+        }
     }
     
     # Copy config file from config/ to APPDATA (XDG-style)

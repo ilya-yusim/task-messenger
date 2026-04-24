@@ -105,6 +105,9 @@ Download the appropriate installer for your component:
 - `tm-worker-v1.0.0-linux-x64-installer.run`
 - `tm-dispatcher-v1.0.0-linux-x64-installer.run`
 
+If you do not have a browser available (e.g. on a headless host), see
+[Downloading installers from the terminal](#downloading-installers-from-the-terminal).
+
 #### Step 2: Make Executable and Run
 
 ```bash
@@ -565,6 +568,109 @@ Notes:
 - Dashboard static files are installed to `<bindir>/dashboard`.
 - If the UI path is missing, `/api/monitor` and `/healthz` still function.
 - If the dashboard does not load, test `/healthz` first to confirm the service is running.
+
+## Downloading installers from the terminal
+
+If you cannot use a browser (e.g. headless servers, CI machines), download
+installers directly from GitHub Releases. Examples below use the Linux `.run`
+installer; substitute the asset name for your platform/component as needed:
+
+- Linux: `tm-<component>-v<VERSION>-linux-x64-installer.run`
+- macOS: `tm-<component>-v<VERSION>-macos-arm64.command` (or `.tar.gz`)
+- Windows: `tm-<component>-v<VERSION>-windows-x64-installer.exe`
+
+### GitHub CLI (recommended)
+
+```bash
+# One-time setup: https://cli.github.com/
+gh auth login
+
+# Latest release
+gh release download --repo ilya-yusim/task-messenger \
+    --pattern 'tm-worker-*-linux-x64-installer.run'
+
+# A specific tag
+gh release download v1.0.0 --repo ilya-yusim/task-messenger \
+    --pattern 'tm-dispatcher-*-linux-x64-installer.run'
+```
+
+### `curl` from a known tag
+
+```bash
+VERSION=1.0.0
+REPO=ilya-yusim/task-messenger
+ASSET=tm-worker-v${VERSION}-linux-x64-installer.run
+
+curl -fLO "https://github.com/${REPO}/releases/download/v${VERSION}/${ASSET}"
+```
+
+### `curl` + API for the latest release
+
+```bash
+REPO=ilya-yusim/task-messenger
+PATTERN='tm-worker-.*-linux-x64-installer\.run$'
+
+URL=$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
+        | grep -oE '"browser_download_url": *"[^"]+"' \
+        | cut -d'"' -f4 \
+        | grep -E "$PATTERN")
+
+curl -fLO "$URL"
+```
+
+For private repositories or to avoid unauthenticated rate limits, pass a token:
+`-H "Authorization: Bearer $GITHUB_TOKEN"`.
+
+### Listing releases and drafts
+
+`workflow_dispatch` runs publish a **draft** release tagged `draft-<sha>`.
+Drafts are not visible to anonymous clients and may not appear in
+`gh release list` depending on the `gh` version. Use the API to list all
+releases (drafts included):
+
+```bash
+gh api repos/ilya-yusim/task-messenger/releases \
+   --jq '.[] | {name, tag_name, draft, prerelease, created_at}'
+```
+
+Find the most recent draft tag:
+
+```bash
+TAG=$(gh api repos/ilya-yusim/task-messenger/releases \
+        --jq '[.[] | select(.draft==true)] | sort_by(.created_at) | last | .tag_name')
+echo "Latest draft: $TAG"
+```
+
+### Listing assets in a specific release
+
+Show a release with its assets:
+
+```bash
+gh release view "$TAG" --repo ilya-yusim/task-messenger
+```
+
+Or just the asset names (works for drafts too):
+
+```bash
+gh api repos/ilya-yusim/task-messenger/releases/tags/"$TAG" \
+   --jq '.assets[].name'
+```
+
+This is useful when `gh release download --pattern '...'` returns
+`no assets match the file pattern`: list the actual names and adjust the
+pattern (for example, Linux assets use `linux-x86_64`, not `linux-x64`).
+
+### Downloading from a draft release
+
+```bash
+gh release download "$TAG" \
+    --repo ilya-yusim/task-messenger \
+    --pattern 'tm-worker-*-linux-x86_64*'
+```
+
+If a `workflow_dispatch` run was filtered (e.g. `os=windows-latest`), the draft
+will only contain assets for that platform. Re-run the workflow without the
+filter, or with the platform you need, to populate the missing assets.
 
 ## Getting Help
 
