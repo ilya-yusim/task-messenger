@@ -129,7 +129,7 @@ build_component() {
         build_opts+=("-Dbuild_worker=false" "-Dbuild_rendezvous=false")
         echo "Building dispatcher only (FTXUI disabled for faster build)"
     elif [[ "$comp" == "worker" ]]; then
-        build_opts+=("-Dbuild_dispatcher=false" "-Dbuild_rendezvous=false")
+        build_opts+=("-Dbuild_dispatcher=false" "-Dbuild_rendezvous=false" "-Dbuild_generators=false")
         echo "Building worker only"
     elif [[ "$comp" == "rendezvous" ]]; then
         build_opts+=("-Dbuild_dispatcher=false" "-Dbuild_worker=false" "-Dbuild_generators=false")

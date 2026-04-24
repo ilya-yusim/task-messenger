@@ -70,7 +70,7 @@ build_component() {
         build_opts+=("-Dbuild_worker=false" "-Dbuild_rendezvous=false")
         echo "   Build mode: Dispatcher only"
     elif [[ "$comp" == "worker" ]]; then
-        build_opts+=("-Dbuild_dispatcher=false" "-Dbuild_rendezvous=false")
+        build_opts+=("-Dbuild_dispatcher=false" "-Dbuild_rendezvous=false" "-Dbuild_generators=false")
         echo "   Build mode: Worker only"
     elif [[ "$comp" == "rendezvous" ]]; then
         build_opts+=("-Dbuild_dispatcher=false" "-Dbuild_worker=false" "-Dbuild_generators=false")

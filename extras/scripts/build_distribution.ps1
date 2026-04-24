@@ -64,6 +64,7 @@ function Build-Component {
     } elseif ($Comp -eq "worker") {
         $BuildOptions += "-Dbuild_dispatcher=false"
         $BuildOptions += "-Dbuild_rendezvous=false"
+        $BuildOptions += "-Dbuild_generators=false"
         Write-Host "Building worker only"
     } elseif ($Comp -eq "rendezvous") {
         $BuildOptions += "-Dbuild_dispatcher=false"
@@ -79,15 +80,19 @@ function Build-Component {
         -Ddebug_logging=false `
         -Dprofiling_unwind=false `
         @BuildOptions
+    if ($LASTEXITCODE -ne 0) { throw "meson setup failed for $Comp (exit $LASTEXITCODE)" }
     
     # Compile
     meson compile -C $BuildDir
+    if ($LASTEXITCODE -ne 0) { throw "meson compile failed for $Comp (exit $LASTEXITCODE)" }
     
     # Install to staging directory
     $CompStagingDir = Join-Path $StagingDir $Comp
     $env:DESTDIR = $CompStagingDir
     meson install -C $BuildDir --no-rebuild
+    $installExit = $LASTEXITCODE
     Remove-Item Env:\DESTDIR
+    if ($installExit -ne 0) { throw "meson install failed for $Comp (exit $installExit)" }
 }
 
 # Function to create archive for a component
