@@ -175,9 +175,11 @@ create_archive() {
     local archive_root="$temp_archive_dir/tm-$comp"
     
     if [[ "$comp" == "dispatcher" ]]; then
-        # Dispatcher: executable, libzt, config, dashboard, docs
+        # Dispatcher: executable, libzt, config, dashboard, docs.
+        # Note: the "dispatcher" product is actually the interactive generator executable,
+        # renamed to tm-dispatcher in the bundle so launchers/install scripts find it.
         mkdir -p "$archive_root/bin"
-        cp "$staging_prefix/bin/tm-dispatcher" "$archive_root/bin/"
+        cp "$staging_prefix/bin/tm-generator-interactive" "$archive_root/bin/tm-dispatcher"
 
         mkdir -p "$archive_root/lib"
         cp "$staging_prefix/lib/libzt.so" "$archive_root/lib/libzt.so"

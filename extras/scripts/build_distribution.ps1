@@ -132,13 +132,19 @@ function Create-Archive {
     $BinDir = Join-Path $TaskMessengerDir "bin"
     New-Item -ItemType Directory -Force -Path $BinDir | Out-Null
     
-    # Copy files based on component
+    # Copy files based on component.
+    # Note: the "dispatcher" product is actually the interactive generator executable,
+    # renamed to tm-dispatcher.exe in the bundle so launchers/install scripts find it.
     if ($Comp -eq "dispatcher") {
-        Copy-Item (Join-Path $CompStagingPrefix "bin\tm-dispatcher.exe") $BinDir
+        Copy-Item (Join-Path $CompStagingPrefix "bin\tm-generator-interactive.exe") (Join-Path $BinDir "tm-dispatcher.exe")
         Copy-Item (Join-Path $CompStagingPrefix "bin\zt-shared.dll") $BinDir
+        $OpenBlasDll = Join-Path $CompStagingPrefix "bin\libopenblas.dll"
+        if (Test-Path $OpenBlasDll) { Copy-Item $OpenBlasDll $BinDir }
     } elseif ($Comp -eq "worker") {
         Copy-Item (Join-Path $CompStagingPrefix "bin\tm-worker.exe") $BinDir
         Copy-Item (Join-Path $CompStagingPrefix "bin\zt-shared.dll") $BinDir
+        $OpenBlasDll = Join-Path $CompStagingPrefix "bin\libopenblas.dll"
+        if (Test-Path $OpenBlasDll) { Copy-Item $OpenBlasDll $BinDir }
     } elseif ($Comp -eq "rendezvous") {
         Copy-Item (Join-Path $CompStagingPrefix "bin\tm-rendezvous.exe") $BinDir
         Copy-Item (Join-Path $CompStagingPrefix "bin\zt-shared.dll") $BinDir

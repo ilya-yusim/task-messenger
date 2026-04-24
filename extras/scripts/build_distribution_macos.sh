@@ -132,14 +132,20 @@ create_archive() {
         return 1
     fi
     
-    # Copy binaries
+    # Copy binaries.
+    # Note: the "dispatcher" product is actually the interactive generator executable,
+    # renamed to tm-dispatcher in the bundle so launchers/install scripts find it.
     echo "   Copying binaries..."
     mkdir -p "$archive_root/bin"
-    if [ -f "$staging_prefix/bin/tm-${comp}" ]; then
-        cp "$staging_prefix/bin/tm-${comp}" "$archive_root/bin/"
+    local src_bin="$staging_prefix/bin/tm-${comp}"
+    if [[ "$comp" == "dispatcher" ]]; then
+        src_bin="$staging_prefix/bin/tm-generator-interactive"
+    fi
+    if [ -f "$src_bin" ]; then
+        cp "$src_bin" "$archive_root/bin/tm-${comp}"
         chmod +x "$archive_root/bin/tm-${comp}"
     else
-        echo "❌ Error: Binary not found: $staging_prefix/bin/tm-${comp}"
+        echo "❌ Error: Binary not found: $src_bin"
         return 1
     fi
     
