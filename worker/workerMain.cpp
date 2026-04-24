@@ -71,7 +71,10 @@ int main(int argc, char* argv[]) {
 
         if (!ui_enabled) {
             session->start();
-            return 0;
+            // Return a non-zero exit code when a fatal config error prevented
+            // the session from running (e.g. rendezvous enabled but no host/port
+            // configured).
+            return (session->GetConnectionStatus() == "Error") ? 1 : 0;
         }
 
         // Run with UI (UI manages runtime thread internally)

@@ -120,15 +120,21 @@ void WorkerSession::start() {
         auto rv_port = rendezvous_opts::get_port();
         if (!rv_host || rv_host->empty() || !rv_port) {
             if (logger_) logger_->error("Rendezvous enabled but no host/port configured; exiting");
-            std::lock_guard<std::mutex> lk(status_mtx_);
-            connection_status_ = "Error";
-            return;
+            {
+                std::lock_guard<std::mutex> lk(status_mtx_);
+                connection_status_ = "Error";
+            }
+            // Signal shutdown so the main loop exits immediately and cleanup
+            // runs normally (runtime_->release()).  Avoids leaving the UI with
+            // a dead control thread and lets headless callers detect the error
+            // via GetConnectionStatus().
+            shutdown_requested_.store(true, std::memory_order_relaxed);
+        } else {
+            // Persistent rendezvous client. Its first socket connect will acquire
+            // the VN lease, so no explicit join step is needed here.
+            rendezvous_client_ = std::make_shared<rendezvous::RendezvousClient>(
+                *rv_host, *rv_port, logger_);
         }
-
-        // Persistent rendezvous client. Its first socket connect will acquire
-        // the VN lease, so no explicit join step is needed here.
-        rendezvous_client_ = std::make_shared<rendezvous::RendezvousClient>(
-            *rv_host, *rv_port, logger_);
     }
 
     // Attempt rendezvous discovery before first connection.
@@ -288,7 +294,12 @@ void WorkerSession::start() {
     runtime_->release();
     {
         std::lock_guard<std::mutex> lk(status_mtx_);
-        connection_status_ = "Stopped";
+        // Preserve "Error" status set before entering the loop (e.g. fatal
+        // config validation failure) so callers can detect the error after
+        // start() returns.
+        if (connection_status_ != "Error") {
+            connection_status_ = "Stopped";
+        }
     }
 }
 
