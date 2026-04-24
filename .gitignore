@@ -1,9 +1,9 @@
 subprojects/libzt-wrapper/libzt/
 subprojects/.wraplock
 
-config/vn-dispatcher-identity/networks.d
-config/vn-dispatcher-identity/peers.d
-config/vn-dispatcher-identity/roots
+config/vn-rendezvous-identity/networks.d
+config/vn-rendezvous-identity/peers.d
+config/vn-rendezvous-identity/roots
 
 # Build directories
 builddir-*/

@@ -10,8 +10,8 @@ cd "$PROJECT_ROOT"
 
 # Parse arguments
 COMPONENT="${1:-all}"
-if [[ ! "$COMPONENT" =~ ^(dispatcher|worker|all)$ ]]; then
-    echo "Usage: $0 [dispatcher|worker|all]"
+if [[ ! "$COMPONENT" =~ ^(dispatcher|worker|rendezvous|all)$ ]]; then
+    echo "Usage: $0 [dispatcher|worker|rendezvous|all]"
     exit 1
 fi
 
@@ -126,11 +126,14 @@ build_component() {
     # Determine build options based on component
     local build_opts=()
     if [[ "$comp" == "dispatcher" ]]; then
-        build_opts+=("-Dbuild_worker=false")
+        build_opts+=("-Dbuild_worker=false" "-Dbuild_rendezvous=false")
         echo "Building dispatcher only (FTXUI disabled for faster build)"
     elif [[ "$comp" == "worker" ]]; then
-        build_opts+=("-Dbuild_dispatcher=false")
+        build_opts+=("-Dbuild_dispatcher=false" "-Dbuild_rendezvous=false")
         echo "Building worker only"
+    elif [[ "$comp" == "rendezvous" ]]; then
+        build_opts+=("-Dbuild_dispatcher=false" "-Dbuild_worker=false" "-Dbuild_generators=false")
+        echo "Building rendezvous service only"
     fi
     
     # Setup meson
@@ -172,37 +175,62 @@ create_archive() {
     local archive_root="$temp_archive_dir/tm-$comp"
     
     if [[ "$comp" == "dispatcher" ]]; then
-        # Dispatcher: executable, libzt, configs, identity directory, docs
+        # Dispatcher: executable, libzt, config, dashboard, docs
         mkdir -p "$archive_root/bin"
         cp "$staging_prefix/bin/tm-dispatcher" "$archive_root/bin/"
-        
+
         mkdir -p "$archive_root/lib"
         cp "$staging_prefix/lib/libzt.so" "$archive_root/lib/libzt.so"
-        
+
         mkdir -p "$archive_root/config"
         cp "$staging_prefix/etc/task-messenger/config-dispatcher.json" "$archive_root/config/"
-        cp -r "$staging_prefix/etc/task-messenger/vn-dispatcher-identity" "$archive_root/config/"
-        
+
+        # Dashboard assets for dispatcher monitoring UI
+        if [[ -d "$staging_prefix/bin/dashboard" ]]; then
+            cp -r "$staging_prefix/bin/dashboard" "$archive_root/dashboard"
+        fi
+
         mkdir -p "$archive_root/doc"
         cp -r "$staging_prefix/share/doc/task-messenger/"* "$archive_root/doc/"
-        
+
         # Copy LICENSE to root for visibility
         cp "$PROJECT_ROOT/LICENSE" "$archive_root/"
-    else
+    elif [[ "$comp" == "worker" ]]; then
         # Worker: executable, libzt, configs, docs
         mkdir -p "$archive_root/bin"
         cp "$staging_prefix/bin/tm-worker" "$archive_root/bin/"
-        
+
         mkdir -p "$archive_root/lib"
         cp "$staging_prefix/lib/libzt.so" "$archive_root/lib/libzt.so"
-        
+
         mkdir -p "$archive_root/config"
         cp "$staging_prefix/etc/task-messenger/config-worker.json" "$archive_root/config/"
-        
+
         mkdir -p "$archive_root/doc"
         cp -r "$staging_prefix/share/doc/task-messenger/"* "$archive_root/doc/"
-        
+
         # Copy LICENSE to root for visibility
+        cp "$PROJECT_ROOT/LICENSE" "$archive_root/"
+    elif [[ "$comp" == "rendezvous" ]]; then
+        # Rendezvous: executable, libzt, config, identity, dashboard, docs
+        mkdir -p "$archive_root/bin"
+        cp "$staging_prefix/bin/tm-rendezvous" "$archive_root/bin/"
+
+        mkdir -p "$archive_root/lib"
+        cp "$staging_prefix/lib/libzt.so" "$archive_root/lib/libzt.so"
+
+        mkdir -p "$archive_root/config"
+        cp "$staging_prefix/etc/task-messenger/config-rendezvous.json" "$archive_root/config/"
+        cp -r "$staging_prefix/etc/task-messenger/vn-rendezvous-identity" "$archive_root/config/"
+
+        # Dashboard assets are served by rendezvous service UI
+        if [[ -d "$staging_prefix/bin/dashboard" ]]; then
+            cp -r "$staging_prefix/bin/dashboard" "$archive_root/dashboard"
+        fi
+
+        mkdir -p "$archive_root/doc"
+        cp -r "$staging_prefix/share/doc/task-messenger/"* "$archive_root/doc/"
+
         cp "$PROJECT_ROOT/LICENSE" "$archive_root/"
     fi
     
@@ -216,8 +244,10 @@ create_archive() {
     mkdir -p "$archive_root/launchers"
     if [[ "$comp" == "dispatcher" ]]; then
         cp "$PROJECT_ROOT/extras/launchers/start-tm-dispatcher.sh" "$archive_root/launchers/"
-    else
+    elif [[ "$comp" == "worker" ]]; then
         cp "$PROJECT_ROOT/extras/launchers/start-tm-worker.sh" "$archive_root/launchers/"
+    elif [[ "$comp" == "rendezvous" ]]; then
+        cp "$PROJECT_ROOT/extras/launchers/start-tm-rendezvous.sh" "$archive_root/launchers/"
     fi
     chmod +x "$archive_root/launchers/"*.sh
     
@@ -225,8 +255,10 @@ create_archive() {
     mkdir -p "$archive_root/desktop"
     if [[ "$comp" == "dispatcher" ]]; then
         cp "$PROJECT_ROOT/extras/desktop/tm-dispatcher.desktop" "$archive_root/desktop/"
-    else
+    elif [[ "$comp" == "worker" ]]; then
         cp "$PROJECT_ROOT/extras/desktop/tm-worker.desktop" "$archive_root/desktop/"
+    elif [[ "$comp" == "rendezvous" ]]; then
+        cp "$PROJECT_ROOT/extras/desktop/tm-rendezvous.desktop" "$archive_root/desktop/"
     fi
     
     # Create installation instructions
@@ -317,7 +349,7 @@ mkdir -p "$STAGING_DIR" "$OUTPUT_DIR"
 
 # Build and package based on component selection
 if [[ "$COMPONENT" == "all" ]]; then
-    for comp in dispatcher worker; do
+    for comp in dispatcher worker rendezvous; do
         build_component "$comp"
         create_archive "$comp"
         create_makeself_archive "$comp"

@@ -6,10 +6,10 @@ This directory implements a ZeroTier (libzt) backed transport layer for the gene
 
 - **`ZeroTierNodeService`**: Singleton that starts/stops the libzt node, tracks joined networks with reference counts, and exposes address lookup helpers. Networks are joined via RAII `NetworkLease` objects.
 - **`NetworkLease`**: Move-only token. Acquiring one joins a network on first use; destroying the last lease leaves the network.
-- **`ZeroTierSocket`**: Implements `IAsyncStream` + `IBlockingStream` over a libzt TCP stream (`ZTS_AF_INET`, `ZTS_SOCK_STREAM`). Supports:
-  - Non-blocking connect, read, write, accept.
+- **`ZeroTierSocket`**: Implements `IAsyncStream` + `IBlockingStream` + `IServerSocket` over a libzt TCP stream (`ZTS_AF_INET`, `ZTS_SOCK_STREAM`). Supports:
+  - Non-blocking connect, read, write.
   - Blocking connect/read/write.
-  - Timed `blocking_accept`—leverages libzt/lwIP timeout rather than a manual spin loop.
+  - Timed `accept`—leverages libzt/lwIP SO_RCVTIMEO rather than a manual spin loop.  Child socket mode (NonBlocking → IAsyncStream, Blocking → IBlockingStream) is inherited from the server.
 - **`ZeroTierErrnoCompat`**: Normalizes libzt/embedded lwIP errno values to host errno space and provides helpers for would-block detection and stringification.
 
 ## Configuration Options
@@ -43,7 +43,7 @@ Destroying sockets releases their internal lease only if it was acquired implici
 
 ## Blocking Accept Rationale
 
-`ZeroTierSocket::blocking_accept` chooses a **receive timeout**–based blocking accept rather than a custom loop using `try_accept + sleep` to avoid hand-tuning latency vs CPU trade-offs. A moderate timeout (default `500ms`) provides:
+`ZeroTierSocket::accept` uses a **receive timeout**–based blocking accept rather than a custom loop using non-blocking accept + sleep to avoid hand-tuning latency vs CPU trade-offs. A moderate timeout (default `500ms`) provides:
 
 - Negligible idle CPU usage.
 - Periodic wake-ups to observe shutdown/cancellation flags.
@@ -53,27 +53,7 @@ Transient conditions (`EAGAIN`, `EWOULDBLOCK`, `ETIMEDOUT`, `ECONNABORTED`, `ESH
 
 ## Usage Examples
 
-### Server Setup (Non-Blocking Loop)
-```cpp
-std::error_code ec;
-auto server = ZeroTierSocket::create();
-if (!server->start_listening("0.0.0.0", 5555)) {
-    // Startup failure was logged by the socket; surface locally if needed
-    return;
-}
-for (;;) {
-    auto client = server->try_accept(ec);
-    if (client) {
-        // Handle new connection
-    } else if (ec) {
-        // Non-transient failure
-        break;
-    }
-    // Do other work / coroutine scheduling
-}
-```
-
-### Timed Blocking Accept
+### Server Setup (Timed Accept)
 ```cpp
 std::error_code ec;
 auto server = ZeroTierSocket::create();
@@ -81,14 +61,31 @@ if (!server->start_listening("0.0.0.0", 5555)) {
     return;
 }
 while (!shutdown_requested()) {
-    auto client = server->blocking_accept(ec, std::chrono::milliseconds(500));
+    auto client = server->accept(ec);
     if (client) {
-        // Process client immediately
+        // NonBlocking server → children are IAsyncStream
+        auto stream = std::dynamic_pointer_cast<IAsyncStream>(client);
+        // Handle new connection
     } else if (ec) {
-        // Fatal accept error -> exit
         break;
-    } else {
-        // Timeout or transient -> loop and recheck shutdown flag
+    }
+}
+```
+
+### Timed Blocking Accept
+```cpp
+std::error_code ec;
+auto server = ZeroTierSocket::create_blocking();
+if (!server->start_listening("0.0.0.0", 5555)) {
+    return;
+}
+while (!shutdown_requested()) {
+    auto client = server->accept(ec);
+    if (client) {
+        // Blocking server → children are IBlockingStream
+        auto stream = std::dynamic_pointer_cast<IBlockingStream>(client);
+    } else if (ec) {
+        break;
     }
 }
 ```

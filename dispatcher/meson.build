@@ -23,6 +23,7 @@ tm_dispatcher_lib = static_library(
     'monitoring/MonitoringOptions.cpp',
     'monitoring/MonitoringService.cpp',
     'monitoring/MonitoringSnapshotBuilder.cpp',
+    'monitoring/SnapshotReporter.cpp',
     'transport/AsyncTransportOptions.cpp',
     'transport/AsyncTransportServer.hpp',
     'transport/AsyncTransportServer.cpp',
@@ -34,6 +35,7 @@ tm_dispatcher_lib = static_library(
   dependencies: [
     tm_transport_dep,   # Shared transport library (coro IO, sockets, ZeroTier)
     shared_dep,         # Shared utilities (logger, protocol, etc.)
+    rendezvous_dep,     # Rendezvous client library (registration + discovery)
     libzt_dep,          # ZeroTier networking library
     cli11_dep,          # Command-line parsing
     json_dep,           # JSON configuration parsing
@@ -48,7 +50,7 @@ tm_dispatcher_lib = static_library(
 # directly with link_whole to ensure static skill registration works.
 tm_dispatcher_dep = declare_dependency(
   link_with: tm_dispatcher_lib,
-  dependencies: [tm_transport_dep, shared_dep, libzt_dep, cli11_dep, json_dep, httplib_dep, flatbuffers_dep],
+  dependencies: [tm_transport_dep, shared_dep, rendezvous_dep, libzt_dep, cli11_dep, json_dep, httplib_dep, flatbuffers_dep],
 )
 
 # Note: DLL/shared library copies are handled by generator executables,

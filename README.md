@@ -27,7 +27,7 @@ task-messenger/
 ├── config/                     # Configuration files
 │   ├── config-dispatcher.json     # Dispatcher configuration
 │   ├── config-worker.json      # Worker configuration
-│   └── vn-dispatcher-identity/    # Dispatcher ZeroTier identity files
+│   └── vn-rendezvous-identity/    # ZeroTier identity files (shared by rendezvous & dispatcher)
 │       ├── identity.public     # Public identity key
 │       └── identity.secret     # Private identity key (secret)
 ├── dispatcher/                    # Dispatcher component
@@ -117,7 +117,7 @@ The self-extracting installer automatically extracts and runs the installation s
 Configuration files are located in the `config/` directory:
 - `config-dispatcher.json`: Dispatcher settings including ZeroTier network ID and identity path
 - `config-worker.json`: Worker settings
-- `vn-dispatcher-identity/`: Dispatcher's ZeroTier identity directory (only identity.public and identity.secret are version-controlled)
+- `vn-rendezvous-identity/`: ZeroTier identity directory shared by the rendezvous server and dispatcher (only identity.public and identity.secret are version-controlled)
 
 ## Installation
 
@@ -131,7 +131,7 @@ Task Messenger provides distribution packages for both dispatcher and worker com
 
 **Configuration and Identity** (in `%APPDATA%` - roaming):
 - Dispatcher config: `%APPDATA%\TaskMessenger\tm-dispatcher\config-dispatcher.json`
-- Dispatcher identity: `%APPDATA%\TaskMessenger\tm-dispatcher\vn-dispatcher-identity\`
+- Dispatcher identity: `%APPDATA%\TaskMessenger\tm-dispatcher\vn-rendezvous-identity\`
 - Worker config: `%APPDATA%\TaskMessenger\tm-worker\config-worker.json`
 
 **Installation:**
@@ -160,7 +160,7 @@ Task Messenger provides distribution packages for both dispatcher and worker com
 
 **Configuration and Identity** (in `~/.config` - XDG standard):
 - Dispatcher config: `~/.config/task-messenger/tm-dispatcher/config-dispatcher.json`
-- Dispatcher identity: `~/.config/task-messenger/tm-dispatcher/vn-dispatcher-identity/`
+- Dispatcher identity: `~/.config/task-messenger/tm-dispatcher/vn-rendezvous-identity/`
 - Worker config: `~/.config/task-messenger/tm-worker/config-worker.json`
 
 **Installation:**

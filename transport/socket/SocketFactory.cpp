@@ -81,4 +81,34 @@ std::shared_ptr<IBlockingStream> SocketFactory::create_blocking_client(std::shar
     }
 }
 
+std::shared_ptr<IServerSocket> SocketFactory::create_blocking_server(std::shared_ptr<Logger> logger) {
+    ensure_socket_type_resolved();
+    switch (default_type_) {
+        case SocketType::ZeroTier: {
+            if (logger) {
+                transport::ZeroTierNodeService::instance().set_logger(logger);
+            }
+            return std::make_shared<ZeroTierSocket>(
+                ZeroTierSocket::SocketMode::Blocking, std::move(logger));
+        }
+        default:
+            throw std::invalid_argument("Unsupported socket type for SocketFactory blocking server");
+    }
+}
+
+std::shared_ptr<IServerSocket> SocketFactory::create_server(std::shared_ptr<Logger> logger) {
+    ensure_socket_type_resolved();
+    switch (default_type_) {
+        case SocketType::ZeroTier: {
+            if (logger) {
+                transport::ZeroTierNodeService::instance().set_logger(logger);
+                return ZeroTierSocket::create(std::move(logger));
+            }
+            return ZeroTierSocket::create();
+        }
+        default:
+            throw std::invalid_argument("Unsupported socket type for SocketFactory server");
+    }
+}
+
 } // namespace transport

@@ -18,6 +18,7 @@
 #include "coroIoContext.hpp"
 #include "transport/socket/SocketFactory.hpp"
 #include "transport/socket/IAsyncStream.hpp"
+#include "transport/socket/IServerSocket.hpp"
 
 
 namespace transport {
@@ -47,7 +48,7 @@ public:
     /** \brief Internal operation types for coroutine-driven socket operations. */
     enum class OperationType { NONE, READ, READ_HEADER, WRITE };
 
-    // Constructors
+    // Constructors — client / accepted-connection adapters
     explicit CoroSocketAdapter(std::shared_ptr<IAsyncStream> socket)
         : socket_(std::move(socket)), logger_(nullptr) {}
 
@@ -57,6 +58,10 @@ public:
     CoroSocketAdapter(std::shared_ptr<IAsyncStream> socket, std::shared_ptr<Logger> logger, std::shared_ptr<CoroIoContext> ctx)
         : socket_(std::move(socket)), logger_(std::move(logger)), context_(std::move(ctx)) {}
 
+    /// Constructor for server-mode adapters (listen + accept only, no I/O).
+    CoroSocketAdapter(std::shared_ptr<IServerSocket> server, std::shared_ptr<Logger> logger, std::shared_ptr<CoroIoContext> ctx)
+        : server_socket_(std::move(server)), logger_(std::move(logger)), context_(std::move(ctx)) {}
+
     // Factories
     /** \brief Create a client adapter using the `SocketFactory` backend. */
     static std::shared_ptr<CoroSocketAdapter> create_client(std::shared_ptr<Logger> logger, std::shared_ptr<CoroIoContext> ctx = nullptr) {
@@ -65,47 +70,68 @@ public:
     }
     /** \brief Create a server adapter using the `SocketFactory` backend (requires subsequent `start_listening`). */
     static std::shared_ptr<CoroSocketAdapter> create_server(std::shared_ptr<Logger> logger, std::shared_ptr<CoroIoContext> ctx = nullptr) {
-        auto stream = SocketFactory::create_async_server(logger);
-        return std::make_shared<CoroSocketAdapter>(stream, logger, ctx);
+        auto server = SocketFactory::create_server(logger);
+        return std::make_shared<CoroSocketAdapter>(server, logger, ctx);
     }
 
     // Access to underlying socket for base operations
-    /** \brief Get the underlying socket pointer for direct access to base operations. */
+    /** \brief Get the underlying async stream pointer (null for server-mode adapters). */
     IAsyncStream* socket() { return socket_.get(); }
     const IAsyncStream* socket() const { return socket_.get(); }
     std::shared_ptr<IAsyncStream> socket_ptr() { return socket_; }
+    /** \brief Get the underlying server socket pointer (null for client-mode adapters). */
+    std::shared_ptr<IServerSocket> server_socket_ptr() { return server_socket_; }
 
     // Convenience forwarding for common operations
-    /** \brief Connect to a remote host/port. */
+    /** \brief Connect to a remote host/port (client-mode only). */
     void connect(const std::string &host, int port, std::error_code& error);
-    /** \brief Start listening socket (bind + listen). */
+    /** \brief Start listening socket (bind + listen). Delegates to server socket. */
     bool start_listening(const std::string& host, int port, int backlog = 128) {
-        if (!socket_) return false;
-        return socket_->start_listening(host, port, backlog);
+        if (server_socket_) return server_socket_->start_listening(host, port, backlog);
+        return false;
     }
-    /** \brief Close the socket. */
-    void close() { if (socket_) socket_->close(); }
+    /** \brief Close the underlying socket. */
+    void close() {
+        if (socket_) socket_->close();
+        else if (server_socket_) server_socket_->close();
+    }
     /** \brief Request shutdown - interrupts blocking operations in underlying socket. */
-    void shutdown() { if (socket_) socket_->shutdown(); }
+    void shutdown() {
+        if (socket_) socket_->shutdown();
+        else if (server_socket_) server_socket_->shutdown();
+    }
     /** \brief Check if socket is open. */
-    bool is_open() const { return socket_ && socket_->is_open(); }
+    bool is_open() const {
+        if (socket_) return socket_->is_open();
+        if (server_socket_) return server_socket_->is_open();
+        return false;
+    }
     /** \brief Get remote endpoint. */
-    std::string remote_endpoint() const { return socket_ ? socket_->remote_endpoint() : ""; }
+    std::string remote_endpoint() const {
+        if (socket_) return socket_->remote_endpoint();
+        if (server_socket_) return server_socket_->remote_endpoint();
+        return "";
+    }
     /** \brief Get local endpoint. */
-    std::string local_endpoint() const { return socket_ ? socket_->local_endpoint() : ""; }
+    std::string local_endpoint() const {
+        if (socket_) return socket_->local_endpoint();
+        if (server_socket_) return server_socket_->local_endpoint();
+        return "";
+    }
 
-    /** \brief Timed blocking accept returning wrapped client adapter. */
-    std::shared_ptr<CoroSocketAdapter> blocking_accept(std::error_code& error,
-                                                       std::chrono::milliseconds timeout = std::chrono::milliseconds(500)) {
+    /** \brief Blocking accept returning wrapped client adapter. Delegates to server socket. */
+    std::shared_ptr<CoroSocketAdapter> blocking_accept(std::error_code& error) {
         error.clear();
-        if (!socket_) {
+        if (!server_socket_) {
             error = std::make_error_code(std::errc::bad_file_descriptor);
             return nullptr;
         }
-        auto client_stream = socket_->blocking_accept(error, timeout);
-        if (!client_stream) {
+        auto client = server_socket_->accept(error);
+        if (!client) {
             return nullptr;
         }
+        // create_server() produces NonBlocking children → safe downcast to IAsyncStream
+        auto client_stream = std::dynamic_pointer_cast<IAsyncStream>(client);
         return std::make_shared<CoroSocketAdapter>(client_stream, logger_, context_);
     }
 
@@ -307,8 +333,10 @@ public:
     void prepare_write_operation(const void* buffer, size_t size) { write_buffer_ = buffer; write_size_ = size; write_offset_ = 0; }
 
 private:
-    /** \brief Underlying asynchronous stream implementation (transport-specific). */
+    /** \brief Underlying asynchronous stream (for client/accepted adapters; null for server adapters). */
     std::shared_ptr<IAsyncStream> socket_;
+    /** \brief Underlying server socket (for server adapters; null for client adapters). */
+    std::shared_ptr<IServerSocket> server_socket_;
     /** \brief Logger instance shared with accepted child sockets. */
     std::shared_ptr<Logger> logger_;
     /** \brief Associated coroutine I/O context (event loop); defaults to `transport::default_loop()` when first used. */

@@ -331,6 +331,32 @@ Both dispatcher and worker require configuration before first use. The installat
 - Leave empty to log to console only
 - Specify a path to also write logs to a file
 
+### Rendezvous Settings (Optional)
+
+The `"rendezvous"` section enables automatic dispatcher discovery so that workers
+do not need a hard-coded dispatcher address:
+
+```json
+{
+  "rendezvous": {
+    "enabled": false,
+    "host": "",
+    "port": 8088
+  }
+}
+```
+
+**`rendezvous.enabled`**: Enable rendezvous registration (dispatcher) or discovery (worker)
+- Default: `false`
+
+**`rendezvous.host`**: Virtual-network IP of the rendezvous service
+- Must be set when `enabled` is `true`
+
+**`rendezvous.port`**: TCP port of the rendezvous protocol listener
+- Default: `8088`
+
+CLI equivalents: `--rendezvous-enabled`, `--rendezvous-host`, `--rendezvous-port`
+
 ### Example Configuration
 
 ```json

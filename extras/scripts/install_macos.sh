@@ -64,12 +64,16 @@ detect_extracted_files() {
         # Detect component by checking which executable exists
         local manager_path="$extracted_root/bin/tm-dispatcher"
         local worker_path="$extracted_root/bin/tm-worker"
+        local rendezvous_path="$extracted_root/bin/tm-rendezvous"
         
         if [ -f "$manager_path" ]; then
             echo "dispatcher:$extracted_root"
             return 0
         elif [ -f "$worker_path" ]; then
             echo "worker:$extracted_root"
+            return 0
+        elif [ -f "$rendezvous_path" ]; then
+            echo "rendezvous:$extracted_root"
             return 0
         fi
     fi
@@ -216,20 +220,29 @@ install_component() {
         print_success "Installed config: $config_dir/config-$component.json"
     fi
     
-    # Copy identity directory for dispatcher
-    if [ "$component" = "dispatcher" ]; then
-        local identity_dir="$config_source_dir/vn-dispatcher-identity"
+    # Copy identity directory for rendezvous server (VN identity is now shipped with the server only)
+    if [ "$component" = "rendezvous" ]; then
+        local identity_dir="$config_source_dir/vn-rendezvous-identity"
         
         if [ -d "$identity_dir" ]; then
             mkdir -p "$config_dir"
             cp -r "$identity_dir" "$config_dir/"
             
             # Set restrictive permissions on secret file
-            local secret_path="$config_dir/vn-dispatcher-identity/identity.secret"
+            local secret_path="$config_dir/vn-rendezvous-identity/identity.secret"
             if [ -f "$secret_path" ]; then
                 chmod 600 "$secret_path"
                 print_success "Installed identity files with restricted permissions"
             fi
+        fi
+    fi
+    
+    # Copy dashboard assets for components that ship a dashboard UI
+    if [ "$component" = "dispatcher" ] || [ "$component" = "rendezvous" ]; then
+        if [ -d "$extracted_dir/dashboard" ]; then
+            mkdir -p "$install_dir/bin"
+            cp -r "$extracted_dir/dashboard" "$install_dir/bin/dashboard"
+            print_success "Installed dashboard assets to: $install_dir/bin/dashboard"
         fi
     fi
     
@@ -618,7 +631,7 @@ main() {
     print_info "Or use the full path: $INSTALL_DIR/bin/tm-$COMPONENT"
     print_info "Config file: $CONFIG_DIR/config-$COMPONENT.json"
     if [ "$COMPONENT" = "dispatcher" ]; then
-        print_info "Identity files: $CONFIG_DIR/vn-dispatcher-identity/"
+        print_info "Identity files: $CONFIG_DIR/vn-rendezvous-identity/"
     fi
     echo ""
 }

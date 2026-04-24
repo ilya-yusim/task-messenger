@@ -11,7 +11,9 @@
 #include <ZeroTierSockets.h>
 #include "ZeroTierNodeService.hpp" // Shared node + network lease
 #include "transport/socket/IAsyncStream.hpp"
+#include "transport/socket/IServerSocket.hpp"
 #include "transport/socket/IBlockingStream.hpp"
+#include "transport/socket/IClientSocket.hpp"
 #include <memory>
 #include <string>
 #include <system_error>
@@ -30,7 +32,7 @@ class Logger;
  *  \details Provides non-blocking and blocking operations using libzt. Cooperates
  *  with a process-wide ZeroTier node via \ref transport::ZeroTierNodeService.
  */
-class ZeroTierSocket : public virtual IAsyncStream, public virtual IBlockingStream {
+class ZeroTierSocket : public virtual IAsyncStream, public virtual IServerSocket, public virtual IBlockingStream {
 public:
     // Distinguish intended operating mode for the lifetime of this socket
     enum class SocketMode { NonBlocking, Blocking };
@@ -72,11 +74,13 @@ public:
      */
     bool start_listening(const std::string& host, int port, int backlog = 128) override;
 
-    /** \brief Attempt to accept a new connection non-blockingly.
-     *  \param error Receives non-transient errors; cleared on success or would-block.  
-     *  \return New stream on success; nullptr if no pending client.
+    /** \brief Timed blocking accept returning a client socket.
+     *  \details Uses SO_RCVTIMEO to let the TCP/IP stack handle blocking efficiently.
+     *  The returned IClientSocket inherits this server's socket mode: NonBlocking servers
+     *  produce IAsyncStream children, Blocking servers produce IBlockingStream children.
+     *  \see IServerSocket::accept
      */
-    std::shared_ptr<IAsyncStream> try_accept(std::error_code& error) override;
+    std::shared_ptr<IClientSocket> accept(std::error_code& error) override;
 
     // === Starting a client ===
     /** \brief Attempt a non-blocking connection to host:port. (Not used since blocking connect with timeout is more efficient.)
@@ -215,23 +219,6 @@ public:
     static std::shared_ptr<ZeroTierSocket> from_fd(int fd);
     // Wrap existing fd with logger
     static std::shared_ptr<ZeroTierSocket> from_fd(int fd, std::shared_ptr<Logger> logger);
-
-    /** \brief Timed blocking accept for dedicated acceptor threads.
-     *  \details Design choice: rather than a manual loop around \ref try_accept with sleeps
-     *  (which trades latency vs CPU), we rely on libzt/lwIP blocking accept with a receive
-     *  timeout (SO_RCVTIMEO equivalent). This moves efficient sleeping and wakeups into the
-     *  TCP/IP stack where it is already optimized and well-tested. A finite timeout lets the
-     *  thread wake periodically to observe shutdown without fragile self-wake mechanisms.
-     *  Semantics:
-     *  - On successful accept: returns a new non-blocking stream (error cleared).
-     *  - On timeout or transient conditions (EAGAIN/EWOULDBLOCK/ETIMEDOUT/ECONNABORTED/ESHUTDOWN/EBADF):
-     *    returns nullptr with error cleared so caller can continue or exit.
-     *  - On non-transient error: returns nullptr with error set.
-     *  \param error Receives non-transient errors; cleared on success or transient wake.
-     *  \param timeout Maximum blocking interval before returning nullptr (default 500ms).
-     */
-    std::shared_ptr<IAsyncStream> blocking_accept(std::error_code& error,
-                                                  std::chrono::milliseconds timeout = std::chrono::milliseconds(500)) override;
 
 private:
     // === Helper methods ===

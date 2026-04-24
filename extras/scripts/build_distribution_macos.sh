@@ -14,9 +14,9 @@ cd "$PROJECT_ROOT"
 
 # Parse component argument
 COMPONENT="${1:-all}"
-if [[ ! "$COMPONENT" =~ ^(dispatcher|worker|all)$ ]]; then
+if [[ ! "$COMPONENT" =~ ^(dispatcher|worker|rendezvous|all)$ ]]; then
     echo "❌ Error: Invalid component '$COMPONENT'"
-    echo "Usage: $0 [dispatcher|worker|all]"
+    echo "Usage: $0 [dispatcher|worker|rendezvous|all]"
     exit 1
 fi
 
@@ -67,11 +67,14 @@ build_component() {
     # Determine build options
     local build_opts=()
     if [[ "$comp" == "dispatcher" ]]; then
-        build_opts+=("-Dbuild_worker=false")
+        build_opts+=("-Dbuild_worker=false" "-Dbuild_rendezvous=false")
         echo "   Build mode: Dispatcher only"
     elif [[ "$comp" == "worker" ]]; then
-        build_opts+=("-Dbuild_dispatcher=false")
+        build_opts+=("-Dbuild_dispatcher=false" "-Dbuild_rendezvous=false")
         echo "   Build mode: Worker only"
+    elif [[ "$comp" == "rendezvous" ]]; then
+        build_opts+=("-Dbuild_dispatcher=false" "-Dbuild_worker=false" "-Dbuild_generators=false")
+        echo "   Build mode: Rendezvous service only"
     fi
     
     # Setup meson
@@ -154,14 +157,22 @@ create_archive() {
     echo "   Copying configuration files..."
     mkdir -p "$archive_root/config"
     if [[ "$comp" == "dispatcher" ]]; then
-        # Dispatcher: config + identity directory
         cp "$staging_prefix/etc/task-messenger/config-dispatcher.json" "$archive_root/config/"
-        if [ -d "$staging_prefix/etc/task-messenger/vn-dispatcher-identity" ]; then
-            cp -r "$staging_prefix/etc/task-messenger/vn-dispatcher-identity" "$archive_root/config/"
-        fi
-    else
-        # Worker: config only
+    elif [[ "$comp" == "worker" ]]; then
         cp "$staging_prefix/etc/task-messenger/config-worker.json" "$archive_root/config/"
+    elif [[ "$comp" == "rendezvous" ]]; then
+        cp "$staging_prefix/etc/task-messenger/config-rendezvous.json" "$archive_root/config/"
+        if [ -d "$staging_prefix/etc/task-messenger/vn-rendezvous-identity" ]; then
+            cp -r "$staging_prefix/etc/task-messenger/vn-rendezvous-identity" "$archive_root/config/"
+        fi
+    fi
+
+    # Dashboard assets: bundle with dispatcher (monitoring UI) and rendezvous (service UI).
+    if [[ "$comp" == "dispatcher" || "$comp" == "rendezvous" ]]; then
+        if [ -d "$staging_prefix/bin/dashboard" ]; then
+            echo "   Copying dashboard assets..."
+            cp -r "$staging_prefix/bin/dashboard" "$archive_root/dashboard"
+        fi
     fi
     
     # Copy documentation
@@ -205,10 +216,15 @@ create_archive() {
                 cp "$PROJECT_ROOT/extras/launchers/start-tm-dispatcher.sh" "$archive_root/launchers/"
                 chmod +x "$archive_root/launchers/start-tm-dispatcher.sh"
             fi
-        else
+        elif [[ "$comp" == "worker" ]]; then
             if [ -f "$PROJECT_ROOT/extras/launchers/start-tm-worker.sh" ]; then
                 cp "$PROJECT_ROOT/extras/launchers/start-tm-worker.sh" "$archive_root/launchers/"
                 chmod +x "$archive_root/launchers/start-tm-worker.sh"
+            fi
+        elif [[ "$comp" == "rendezvous" ]]; then
+            if [ -f "$PROJECT_ROOT/extras/launchers/start-tm-rendezvous.sh" ]; then
+                cp "$PROJECT_ROOT/extras/launchers/start-tm-rendezvous.sh" "$archive_root/launchers/"
+                chmod +x "$archive_root/launchers/start-tm-rendezvous.sh"
             fi
         fi
     fi
@@ -296,7 +312,7 @@ tail -n +"$ARCHIVE_LINE" "$0" | tar -xzf - -C "$TEMP_DIR" || {
 }
 
 # Find extracted directory
-EXTRACTED_DIR=$(find "$TEMP_DIR" -maxdepth 1 -type d \( -name "tm-dispatcher" -o -name "tm-worker" \) | head -n 1)
+EXTRACTED_DIR=$(find "$TEMP_DIR" -maxdepth 1 -type d \( -name "tm-dispatcher" -o -name "tm-worker" -o -name "tm-rendezvous" \) | head -n 1)
 
 if [ -z "$EXTRACTED_DIR" ]; then
     print_error "Could not find extracted files"
@@ -361,8 +377,8 @@ mkdir -p "$STAGING_DIR" "$OUTPUT_DIR"
 echo ""
 
 if [[ "$COMPONENT" == "all" ]]; then
-    # Build both components
-    for comp in dispatcher worker; do
+    # Build all components
+    for comp in dispatcher worker rendezvous; do
         build_component "$comp" || {
             echo "❌ Build failed for $comp"
             exit 1

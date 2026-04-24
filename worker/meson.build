@@ -46,6 +46,7 @@ worker_exe = executable(
     json_dep,                  # JSON configuration parsing
     ftxui_dep,                 # Optional terminal UI library
     skills_dep,                # Skill-based FlatBuffers task processing
+    rendezvous_dep,            # Rendezvous client for dispatcher discovery
   ],
   cpp_args: ui_cargs,        # Define HAS_WORKER_UI if FTXUI is available
   install: true,

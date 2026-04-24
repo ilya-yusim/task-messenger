@@ -3,6 +3,11 @@
     "manager_host": "10.144.0.0",
     "manager_port": 8080
   },
+  "rendezvous": {
+    "enabled": true,
+    "host": "10.144.0.0",
+    "port": 8088
+  },
   "zerotier": {
     "default_network": "159924d6303c474a"  
   }

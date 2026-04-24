@@ -248,39 +248,80 @@ bool ZeroTierSocket::check_connect_complete(std::error_code& error) {
     }
 }
 
-std::shared_ptr<IAsyncStream> ZeroTierSocket::try_accept(std::error_code& error) {
+std::shared_ptr<IClientSocket> ZeroTierSocket::accept(std::error_code& error) {
+    error.clear();
     if (socket_fd_ < 0 || !is_server_socket_) {
         error = std::make_error_code(std::errc::bad_file_descriptor);
         return nullptr;
     }
-    
+
+    // Ensure the listening socket is in blocking mode for a dedicated acceptor thread.
+    set_non_blocking(false);
+
+    // Apply a receive timeout so accept wakes periodically and we can notice shutdown.
+    // This relies on LWIP_SO_RCVTIMEO affecting netconn_accept() timeout.
+    // 500ms strikes a practical balance: negligible CPU usage in idle periods and
+    // sub-second responsiveness when initiating shutdown.
+    constexpr int timeout_secs = 0;
+    constexpr int timeout_micros = 500 * 1000; // 500ms
+    (void)zts_set_recv_timeout(socket_fd_, timeout_secs, timeout_micros);
+
     struct zts_sockaddr_in client_addr;
     zts_socklen_t client_len = sizeof(client_addr);
-    
-    zts_errno = 0; // Clear errno before call
-    int client_fd = zts_bsd_accept(socket_fd_, (struct zts_sockaddr*)&client_addr, &client_len);
-    
-    if (client_fd >= 0) {
-        // Success - create a new socket from the accepted connection
-        try {
-            error = std::error_code{};
-            return std::make_shared<ZeroTierSocket>(client_fd);
-        } catch (const std::exception&) {
-            zts_close(client_fd);
-            error = std::make_error_code(std::errc::resource_unavailable_try_again);
+
+    for (;;) {
+        if (shutdown_requested_.load(std::memory_order_relaxed)) {
+            error = std::make_error_code(std::errc::bad_file_descriptor);
             return nullptr;
         }
-    } else {
+
+        const int listen_fd = socket_fd_;
+        const bool server_state = is_server_socket_;
+        if (listen_fd < 0 || !server_state) {
+            error = std::make_error_code(std::errc::bad_file_descriptor);
+            return nullptr;
+        }
+
+        int client_fd = zts_bsd_accept(listen_fd, (struct zts_sockaddr*)&client_addr, &client_len);
+        if (client_fd >= 0) {
+            try {
+                error.clear();
+                // Inherit the server's socket mode: NonBlocking servers produce
+                // IAsyncStream children, Blocking servers produce IBlockingStream children.
+                if (non_blocking_mode_) {
+                    // NonBlocking server → from_fd wraps as IAsyncStream
+                    if (logger_) return ZeroTierSocket::from_fd(client_fd, logger_);
+                    return ZeroTierSocket::from_fd(client_fd);
+                } else {
+                    // Blocking server → wrap in Blocking mode
+                    auto child = std::make_shared<ZeroTierSocket>(
+                        SocketMode::Blocking, logger_);
+                    child->socket_fd_        = client_fd;
+                    child->is_open_          = true;
+                    child->is_connected_     = true;
+                    child->is_server_socket_ = false;
+                    child->setup_socket(client_fd);
+                    return child;
+                }
+            } catch (...) {
+                zts_close(client_fd);
+                error = std::make_error_code(std::errc::resource_unavailable_try_again);
+                return nullptr;
+            }
+        }
+
         int zts_err = zts_errno;
-        if (is_would_block_error(zts_err)) {
-            // Would block, no connection available
-            error = std::error_code{};
-            return nullptr;
-        } else {
-            // Error occurred
-            error = translate_error(zts_err);
+        int norm = ZeroTierErrnoCompat::normalize_errno(zts_err);
+        if (norm == EAGAIN || norm == EWOULDBLOCK || norm == ETIMEDOUT) {
+            error.clear();
             return nullptr;
         }
+        if (norm == ECONNABORTED || norm == ESHUTDOWN || norm == EBADF) {
+            error.clear();
+            return nullptr;
+        }
+        error = translate_error(zts_err);
+        return nullptr;
     }
 }
 
@@ -828,7 +869,23 @@ std::string ZeroTierSocket::local_endpoint() const {
     unsigned short port;
     
     if (zts_getsockname(socket_fd_, ip_str, sizeof(ip_str), &port) == ZTS_ERR_OK) {
-        return std::string(ip_str) + ":" + std::to_string(port);
+        std::string ip = ip_str;
+        // When bound to all interfaces, substitute the actual ZT-assigned IPv4
+        // so callers get a routable address rather than 0.0.0.0.
+        if (ip == "0.0.0.0") {
+            uint64_t net_id = 0;
+            if (auto hex = transport::ZeroTierNodeService::get_configured_default_network_hex();
+                hex && !hex->empty()) {
+                net_id = std::strtoull(hex->c_str(), nullptr, 16);
+            }
+            if (net_id != 0) {
+                if (auto assigned = transport::ZeroTierNodeService::instance().get_ip_v4(net_id);
+                    assigned) {
+                    ip = *assigned;
+                }
+            }
+        }
+        return ip + ":" + std::to_string(port);
     }
     return "";
 }
@@ -952,95 +1009,6 @@ std::shared_ptr<ZeroTierSocket> ZeroTierSocket::from_fd(int fd) {
 
 std::shared_ptr<ZeroTierSocket> ZeroTierSocket::from_fd(int fd, std::shared_ptr<Logger> logger) {
     return std::make_shared<ZeroTierSocket>(fd, std::move(logger));
-}
-
-std::shared_ptr<IAsyncStream> ZeroTierSocket::blocking_accept(std::error_code& error, std::chrono::milliseconds timeout) {
-    error.clear();
-    if (socket_fd_ < 0 || !is_server_socket_) {
-        error = std::make_error_code(std::errc::bad_file_descriptor);
-        return nullptr;
-    }
-
-    // Ensure the listening socket is in blocking mode for a dedicated acceptor thread.
-    set_non_blocking(false);
-
-    // Apply a receive timeout so accept wakes periodically and we can notice shutdown.
-    // This relies on LWIP_SO_RCVTIMEO affecting netconn_accept() timeout.
-    // Convert std::chrono::milliseconds -> seconds + microseconds.
-    if (timeout.count() < 0) {
-        timeout = std::chrono::milliseconds(0);
-    }
-    auto secs = static_cast<int>(timeout.count() / 1000);
-    auto micros = static_cast<int>((timeout.count() % 1000) * 1000); // ms -> microseconds
-    (void)zts_set_recv_timeout(socket_fd_, secs, micros); // best-effort; ignore failure
-
-    struct zts_sockaddr_in client_addr;
-    zts_socklen_t client_len = sizeof(client_addr);
-
-    for (;;) {
-        // Check for shutdown request
-        if (shutdown_requested_.load(std::memory_order_relaxed)) {
-            error = std::make_error_code(std::errc::bad_file_descriptor);
-            return nullptr;
-        }
-        
-        // Take a snapshot of the fd and server state to avoid TOCTOU between check and accept
-        const int listen_fd = socket_fd_;
-        const bool server_state = is_server_socket_;
-        if (listen_fd < 0 || !server_state) {
-            error = std::make_error_code(std::errc::bad_file_descriptor);
-            return nullptr;
-        }
-
-        int client_fd = zts_bsd_accept(listen_fd, (struct zts_sockaddr*)&client_addr, &client_len);
-        if (client_fd >= 0) {
-            try {
-                // Wrap accepted fd; constructor sets it to non-blocking for I/O
-                error.clear();
-                if (logger_) {
-                    return ZeroTierSocket::from_fd(client_fd, logger_);
-                }
-                return ZeroTierSocket::from_fd(client_fd);
-            } catch (...) {
-                zts_close(client_fd);
-                error = std::make_error_code(std::errc::resource_unavailable_try_again);
-                return nullptr;
-            }
-        }
-
-        // Handle error conditions
-        int zts_err = zts_errno;
-        // Normalize to host errno space
-        int norm = ZeroTierErrnoCompat::normalize_errno(zts_err);
-        if (norm == EAGAIN || norm == EWOULDBLOCK || norm == ETIMEDOUT) {
-            // Propagate a non-error null to let caller check its own control flags
-            error.clear();
-            return nullptr;
-        }
-
-        if (norm == ECONNABORTED) {
-            // Transient condition: return to caller without error
-            error.clear();
-            return nullptr;
-        }
-
-        if (norm == ESHUTDOWN) {
-            // Treat as timeout-equivalent and let caller decide
-            error.clear();
-            return nullptr;
-        }
-
-        // EBADF can occur if the listening fd was closed between snapshot and accept
-        if (norm == EBADF) {
-            // Treat as closure signal; return quietly
-            error.clear();
-            return nullptr;
-        }
-
-        // Any other error -> return translated error
-        error = translate_error(zts_err);
-        return nullptr;
-    }
 }
 
 void ZeroTierSocket::shutdown() {

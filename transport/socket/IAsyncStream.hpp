@@ -1,8 +1,9 @@
 /**
  * \file IAsyncStream.hpp
- * \brief Combined async client + server stream interface.
+ * \brief Async client stream interface with non-blocking I/O.
  * \ingroup socket_backend
- * \details Aggregates non-blocking read/write plus connect/accept roles.
+ * \details Provides non-blocking read/write plus connect. Server operations
+ * (listen/accept) are on the separate \c IServerSocket interface.
  * \see IClientSocket \see IServerSocket
  */
 #pragma once
@@ -10,12 +11,11 @@
 #include <cstddef>
 #include <system_error>
 #include "IClientSocket.hpp"
-#include "IServerSocket.hpp"
 
-/** \brief Unified async stream interface implementing both client and server roles.
+/** \brief Async stream interface for non-blocking client I/O.
  *  \ingroup socket_backend
  */
-struct IAsyncStream : public virtual IClientSocket, public virtual IServerSocket {
+struct IAsyncStream : public virtual IClientSocket {
     /**
      * \brief Attempt non-blocking read.
      *

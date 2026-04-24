@@ -41,13 +41,13 @@ Task<void> echo_client(std::shared_ptr<Logger> log) {
 }
 ```
 
-Server accept sketch (dedicated acceptor thread + blocking accept):
+Server accept sketch (dedicated acceptor thread + timed accept):
 
 ```cpp
 void accept_loop(std::shared_ptr<CoroSocketAdapter> server, std::shared_ptr<Logger> log) {
     std::error_code ec;
     for (;;) {
-        auto client = server->blocking_accept(ec, std::chrono::milliseconds(250));
+        auto client = server->blocking_accept(ec);
         if (!client) { if (ec) {/* handle error */} continue; }
         // Dispatch a coroutine per client using the same default loop
         // spawn(Task<void>{ /* co_await client->async_read(...); */ });
