@@ -24,16 +24,25 @@ std::optional<std::string> get_host();
 /** \brief TCP port of the rendezvous service. */
 std::optional<int> get_port();
 
-/** \brief HTTP dashboard listen host (rendezvous server only). */
-std::optional<std::string> get_dashboard_host();
+/** \brief VN listen host (rendezvous server only). */
+std::optional<std::string> get_vn_listen_host();
 
-/** \brief HTTP dashboard listen port (rendezvous server only). */
-std::optional<int> get_dashboard_port();
+/** \brief VN listen port for register/discover (rendezvous server only). */
+std::optional<int> get_vn_listen_port();
 
 /** \brief VN listen host for the snapshot relay listener (rendezvous server only). */
 std::optional<std::string> get_snapshot_listen_host();
 
-/** \brief VN port used for monitoring snapshot reports (separate from registration port). */
+/** \brief VN listen port for monitoring snapshot reports (rendezvous server only). */
+std::optional<int> get_snapshot_listen_port();
+
+/** \brief HTTP dashboard listen host (rendezvous server only). */
+std::optional<std::string> get_dashboard_listen_host();
+
+/** \brief HTTP dashboard listen port (rendezvous server only). */
+std::optional<int> get_dashboard_listen_port();
+
+/** \brief Client-side: VN port of the rendezvous service monitoring snapshot listener. */
 std::optional<int> get_snapshot_port();
 
 } // namespace rendezvous_opts

@@ -189,12 +189,15 @@ install_data('LICENSE', install_dir: doc_dir)
 config_dir = get_option('sysconfdir') / 'task-messenger'
 install_data('config/config-dispatcher.json', 'config/config-worker.json', install_dir: config_dir)
 
-# Install dispatcher's ZeroTier identity files (public/secret keys only)
-install_data(
-  'config/vn-rendezvous-identity/identity.public',
-  'config/vn-rendezvous-identity/identity.secret',
-  install_dir: config_dir / 'vn-rendezvous-identity'
-)
+# Install rendezvous server config + ZeroTier identity only when the server is built.
+if get_option('build_rendezvous')
+  install_data('config/config-rendezvous.json', install_dir: config_dir)
+  install_data(
+    'config/vn-rendezvous-identity/identity.public',
+    'config/vn-rendezvous-identity/identity.secret',
+    install_dir: config_dir / 'vn-rendezvous-identity'
+  )
+endif
 
 # Install dispatcher monitoring dashboard assets next to installed binaries.
 # MonitoringService resolves installed UI assets from <bindir>/dashboard.

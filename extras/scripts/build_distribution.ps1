@@ -3,7 +3,7 @@
 
 param(
     [Parameter(Position=0)]
-    [ValidateSet("dispatcher", "worker", "all")]
+    [ValidateSet("dispatcher", "worker", "rendezvous", "all")]
     [string]$Component = "all"
 )
 
@@ -59,10 +59,17 @@ function Build-Component {
     $BuildOptions = @()
     if ($Comp -eq "dispatcher") {
         $BuildOptions += "-Dbuild_worker=false"
+        $BuildOptions += "-Dbuild_rendezvous=false"
         Write-Host "Building dispatcher only (FTXUI disabled for faster build)"
     } elseif ($Comp -eq "worker") {
         $BuildOptions += "-Dbuild_dispatcher=false"
+        $BuildOptions += "-Dbuild_rendezvous=false"
         Write-Host "Building worker only"
+    } elseif ($Comp -eq "rendezvous") {
+        $BuildOptions += "-Dbuild_dispatcher=false"
+        $BuildOptions += "-Dbuild_worker=false"
+        $BuildOptions += "-Dbuild_generators=false"
+        Write-Host "Building rendezvous service only"
     }
     
     # Setup meson
@@ -113,7 +120,11 @@ function Create-Archive {
     }
     
     # Create component-specific directory structure
-    $ComponentName = if ($Comp -eq "dispatcher") { "tm-dispatcher" } else { "tm-worker" }
+    $ComponentName = switch ($Comp) {
+        "dispatcher" { "tm-dispatcher" }
+        "worker"     { "tm-worker" }
+        "rendezvous" { "tm-rendezvous" }
+    }
     $TaskMessengerDir = Join-Path $TempArchiveDir $ComponentName
     New-Item -ItemType Directory -Force -Path $TaskMessengerDir | Out-Null
     
@@ -123,12 +134,13 @@ function Create-Archive {
     
     # Copy files based on component
     if ($Comp -eq "dispatcher") {
-        # Dispatcher: executable, DLL
         Copy-Item (Join-Path $CompStagingPrefix "bin\tm-dispatcher.exe") $BinDir
         Copy-Item (Join-Path $CompStagingPrefix "bin\zt-shared.dll") $BinDir
-    } else {
-        # Worker: executable, DLL
+    } elseif ($Comp -eq "worker") {
         Copy-Item (Join-Path $CompStagingPrefix "bin\tm-worker.exe") $BinDir
+        Copy-Item (Join-Path $CompStagingPrefix "bin\zt-shared.dll") $BinDir
+    } elseif ($Comp -eq "rendezvous") {
+        Copy-Item (Join-Path $CompStagingPrefix "bin\tm-rendezvous.exe") $BinDir
         Copy-Item (Join-Path $CompStagingPrefix "bin\zt-shared.dll") $BinDir
     }
     
@@ -137,9 +149,17 @@ function Create-Archive {
     New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
     Copy-Item (Join-Path $CompStagingPrefix "etc\task-messenger\config-$Comp.json") $ConfigDir
     
-    # Copy dispatcher identity directory (only for dispatcher component)
-    if ($Comp -eq "dispatcher") {
+    # Rendezvous: bundle VN identity (server only); Dispatcher/worker no longer ship identity files.
+    if ($Comp -eq "rendezvous") {
         Copy-Item (Join-Path $CompStagingPrefix "etc\task-messenger\vn-rendezvous-identity") $ConfigDir -Recurse
+    }
+    
+    # Dashboard assets: bundled with both dispatcher (monitoring UI) and rendezvous (service UI).
+    if ($Comp -eq "dispatcher" -or $Comp -eq "rendezvous") {
+        $DashboardSrc = Join-Path $CompStagingPrefix "bin\dashboard"
+        if (Test-Path $DashboardSrc) {
+            Copy-Item $DashboardSrc (Join-Path $TaskMessengerDir "dashboard") -Recurse
+        }
     }
     
     # Copy documentation
@@ -158,8 +178,10 @@ function Create-Archive {
     New-Item -ItemType Directory -Force -Path $LaunchersDir | Out-Null
     if ($Comp -eq "dispatcher") {
         Copy-Item (Join-Path $ProjectRoot "extras\launchers\start-tm-dispatcher.bat") $LaunchersDir
-    } else {
+    } elseif ($Comp -eq "worker") {
         Copy-Item (Join-Path $ProjectRoot "extras\launchers\start-tm-worker.bat") $LaunchersDir
+    } elseif ($Comp -eq "rendezvous") {
+        Copy-Item (Join-Path $ProjectRoot "extras\launchers\start-tm-rendezvous.bat") $LaunchersDir
     }
     
     # Create installation instructions
@@ -192,7 +214,11 @@ For help:
 function Create-SelfExtractingInstaller {
     param([string]$Comp)
     
-    $ComponentName = if ($Comp -eq "dispatcher") { "tm-dispatcher" } else { "tm-worker" }
+    $ComponentName = switch ($Comp) {
+        "dispatcher" { "tm-dispatcher" }
+        "worker"     { "tm-worker" }
+        "rendezvous" { "tm-rendezvous" }
+    }
     $InstallerName = "tm-$Comp-v$Version-$Platform-$Arch-installer.exe"
     $InstallerPath = Join-Path $OutputDir $InstallerName
     $ZipArchive = Join-Path $OutputDir "tm-$Comp-v$Version-$Platform-$Arch.zip"
@@ -263,7 +289,11 @@ exit /b %INSTALL_EXIT_CODE%
     # Build strings with explicit variable expansion to avoid here-string issues
     $InstallPromptText = "Install TaskMessenger $Comp v${Version}?"
     $FriendlyNameText = "TaskMessenger $Comp v${Version} Installer"
-    $ShortcutName = if ($Comp -eq "dispatcher") { "TMDispatcher" } else { "TMWorker" }
+    $ShortcutName = switch ($Comp) {
+        "dispatcher" { "TMDispatcher" }
+        "worker"     { "TMWorker" }
+        "rendezvous" { "TMRendezvous" }
+    }
     $FinishMessageText = "Installed! You can now run it from the Start Menu under $ShortcutName or by typing 'tm-$Comp' in a terminal."
     
     $SedContent = @"
@@ -419,7 +449,7 @@ New-Item -ItemType Directory -Force -Path $StagingDir | Out-Null
 
 # Build and package based on component selection
 if ($Component -eq "all") {
-    foreach ($Comp in @("dispatcher", "worker")) {
+    foreach ($Comp in @("dispatcher", "worker", "rendezvous")) {
         Build-Component -Comp $Comp
         Create-Archive -Comp $Comp
         Create-SelfExtractingInstaller -Comp $Comp

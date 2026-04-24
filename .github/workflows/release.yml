@@ -28,6 +28,7 @@ on:
           - ''
           - 'dispatcher'
           - 'worker'
+          - 'rendezvous'
 
 permissions:
   contents: write
@@ -50,10 +51,13 @@ jobs:
           configs=(
             "windows-latest|\"windows-latest\"|Windows|windows-latest|dispatcher"
             "windows-latest|\"windows-latest\"|Windows|windows-latest|worker"
+            "windows-latest|\"windows-latest\"|Windows|windows-latest|rendezvous"
             "ubuntu-latest|\"ubuntu-latest\"|Linux|ubuntu-latest|dispatcher"
             "ubuntu-latest|\"ubuntu-latest\"|Linux|ubuntu-latest|worker"
+            "ubuntu-latest|\"ubuntu-latest\"|Linux|ubuntu-latest|rendezvous"
             "[self-hosted, macOS, ARM64]|[\"self-hosted\",\"macOS\",\"ARM64\"]|macOS-ARM64|self-hosted-macos|dispatcher"
             "[self-hosted, macOS, ARM64]|[\"self-hosted\",\"macOS\",\"ARM64\"]|macOS-ARM64|self-hosted-macos|worker"
+            "[self-hosted, macOS, ARM64]|[\"self-hosted\",\"macOS\",\"ARM64\"]|macOS-ARM64|self-hosted-macos|rendezvous"
           )
           
           first=true
@@ -469,12 +473,21 @@ jobs:
             - `tm-dispatcher-v*-macos-arm64.command` - Dispatcher GUI installer
             - `tm-dispatcher-v*-macos-arm64.tar.gz` - Dispatcher archive (Homebrew)
           
+          ### Rendezvous Server Component
+          - **Windows**
+            - `tm-rendezvous-v*-windows-x64-installer.exe` - Rendezvous self-extracting installer
+          - **Linux**
+            - `tm-rendezvous-v*-linux-x86_64.run` - Rendezvous self-extracting installer
+          - **macOS (Apple Silicon)**
+            - `tm-rendezvous-v*-macos-arm64.command` - Rendezvous GUI installer
+            - `tm-rendezvous-v*-macos-arm64.tar.gz` - Rendezvous archive (Homebrew)
+          
           ### Installation Methods
           
           - **Windows/Linux**: Double-click the `.exe` or `.run` file
           - **macOS GUI**: Remove quarantine attribute then run: `xattr -d com.apple.quarantine installer.command && ./installer.command`
             - **Alternative**: Double-click the `.command` file. If blocked, go to **System Settings → Privacy & Security** and click **"Open Anyway"**.
-          - **macOS Homebrew**: `brew tap ${{ github.repository_owner }}/task-messenger && brew install tm-dispatcher tm-worker`
+          - **macOS Homebrew**: `brew tap ${{ github.repository_owner }}/task-messenger && brew install tm-dispatcher tm-worker tm-rendezvous`
           - **Manual**: Extract `.tar.gz` archives
           
           📖 **[Full Installation Guide](https://github.com/${{ github.repository }}/blob/main/docs/INSTALLATION.md)**
@@ -505,12 +518,21 @@ jobs:
             - [\`tm-dispatcher-v${VERSION}-macos-arm64.command\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-dispatcher-v${VERSION}-macos-arm64.command) - Double-click GUI installer
             - [\`tm-dispatcher-v${VERSION}-macos-arm64.tar.gz\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-dispatcher-v${VERSION}-macos-arm64.tar.gz) - Manual archive (Homebrew)
           
+          ### Rendezvous Server Component
+          - **Windows**
+            - [\`tm-rendezvous-v${VERSION}-windows-x64-installer.exe\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-rendezvous-v${VERSION}-windows-x64-installer.exe) - Self-extracting installer (double-click to install)
+          - **Linux**
+            - [\`tm-rendezvous-v${VERSION}-linux-x86_64.run\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-rendezvous-v${VERSION}-linux-x86_64.run) - Self-extracting installer (double-click or run in terminal)
+          - **macOS (Apple Silicon)**
+            - [\`tm-rendezvous-v${VERSION}-macos-arm64.command\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-rendezvous-v${VERSION}-macos-arm64.command) - Double-click GUI installer
+            - [\`tm-rendezvous-v${VERSION}-macos-arm64.tar.gz\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-rendezvous-v${VERSION}-macos-arm64.tar.gz) - Manual archive (Homebrew)
+          
           ### Installation Methods
           
           - **Windows/Linux**: Double-click the \`.exe\` or \`.run\` file
           - **macOS GUI**: Remove quarantine attribute then run: \`xattr -d com.apple.quarantine installer.command && ./installer.command\`
             - **Alternative**: Double-click the \`.command\` file. If blocked, go to **System Settings → Privacy & Security** and click **"Open Anyway"**.
-          - **macOS Homebrew**: \`brew tap ${{ github.repository_owner }}/task-messenger && brew install tm-dispatcher tm-worker\`
+          - **macOS Homebrew**: \`brew tap ${{ github.repository_owner }}/task-messenger && brew install tm-dispatcher tm-worker tm-rendezvous\`
           - **Manual**: Extract \`.tar.gz\` archives
           
           📖 **[Full Installation Guide](https://github.com/${{ github.repository }}/blob/main/docs/INSTALLATION.md)**
@@ -664,32 +686,34 @@ jobs:
           
           # Get SHA256 checksums for dispatcher
           DISPATCHER_ARM64_SHA=$(cat artifacts/dispatcher-macOS-ARM64/tm-dispatcher-v${VERSION}-macos-arm64.tar.gz.sha256 | cut -d' ' -f1)
-          DISPATCHER_X86_64_SHA=$(cat artifacts/dispatcher-macOS-x86_64/tm-dispatcher-v${VERSION}-macos-x86_64.tar.gz.sha256 2>/dev/null | cut -d' ' -f1 || echo "PLACEHOLDER_X86_64_SHA256")
           
           # Get SHA256 checksums for worker
           WORKER_ARM64_SHA=$(cat artifacts/worker-macOS-ARM64/tm-worker-v${VERSION}-macos-arm64.tar.gz.sha256 | cut -d' ' -f1)
-          WORKER_X86_64_SHA=$(cat artifacts/worker-macOS-x86_64/tm-worker-v${VERSION}-macos-x86_64.tar.gz.sha256 2>/dev/null | cut -d' ' -f1 || echo "PLACEHOLDER_X86_64_SHA256")
+          
+          # Get SHA256 checksums for rendezvous
+          RENDEZVOUS_ARM64_SHA=$(cat artifacts/rendezvous-macOS-ARM64/tm-rendezvous-v${VERSION}-macos-arm64.tar.gz.sha256 | cut -d' ' -f1)
           
           echo "Dispatcher ARM64 SHA: $DISPATCHER_ARM64_SHA"
-          echo "Dispatcher x86_64 SHA: $DISPATCHER_X86_64_SHA"
           echo "Worker ARM64 SHA: $WORKER_ARM64_SHA"
-          echo "Worker x86_64 SHA: $WORKER_X86_64_SHA"
+          echo "Rendezvous ARM64 SHA: $RENDEZVOUS_ARM64_SHA"
           
           # Update dispatcher formula
           sed -i "s|github.com/GITHUB_REPOSITORY|github.com/${REPO}|g" homebrew/Formula/tm-dispatcher.rb
           sed -i "s/version \".*\"/version \"${VERSION}\"/" homebrew/Formula/tm-dispatcher.rb
           sed -i "s|download/v[0-9.]\+/tm-dispatcher-v[0-9.]\+-macos-arm64|download/v${VERSION}/tm-dispatcher-v${VERSION}-macos-arm64|" homebrew/Formula/tm-dispatcher.rb
-          sed -i "s|download/v[0-9.]\+/tm-dispatcher-v[0-9.]\+-macos-x86_64|download/v${VERSION}/tm-dispatcher-v${VERSION}-macos-x86_64|" homebrew/Formula/tm-dispatcher.rb
           sed -i "0,/sha256 \".*\"/s//sha256 \"${DISPATCHER_ARM64_SHA}\"/" homebrew/Formula/tm-dispatcher.rb
-          sed -i "0,/sha256 \".*\"/s//sha256 \"${DISPATCHER_X86_64_SHA}\"/" homebrew/Formula/tm-dispatcher.rb
           
           # Update worker formula
           sed -i "s|github.com/GITHUB_REPOSITORY|github.com/${REPO}|g" homebrew/Formula/tm-worker.rb
           sed -i "s/version \".*\"/version \"${VERSION}\"/" homebrew/Formula/tm-worker.rb
           sed -i "s|download/v[0-9.]\+/tm-worker-v[0-9.]\+-macos-arm64|download/v${VERSION}/tm-worker-v${VERSION}-macos-arm64|" homebrew/Formula/tm-worker.rb
-          sed -i "s|download/v[0-9.]\+/tm-worker-v[0-9.]\+-macos-x86_64|download/v${VERSION}/tm-worker-v${VERSION}-macos-x86_64|" homebrew/Formula/tm-worker.rb
           sed -i "0,/sha256 \".*\"/s//sha256 \"${WORKER_ARM64_SHA}\"/" homebrew/Formula/tm-worker.rb
-          sed -i "0,/sha256 \".*\"/s//sha256 \"${WORKER_X86_64_SHA}\"/" homebrew/Formula/tm-worker.rb
+          
+          # Update rendezvous formula
+          sed -i "s|github.com/GITHUB_REPOSITORY|github.com/${REPO}|g" homebrew/Formula/tm-rendezvous.rb
+          sed -i "s/version \".*\"/version \"${VERSION}\"/" homebrew/Formula/tm-rendezvous.rb
+          sed -i "s|download/v[0-9.]\+/tm-rendezvous-v[0-9.]\+-macos-arm64|download/v${VERSION}/tm-rendezvous-v${VERSION}-macos-arm64|" homebrew/Formula/tm-rendezvous.rb
+          sed -i "0,/sha256 \".*\"/s//sha256 \"${RENDEZVOUS_ARM64_SHA}\"/" homebrew/Formula/tm-rendezvous.rb
           
           echo "✅ Formulas updated successfully"
       

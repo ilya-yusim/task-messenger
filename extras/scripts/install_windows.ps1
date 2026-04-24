@@ -68,20 +68,20 @@ Examples:
 function Get-DefaultInstallDir {
     param([string]$Component)
     
-    if ($Component -eq "dispatcher") {
-        return Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-dispatcher"
-    } else {
-        return Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-worker"
+    switch ($Component) {
+        "dispatcher" { return Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-dispatcher" }
+        "rendezvous" { return Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-rendezvous" }
+        default      { return Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-worker" }
     }
 }
 
 function Get-ConfigDir {
     param([string]$Component)
     
-    if ($Component -eq "dispatcher") {
-        return Join-Path $env:APPDATA "TaskMessenger\tm-dispatcher"
-    } else {
-        return Join-Path $env:APPDATA "TaskMessenger\tm-worker"
+    switch ($Component) {
+        "dispatcher" { return Join-Path $env:APPDATA "TaskMessenger\tm-dispatcher" }
+        "rendezvous" { return Join-Path $env:APPDATA "TaskMessenger\tm-rendezvous" }
+        default      { return Join-Path $env:APPDATA "TaskMessenger\tm-worker" }
     }
 }
 
@@ -112,11 +112,14 @@ function Test-ExtractedFiles {
         # Detect which component by checking which executable exists
         $managerPath = Join-Path $extractedRoot "bin\tm-dispatcher.exe"
         $workerPath = Join-Path $extractedRoot "bin\tm-worker.exe"
+        $rendezvousPath = Join-Path $extractedRoot "bin\tm-rendezvous.exe"
         
         if (Test-Path $managerPath) {
             return @{ Root = $extractedRoot; Component = "dispatcher" }
         } elseif (Test-Path $workerPath) {
             return @{ Root = $extractedRoot; Component = "worker" }
+        } elseif (Test-Path $rendezvousPath) {
+            return @{ Root = $extractedRoot; Component = "rendezvous" }
         }
     }
     
@@ -126,10 +129,10 @@ function Test-ExtractedFiles {
 function Get-ComponentName {
     param([string]$Component)
     
-    if ($Component -eq "dispatcher") {
-        return "TMDispatcher"
-    } else {
-        return "TMWorker"
+    switch ($Component) {
+        "dispatcher" { return "TMDispatcher" }
+        "rendezvous" { return "TMRendezvous" }
+        default      { return "TMWorker" }
     }
 }
 
@@ -234,8 +237,8 @@ function Install-Component {
         Copy-Item $configFile $configDir -Force
     }
     
-    # Copy identity directory for dispatcher to config directory (APPDATA)
-    if ($Component -eq "dispatcher") {
+    # Copy identity directory for rendezvous server to config directory (APPDATA)
+    if ($Component -eq "rendezvous") {
         $identityDir = Join-Path $configSourceDir "vn-rendezvous-identity"
         
         if (Test-Path $identityDir) {
@@ -260,6 +263,16 @@ function Install-Component {
                     Write-Verbose "Note: Could not set restrictive ACL on identity.secret (requires elevated privileges)"
                 }
             }
+        }
+    }
+    
+    # Copy dashboard assets for components that ship a dashboard UI
+    if ($Component -eq "dispatcher" -or $Component -eq "rendezvous") {
+        $dashboardSrc = Join-Path $extractedDir "dashboard"
+        if (Test-Path $dashboardSrc) {
+            $dashboardDest = Join-Path $InstallDir "bin\dashboard"
+            if (Test-Path $dashboardDest) { Remove-Item -Recurse -Force $dashboardDest }
+            Copy-Item $dashboardSrc $dashboardDest -Recurse -Force
         }
     }
     

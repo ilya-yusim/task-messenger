@@ -1,0 +1,10 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=TaskMessenger Rendezvous
+Comment=TaskMessenger rendezvous/discovery service
+Exec=/path/to/tm-rendezvous
+Icon=applications-system
+Terminal=false
+Categories=Network;System;
+Keywords=task;rendezvous;discovery;distributed;zerotier;
