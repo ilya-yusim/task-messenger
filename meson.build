@@ -51,7 +51,11 @@ add_project_arguments('-I' + meson.project_source_root(), language: 'cpp')
 # Override CLI11's warning_level to match ours and prevent D9025 warnings
 cli11_sp = subproject('CLI11', required : true, default_options: ['warning_level=3'])
 json_sp = subproject('nlohmann_json', required : true)
-httplib_sp = subproject('cpp-httplib', required : true)
+# Force-disable cpp-httplib's TLS support so the build does not auto-link
+# system OpenSSL (e.g. libcrypto-3-x64.dll on GitHub-hosted Windows runners).
+# The monitoring service is local-only (http://127.0.0.1) and does not need TLS.
+httplib_sp = subproject('cpp-httplib', required : true,
+  default_options: ['tls=disabled', 'zlib=disabled', 'brotli=disabled', 'zstd=disabled'])
 
 # Make CLI11 and nlohmann_json available to all subdirectories
 cli11_dep = declare_dependency()
