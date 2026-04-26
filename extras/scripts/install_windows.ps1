@@ -269,11 +269,18 @@ function Install-Component {
         }
     }
     
-    # Copy dashboard assets for components that ship a dashboard UI
+    # Copy dashboard assets for components that ship a dashboard UI.
+    # The runtime resolver looks for `<exe-dir>\dashboard`, and the executable
+    # is installed directly in $InstallDir (no `bin\` subdirectory), so the
+    # dashboard must land at $InstallDir\dashboard — not $InstallDir\bin\dashboard.
     if ($Component -eq "dispatcher" -or $Component -eq "rendezvous") {
         $dashboardSrc = Join-Path $extractedDir "dashboard"
         if (Test-Path $dashboardSrc) {
-            $dashboardDest = Join-Path $InstallDir "bin\dashboard"
+            # Clean up legacy location from older installers, if present.
+            $legacyDashboard = Join-Path $InstallDir "bin\dashboard"
+            if (Test-Path $legacyDashboard) { Remove-Item -Recurse -Force $legacyDashboard }
+
+            $dashboardDest = Join-Path $InstallDir "dashboard"
             if (Test-Path $dashboardDest) { Remove-Item -Recurse -Force $dashboardDest }
             Copy-Item $dashboardSrc $dashboardDest -Recurse -Force
         }
