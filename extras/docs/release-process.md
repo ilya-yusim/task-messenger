@@ -51,6 +51,22 @@ git tag -f vtest
 git push -f origin vtest
 ```
 
+### Removing a tag
+
+If `git tag <name>` reports `fatal: tag '<name>' already exists`, delete the
+existing tag first (locally and on the remote, if it was pushed):
+
+```powershell
+# Delete locally
+git tag -d vtest
+
+# Delete on remote (only if previously pushed)
+git push origin --delete vtest
+```
+
+Then recreate it as needed. For `vtest` you can usually skip the delete and
+just use `git tag -f` / `git push -f` as shown above.
+
 ## Local smoke test (before tagging)
 
 Run the platform-specific distribution script to reproduce the CI build locally.

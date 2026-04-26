@@ -151,6 +151,45 @@ build_component() {
     DESTDIR="$STAGING_DIR/$comp" meson install -C "$builddir"
 }
 
+# Bundle libopenblas.so.* alongside the executable so the installed binary
+# does not rely on the user having libopenblas-dev installed at runtime.
+# Uses `ldd` on the built executable to locate the exact library that was
+# linked, and copies it (dereferencing symlinks) into the archive's lib/
+# as `libopenblas.so.0` (the SONAME the binary actually requests).
+bundle_libopenblas() {
+    local exe_path=$1
+    local archive_lib_dir=$2
+
+    if [[ ! -x "$exe_path" ]]; then
+        return 0
+    fi
+
+    if ! command -v ldd >/dev/null 2>&1; then
+        echo "  warning: ldd not available; skipping libopenblas bundling"
+        return 0
+    fi
+
+    # Parse `ldd` output for libopenblas; example line:
+    #   libopenblas.so.0 => /lib/x86_64-linux-gnu/libopenblas.so.0 (0x00007f...)
+    local resolved
+    resolved=$(ldd "$exe_path" 2>/dev/null | awk '/libopenblas\.so/ {print $3; exit}')
+
+    if [[ -z "$resolved" || "$resolved" == "not" ]]; then
+        # Either binary doesn't link libopenblas or ldd couldn't resolve it.
+        return 0
+    fi
+
+    if [[ ! -f "$resolved" ]]; then
+        echo "  warning: ldd reports libopenblas at '$resolved' but file not found"
+        return 0
+    fi
+
+    mkdir -p "$archive_lib_dir"
+    # Dereference symlinks so the archive contains the real shared object.
+    cp -L "$resolved" "$archive_lib_dir/libopenblas.so.0"
+    echo "  bundled libopenblas: $resolved -> $archive_lib_dir/libopenblas.so.0"
+}
+
 # Function to create archive for a component
 create_archive() {
     local comp=$1
@@ -184,6 +223,9 @@ create_archive() {
         mkdir -p "$archive_root/lib"
         cp "$staging_prefix/lib/libzt.so" "$archive_root/lib/libzt.so"
 
+        # Bundle libopenblas if the dispatcher binary links it (BLAS skills enabled).
+        bundle_libopenblas "$archive_root/bin/tm-dispatcher" "$archive_root/lib"
+
         mkdir -p "$archive_root/config"
         cp "$staging_prefix/etc/task-messenger/config-dispatcher.json" "$archive_root/config/"
 
@@ -205,6 +247,9 @@ create_archive() {
         mkdir -p "$archive_root/lib"
         cp "$staging_prefix/lib/libzt.so" "$archive_root/lib/libzt.so"
 
+        # Bundle libopenblas (worker links it for BLAS-backed skills).
+        bundle_libopenblas "$archive_root/bin/tm-worker" "$archive_root/lib"
+
         mkdir -p "$archive_root/config"
         cp "$staging_prefix/etc/task-messenger/config-worker.json" "$archive_root/config/"
 
@@ -221,8 +266,10 @@ create_archive() {
         mkdir -p "$archive_root/lib"
         cp "$staging_prefix/lib/libzt.so" "$archive_root/lib/libzt.so"
 
-        mkdir -p "$archive_root/config"
-        cp "$staging_prefix/etc/task-messenger/config-rendezvous.json" "$archive_root/config/"
+        # Bundle libopenblas if the rendezvous binary links it.
+        bundle_libopenblas "$archive_root/bin/tm-rendezvous" "$archive_root/lib"
+
+        mkdir -p "$archive_root/config"        cp "$staging_prefix/etc/task-messenger/config-rendezvous.json" "$archive_root/config/"
         cp -r "$staging_prefix/etc/task-messenger/vn-rendezvous-identity" "$archive_root/config/"
 
         # Dashboard assets are served by rendezvous service UI
