@@ -269,7 +269,8 @@ create_archive() {
         # Bundle libopenblas if the rendezvous binary links it.
         bundle_libopenblas "$archive_root/bin/tm-rendezvous" "$archive_root/lib"
 
-        mkdir -p "$archive_root/config"        cp "$staging_prefix/etc/task-messenger/config-rendezvous.json" "$archive_root/config/"
+        mkdir -p "$archive_root/config"
+        cp "$staging_prefix/etc/task-messenger/config-rendezvous.json" "$archive_root/config/"
         cp -r "$staging_prefix/etc/task-messenger/vn-rendezvous-identity" "$archive_root/config/"
 
         # Dashboard assets are served by rendezvous service UI
