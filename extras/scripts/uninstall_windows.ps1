@@ -3,7 +3,7 @@
 
 param(
     [Parameter(Mandatory=$false, Position=0)]
-    [ValidateSet("dispatcher", "worker", "all")]
+    [ValidateSet("dispatcher", "worker", "rendezvous", "all")]
     [string]$Component,
     
     [Parameter(Mandatory=$false)]
@@ -54,7 +54,7 @@ TaskMessenger Windows Uninstallation Script
 Usage: .\uninstall_windows.ps1 [component] [OPTIONS]
 
 Arguments:
-  component              Either 'dispatcher', 'worker', or 'all' (auto-detected if not specified)
+  component              Either 'dispatcher', 'worker', 'rendezvous', or 'all' (auto-detected if not specified)
 
 Options:
   -InstallDir PATH       Custom installation directory (optional, auto-detected by default)
@@ -64,13 +64,15 @@ Options:
 Note: If component is not specified, the script will detect the installation from its location or prompt you to choose.
 
 Installation directories:
-  Dispatcher: %LOCALAPPDATA%\TaskMessageDispatcher
-  Worker:     %LOCALAPPDATA%\TaskMessageWorker
+  Dispatcher: %LOCALAPPDATA%\TaskMessenger\tm-dispatcher
+  Worker:     %LOCALAPPDATA%\TaskMessenger\tm-worker
+  Rendezvous: %LOCALAPPDATA%\TaskMessenger\tm-rendezvous
 
 Examples:
   .\uninstall_windows.ps1
   .\uninstall_windows.ps1 dispatcher
   .\uninstall_windows.ps1 worker -RemoveConfig
+  .\uninstall_windows.ps1 rendezvous
   .\uninstall_windows.ps1 all
 
 "@
@@ -83,6 +85,8 @@ function Get-DefaultInstallDir {
         return Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-dispatcher"
     } elseif ($Component -eq "worker") {
         return Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-worker"
+    } elseif ($Component -eq "rendezvous") {
+        return Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-rendezvous"
     } else {
         # For 'all', return parent directory
         return $env:LOCALAPPDATA
@@ -94,6 +98,8 @@ function Get-ConfigDir {
     
     if ($Component -eq "dispatcher") {
         return Join-Path $env:APPDATA "TaskMessenger\tm-dispatcher"
+    } elseif ($Component -eq "rendezvous") {
+        return Join-Path $env:APPDATA "TaskMessenger\tm-rendezvous"
     } else {
         return Join-Path $env:APPDATA "TaskMessenger\tm-worker"
     }
@@ -104,6 +110,8 @@ function Get-ComponentName {
     
     if ($Component -eq "dispatcher") {
         return "TMDispatcher"
+    } elseif ($Component -eq "rendezvous") {
+        return "TMRendezvous"
     } else {
         return "TMWorker"
     }
@@ -115,11 +123,15 @@ function Test-Installation {
     if ($Component -eq "all") {
         $dispatcherBinDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-dispatcher"
         $workerBinDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-worker"
+        $rendezvousBinDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-rendezvous"
         $dispatcherCfgDir = Join-Path $env:APPDATA "TaskMessenger\tm-dispatcher"
         $workerCfgDir = Join-Path $env:APPDATA "TaskMessenger\tm-worker"
+        $rendezvousCfgDir = Join-Path $env:APPDATA "TaskMessenger\tm-rendezvous"
         
         if (-not (Test-Path $dispatcherBinDir) -and -not (Test-Path $workerBinDir) -and
-            -not (Test-Path $dispatcherCfgDir) -and -not (Test-Path $workerCfgDir)) {
+            -not (Test-Path $rendezvousBinDir) -and
+            -not (Test-Path $dispatcherCfgDir) -and -not (Test-Path $workerCfgDir) -and
+            -not (Test-Path $rendezvousCfgDir)) {
             Exit-WithError "No TaskMessenger installation found"
         }
     } else {
@@ -151,6 +163,7 @@ function Get-InstalledComponents {
     
     $dispatcherDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-dispatcher"
     $workerDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-worker"
+    $rendezvousDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-rendezvous"
     
     if (Test-Path $dispatcherDir) {
         $components += "dispatcher"
@@ -158,6 +171,10 @@ function Get-InstalledComponents {
     
     if (Test-Path $workerDir) {
         $components += "worker"
+    }
+    
+    if (Test-Path $rendezvousDir) {
+        $components += "rendezvous"
     }
     
     return $components
@@ -177,17 +194,19 @@ function Select-Component {
     Write-Info "Multiple components are installed:"
     Write-Host "  1. dispatcher"
     Write-Host "  2. worker"
-    Write-Host "  3. all (both)"
+    Write-Host "  3. rendezvous"
+    Write-Host "  4. all"
     Write-Host ""
     
     do {
-        $choice = Read-Host "Select component to uninstall [1-3]"
+        $choice = Read-Host "Select component to uninstall [1-4]"
         
         switch ($choice) {
             "1" { return "dispatcher" }
             "2" { return "worker" }
-            "3" { return "all" }
-            default { Write-Warning "Invalid choice. Please enter 1, 2, or 3." }
+            "3" { return "rendezvous" }
+            "4" { return "all" }
+            default { Write-Warning "Invalid choice. Please enter 1, 2, 3, or 4." }
         }
     } while ($true)
 }
@@ -200,11 +219,14 @@ function Get-ComponentFromScriptLocation {
     # Check if script is in a component directory
     $dispatcherDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-dispatcher"
     $workerDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-worker"
+    $rendezvousDir = Join-Path $env:LOCALAPPDATA "TaskMessenger\tm-rendezvous"
     
     if ($scriptDir -eq $dispatcherDir) {
         return "dispatcher"
     } elseif ($scriptDir -eq $workerDir) {
         return "worker"
+    } elseif ($scriptDir -eq $rendezvousDir) {
+        return "rendezvous"
     }
     
     # Not in a component directory - return null to trigger prompt
@@ -282,7 +304,7 @@ function Remove-FromPath {
 function Remove-StartMenuShortcut {
     param([string]$Component)
     
-    $componentName = if ($Component -eq "dispatcher") { "TMDispatcher" } else { "TMWorker" }
+    $componentName = Get-ComponentName -Component $Component
     $startMenuDir = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\$componentName"
     
     if (Test-Path $startMenuDir) {
@@ -379,8 +401,8 @@ function Main {
         Write-Info "Install location: $InstallDir"
         Write-Info "Config location:  $configDir"
     } else {
-        Write-Info "Install locations: %LOCALAPPDATA%\TaskMessenger\tm-dispatcher and tm-worker"
-        Write-Info "Config locations:  %APPDATA%\TaskMessenger\tm-dispatcher and tm-worker"
+        Write-Info "Install locations: %LOCALAPPDATA%\TaskMessenger\{tm-dispatcher, tm-worker, tm-rendezvous}"
+        Write-Info "Config locations:  %APPDATA%\TaskMessenger\{tm-dispatcher, tm-worker, tm-rendezvous}"
     }
     Write-Info "Remove config:    $RemoveConfig"
     Write-Info "=========================================="
@@ -390,10 +412,12 @@ function Main {
     if ($Component -eq "all") {
         Remove-Component -Component "dispatcher"
         Remove-Component -Component "worker"
+        Remove-Component -Component "rendezvous"
         
         if ($RemoveConfig) {
             Remove-ConfigFile -Component "dispatcher"
             Remove-ConfigFile -Component "worker"
+            Remove-ConfigFile -Component "rendezvous"
         }
     } else {
         Remove-Component -Component $Component

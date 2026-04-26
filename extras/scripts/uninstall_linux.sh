@@ -40,11 +40,11 @@ show_usage() {
 Usage: $0 [component] [OPTIONS]
 
 Arguments:
-  component              Either 'dispatcher' or 'worker' (auto-detected if not specified)
+  component              Either 'dispatcher', 'worker', or 'rendezvous' (auto-detected if not specified)
 
 Options:
-  --install-dir PATH     Custom installation directory (default: ~/.local/share/task-message-{dispatcher|worker})
-  --remove-config        Also remove configuration files from ~/.config/task-message-{dispatcher|worker}
+  --install-dir PATH     Custom installation directory (default: ~/.local/share/task-message-{dispatcher|worker|rendezvous})
+  --remove-config        Also remove configuration files from ~/.config/task-message-{dispatcher|worker|rendezvous}
   --help                 Show this help message
 
 Note: If component is not specified, the script will attempt to detect it from the script location.
@@ -53,6 +53,7 @@ Examples:
   $0
   $0 dispatcher
   $0 worker --remove-config
+  $0 rendezvous
   $0 dispatcher --install-dir /custom/path
 
 EOF
@@ -91,6 +92,9 @@ get_component_from_script_location() {
         return 0
     elif [[ "$dir_name" == "tm-worker" ]]; then
         echo "worker:$parent_dir"
+        return 0
+    elif [[ "$dir_name" == "tm-rendezvous" ]]; then
+        echo "rendezvous:$parent_dir"
         return 0
     fi
     
@@ -179,8 +183,8 @@ main() {
                 shift
                 
                 # Validate component if specified
-                if [ "$COMPONENT" != "dispatcher" ] && [ "$COMPONENT" != "worker" ]; then
-                    print_error "Invalid component: $COMPONENT. Must be 'dispatcher' or 'worker'"
+                if [ "$COMPONENT" != "dispatcher" ] && [ "$COMPONENT" != "worker" ] && [ "$COMPONENT" != "rendezvous" ]; then
+                    print_error "Invalid component: $COMPONENT. Must be 'dispatcher', 'worker', or 'rendezvous'"
                     show_usage
                     exit 1
                 fi
@@ -222,7 +226,7 @@ main() {
             fi
             print_info "Auto-detected component: $COMPONENT"
         else
-            print_error "Could not auto-detect component. Please specify 'dispatcher' or 'worker'."
+            print_error "Could not auto-detect component. Please specify 'dispatcher', 'worker', or 'rendezvous'."
             show_usage
             exit 1
         fi
