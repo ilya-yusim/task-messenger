@@ -132,7 +132,7 @@ jobs:
           chmod 0755 "\$TMP/\$ASSET"
 
           echo "[deploy] running installer as tmrdv"
-          sudo -u tmrdv -H bash -c "cd '\$TMP' && ./\$ASSET --accept"
+          sudo -u tmrdv HOME=/var/lib/tm-rendezvous bash -c "cd '\$TMP' && ./\$ASSET --accept"
 
           echo "[deploy] restarting service"
           sudo systemctl restart tm-rendezvous.service

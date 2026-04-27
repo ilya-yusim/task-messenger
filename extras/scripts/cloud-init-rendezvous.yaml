@@ -22,7 +22,7 @@
 users:
   - name: tmrdv
     system: true
-    home: /var/lib/tm-rendezvous
+    homedir: /var/lib/tm-rendezvous
     shell: /bin/bash
     lock_passwd: true   # service account, no password login
 
@@ -181,7 +181,7 @@ write_files:
       curl -fL --retry 3 -o "$TMP/$ASSET" "$URL"
       chmod +x "$TMP/$ASSET"
       log "Running installer as tmrdv"
-      sudo -u tmrdv -H bash -c "cd '$TMP' && ./$ASSET --accept"
+      sudo -u tmrdv HOME=/var/lib/tm-rendezvous bash -c "cd '$TMP' && ./$ASSET --accept"
       rm -rf "$TMP"
 
       systemctl daemon-reload
