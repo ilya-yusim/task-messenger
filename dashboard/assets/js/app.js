@@ -1,7 +1,12 @@
 function monitoringDashboard() {
   return {
     listenHost: window.location.hostname || "127.0.0.1",
-    listenPort: window.location.port || "9090",
+    // Empty until the first /api/monitor snapshot arrives. We deliberately
+    // do NOT fall back to a hardcoded port here — when the page is served
+    // over 80/443 (e.g. behind a reverse proxy), window.location.port is ""
+    // and inventing a port like "9090" would mislead the user into thinking
+    // the dashboard is reachable on that port.
+    listenPort: window.location.port || "",
     pollIntervalMs: 1000,
     lastUpdateText: "never",
     errorMessage: "",
@@ -184,6 +189,17 @@ function monitoringDashboard() {
           },
           cache: "no-store",
         });
+
+        // 503 with {"error":"no snapshot available"} is the rendezvous
+        // server's expected response when no dispatcher has uploaded a
+        // snapshot yet. Treat it as a benign "waiting" state instead of
+        // surfacing it as an error to the user.
+        if (response.status === 503) {
+          this.consecutiveFailures = 0;
+          this.errorMessage = "";
+          this.lastUpdateText = "waiting for dispatcher snapshot…";
+          return;
+        }
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}`);

@@ -21,7 +21,7 @@
             <h1 class="display-title mb-0">Dispatcher Monitoring</h1>
           </div>
           <div class="text-end small text-muted">
-            <div>Host: <span x-text="listenHost"></span>:<span x-text="listenPort"></span></div>
+            <div>Host: <span x-text="listenHost"></span><template x-if="listenPort"><span>:<span x-text="listenPort"></span></span></template></div>
             <div>Last update: <span x-text="lastUpdateText"></span></div>
           </div>
         </div>
