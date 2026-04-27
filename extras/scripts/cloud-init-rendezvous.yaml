@@ -181,7 +181,7 @@ write_files:
       curl -fL --retry 3 -o "$TMP/$ASSET" "$URL"
       chmod +x "$TMP/$ASSET"
       log "Running installer as tmrdv"
-      sudo -u tmrdv -H bash -c "cd '$TMP' && ./$ASSET"
+      sudo -u tmrdv -H bash -c "cd '$TMP' && ./$ASSET --accept"
       rm -rf "$TMP"
 
       systemctl daemon-reload
