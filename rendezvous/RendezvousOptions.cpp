@@ -44,7 +44,7 @@ void register_options() {
         std::string snapshot_listen_host_default = "0.0.0.0";
         int snapshot_listen_port_default = 8089;
         std::string dashboard_listen_host_default = "127.0.0.1";
-        int dashboard_listen_port_default = 9091;
+        int dashboard_listen_port_default = 8080;
 
         if (j.contains("rendezvous") && j["rendezvous"].is_object()) {
             const auto& rj = j["rendezvous"];
@@ -127,7 +127,7 @@ void register_options() {
                        "Server: HTTP dashboard listen host (default 127.0.0.1)")
             ->group("Rendezvous Server");
         app.add_option("--rendezvous-dashboard-listen-port", g_rendezvous_dashboard_listen_port,
-                       "Server: HTTP dashboard listen port (default 9091)")
+                       "Server: HTTP dashboard listen port (default 8080)")
             ->check(CLI::Range(1, 65535))
             ->group("Rendezvous Server");
     });
