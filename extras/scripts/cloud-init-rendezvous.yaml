@@ -1,0 +1,187 @@
+#cloud-config
+# cloud-init bootstrap for the tm-rendezvous GCP VM.
+#
+# This script handles OS-level setup only:
+#   - Creates the unprivileged `tmrdv` service user
+#   - Installs Caddy (reverse proxy + automatic Let's Encrypt TLS)
+#   - Installs the DuckDNS update timer
+#   - Installs the tm-rendezvous systemd unit
+#   - Downloads and runs the tm-rendezvous .run installer
+#
+# The rendezvous ZeroTier identity and config-rendezvous.json are NOT managed
+# here — they are produced/placed by the tm-rendezvous installer itself.
+#
+# Pass to `gcloud compute instances create` via:
+#   --metadata-from-file=user-data=extras/scripts/cloud-init-rendezvous.yaml \
+#   --metadata=duckdns-domain=taskmessenger-rdv,\
+# duckdns-token=<TOKEN>,\
+# rendezvous-repo=<owner>/task-messenger,\
+# rendezvous-tag=v1.2.3,\
+# rendezvous-dashboard-port=8080
+
+users:
+  - name: tmrdv
+    system: true
+    home: /var/lib/tm-rendezvous
+    shell: /bin/bash
+    lock_passwd: true   # service account, no password login
+
+package_update: true
+package_upgrade: false
+packages:
+  - curl
+  - gnupg
+  - ca-certificates
+  - jq
+
+write_files:
+  - path: /etc/systemd/system/tm-rendezvous.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=TaskMessenger Rendezvous Server
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=simple
+      User=tmrdv
+      Group=tmrdv
+      Environment=HOME=/var/lib/tm-rendezvous
+      Environment=LD_LIBRARY_PATH=/var/lib/tm-rendezvous/.local/share/task-messenger/tm-rendezvous/lib
+      ExecStart=/var/lib/tm-rendezvous/.local/share/task-messenger/tm-rendezvous/bin/tm-rendezvous \
+        -c /var/lib/tm-rendezvous/.config/task-messenger/tm-rendezvous/config-rendezvous.json
+      Restart=on-failure
+      RestartSec=5
+
+      # Hardening
+      NoNewPrivileges=true
+      ProtectSystem=strict
+      ProtectHome=true
+      ReadWritePaths=/var/lib/tm-rendezvous
+      PrivateTmp=true
+
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /etc/systemd/system/duckdns.service
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=DuckDNS update
+      After=network-online.target
+      Wants=network-online.target
+
+      [Service]
+      Type=oneshot
+      EnvironmentFile=/etc/duckdns.env
+      ExecStart=/usr/local/bin/duckdns-update.sh
+
+  - path: /etc/systemd/system/duckdns.timer
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Run DuckDNS update every 5 minutes
+
+      [Timer]
+      OnBootSec=1min
+      OnUnitActiveSec=5min
+      Persistent=true
+
+      [Install]
+      WantedBy=timers.target
+
+  - path: /usr/local/bin/duckdns-update.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -eu
+      : "${DUCKDNS_DOMAIN:?missing}"
+      : "${DUCKDNS_TOKEN:?missing}"
+      curl -fsS --retry 3 \
+        "https://www.duckdns.org/update?domains=${DUCKDNS_DOMAIN}&token=${DUCKDNS_TOKEN}&ip=" \
+        >> /var/log/duckdns.log 2>&1
+
+  - path: /usr/local/bin/tm-rendezvous-bootstrap.sh
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      # First-boot bootstrap. Idempotent — safe to re-run.
+      set -euo pipefail
+
+      log() { echo "[bootstrap] $*"; }
+
+      MD="http://metadata.google.internal/computeMetadata/v1/instance/attributes"
+      H="Metadata-Flavor: Google"
+      get_md() { curl -fsS -H "$H" "${MD}/$1" 2>/dev/null || true; }
+
+      DUCKDNS_DOMAIN="$(get_md duckdns-domain)"
+      DUCKDNS_TOKEN="$(get_md duckdns-token)"
+      REPO="$(get_md rendezvous-repo)"
+      TAG="$(get_md rendezvous-tag)"
+      DASHBOARD_PORT="$(get_md rendezvous-dashboard-port)"
+      DASHBOARD_PORT="${DASHBOARD_PORT:-8080}"
+
+      if [[ -z "$DUCKDNS_DOMAIN" || -z "$DUCKDNS_TOKEN" ]]; then
+        log "ERROR: duckdns-domain / duckdns-token metadata missing"; exit 1
+      fi
+      if [[ -z "$REPO" || -z "$TAG" ]]; then
+        log "ERROR: rendezvous-repo / rendezvous-tag metadata missing"; exit 1
+      fi
+
+      # ── DuckDNS env file ───────────────────────────────────────────────
+      install -m 0600 /dev/null /etc/duckdns.env
+      cat > /etc/duckdns.env <<EOF
+      DUCKDNS_DOMAIN=${DUCKDNS_DOMAIN}
+      DUCKDNS_TOKEN=${DUCKDNS_TOKEN}
+      EOF
+
+      systemctl daemon-reload
+      systemctl enable --now duckdns.timer
+      # Force one immediate update so Caddy can fetch a cert.
+      systemctl start duckdns.service || true
+
+      # ── Caddy install (idempotent) ─────────────────────────────────────
+      if ! command -v caddy >/dev/null 2>&1; then
+        log "Installing Caddy"
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
+          | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+        curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
+          > /etc/apt/sources.list.d/caddy-stable.list
+        apt-get update
+        apt-get install -y caddy
+      fi
+
+      cat > /etc/caddy/Caddyfile <<EOF
+      ${DUCKDNS_DOMAIN}.duckdns.org {
+          reverse_proxy 127.0.0.1:${DASHBOARD_PORT}
+      }
+      EOF
+      systemctl reload caddy || systemctl restart caddy
+
+      # ── Install tm-rendezvous ──────────────────────────────────────────
+      # The .run installer creates the user-local install tree under
+      # $HOME/.local/share/task-messenger/tm-rendezvous and the config
+      # tree under $HOME/.config/task-messenger/tm-rendezvous, including
+      # the rendezvous identity files.
+      RDV_HOME=/var/lib/tm-rendezvous
+      install -d -o tmrdv -g tmrdv -m 750 "$RDV_HOME"
+
+      ASSET="tm-rendezvous-${TAG}-linux-x86_64.run"
+      URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
+      TMP="$(mktemp -d)"
+      log "Downloading $URL"
+      curl -fL --retry 3 -o "$TMP/$ASSET" "$URL"
+      chmod +x "$TMP/$ASSET"
+      log "Running installer as tmrdv"
+      sudo -u tmrdv -H bash -c "cd '$TMP' && ./$ASSET"
+      rm -rf "$TMP"
+
+      systemctl daemon-reload
+      systemctl enable --now tm-rendezvous.service || \
+        log "tm-rendezvous failed to start; check 'journalctl -u tm-rendezvous'"
+
+      log "Bootstrap complete"
+
+runcmd:
+  - [ /usr/local/bin/tm-rendezvous-bootstrap.sh ]

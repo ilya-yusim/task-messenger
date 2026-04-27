@@ -1,0 +1,158 @@
+name: Deploy Rendezvous to GCP
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to deploy (default: latest non-prerelease)'
+        required: false
+        type: string
+      deploy_prerelease:
+        description: 'Allow deploying a prerelease tag (default: false; non-prereleases are always allowed)'
+        required: false
+        type: boolean
+        default: false
+
+# WIF (Workload Identity Federation) is the recommended auth path:
+# no long-lived service account keys stored in GitHub.
+permissions:
+  contents: read
+  id-token: write   # required for google-github-actions/auth via OIDC
+
+env:
+  GCP_PROJECT:     ${{ vars.GCP_PROJECT }}        # e.g. task-messenger-prod
+  GCP_ZONE:        ${{ vars.GCP_ZONE }}           # e.g. us-west1-a
+  GCP_VM_NAME:     ${{ vars.GCP_VM_NAME }}        # e.g. tm-rendezvous
+  WIF_PROVIDER:    ${{ vars.GCP_WIF_PROVIDER }}   # projects/N/locations/global/workloadIdentityPools/POOL/providers/PROVIDER
+  WIF_SA:          ${{ vars.GCP_DEPLOY_SA }}      # github-deployer@<project>.iam.gserviceaccount.com
+  HEALTHCHECK_URL: ${{ vars.RENDEZVOUS_HEALTHCHECK_URL }}  # https://<host>/healthz
+
+jobs:
+  resolve:
+    name: Resolve tag & gate prereleases
+    runs-on: ubuntu-latest
+    outputs:
+      tag:        ${{ steps.gate.outputs.tag }}
+      should_run: ${{ steps.gate.outputs.should_run }}
+    steps:
+      - name: Determine tag and prerelease status
+        id: gate
+        env:
+          GH_TOKEN:      ${{ secrets.GITHUB_TOKEN }}
+          EVENT:         ${{ github.event_name }}
+          RELEASE_TAG:   ${{ github.event.release.tag_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          INPUT_TAG:     ${{ inputs.tag }}
+          ALLOW_PRE:     ${{ inputs.deploy_prerelease }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$EVENT" == "release" ]]; then
+            tag="$RELEASE_TAG"
+            is_pre="$IS_PRERELEASE"
+            allow_pre="false"   # never auto-deploy prereleases on release event
+          else
+            # workflow_dispatch
+            allow_pre="$ALLOW_PRE"
+            if [[ -n "$INPUT_TAG" ]]; then
+              tag="$INPUT_TAG"
+            else
+              tag="$(gh release list --repo "$GITHUB_REPOSITORY" --limit 20 \
+                       --json tagName,isPrerelease \
+                     | jq -r 'map(select(.isPrerelease|not)) | .[0].tagName')"
+              if [[ -z "$tag" || "$tag" == "null" ]]; then
+                echo "::error::no non-prerelease release found"; exit 1
+              fi
+            fi
+            is_pre="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" \
+                       --json isPrerelease -q .isPrerelease)"
+          fi
+
+          echo "Resolved tag=$tag prerelease=$is_pre allow_pre=$allow_pre event=$EVENT"
+
+          should_run="true"
+          if [[ "$is_pre" == "true" && "$allow_pre" != "true" ]]; then
+            echo "::notice::Skipping deploy: $tag is a prerelease and deploy_prerelease=false"
+            should_run="false"
+          fi
+
+          {
+            echo "tag=$tag"
+            echo "should_run=$should_run"
+          } >> "$GITHUB_OUTPUT"
+
+  deploy:
+    name: Deploy ${{ needs.resolve.outputs.tag }} to ${{ vars.GCP_VM_NAME }}
+    needs: resolve
+    if: needs.resolve.outputs.should_run == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate to GCP (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ env.WIF_PROVIDER }}
+          service_account: ${{ env.WIF_SA }}
+
+      - name: Set up gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT }}
+
+      - name: Verify release asset exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+          asset="tm-rendezvous-${TAG}-linux-x86_64.run"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets \
+            | jq -e --arg n "$asset" '.assets[] | select(.name == $n)' > /dev/null
+          echo "Asset $asset exists in release $TAG"
+
+      - name: Deploy on VM via IAP SSH
+        env:
+          TAG: ${{ needs.resolve.outputs.tag }}
+        run: |
+          set -euo pipefail
+          remote_cmd=$(cat <<EOF
+          set -euo pipefail
+          REPO="$GITHUB_REPOSITORY"
+          TAG="$TAG"
+          ASSET="tm-rendezvous-\${TAG}-linux-x86_64.run"
+          URL="https://github.com/\${REPO}/releases/download/\${TAG}/\${ASSET}"
+          TMP="\$(mktemp -d)"
+          trap 'rm -rf "\$TMP"' EXIT
+
+          echo "[deploy] downloading \$URL"
+          curl -fL --retry 3 -o "\$TMP/\$ASSET" "\$URL"
+          chmod +x "\$TMP/\$ASSET"
+
+          echo "[deploy] running installer as tmrdv"
+          sudo -u tmrdv -H bash -c "cd '\$TMP' && ./\$ASSET"
+
+          echo "[deploy] restarting service"
+          sudo systemctl restart tm-rendezvous.service
+          sudo systemctl is-active tm-rendezvous.service
+          EOF
+          )
+          gcloud compute ssh "$GCP_VM_NAME" \
+            --zone="$GCP_ZONE" \
+            --tunnel-through-iap \
+            --command="$remote_cmd"
+
+      - name: Health check
+        if: env.HEALTHCHECK_URL != ''
+        run: |
+          set -euo pipefail
+          for i in 1 2 3 4 5 6; do
+            if curl -fsS --max-time 5 "$HEALTHCHECK_URL" >/dev/null; then
+              echo "Healthcheck OK on attempt $i"
+              exit 0
+            fi
+            echo "attempt $i failed; retrying in 5s"
+            sleep 5
+          done
+          echo "::error::Healthcheck failed after retries: $HEALTHCHECK_URL"
+          exit 1
