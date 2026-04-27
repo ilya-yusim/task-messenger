@@ -361,13 +361,28 @@ Two pieces of automation live in this repo to remove the manual steps above:
 1. **`extras/scripts/cloud-init-rendezvous.yaml`** — `cloud-init` user-data
    that runs on the VM's first boot. It creates the unprivileged `tmrdv`
    service user, installs Caddy + DuckDNS timer + the `tm-rendezvous`
-   systemd unit, and downloads/runs the requested release's `.run`
-   installer. Replaces manual steps 4–7.
+   systemd unit. If `rendezvous-tag` metadata is supplied, it also
+   downloads/runs that release's `.run` installer; otherwise the binary
+   is installed by the next GitHub Actions deploy. Replaces manual
+   steps 4–7.
 2. **`.github/workflows/deploy-rendezvous.yml`** — GitHub Actions workflow
    that, on each published release (or via `workflow_dispatch`), SSHes into
    the VM, installs the new `.run`, restarts the service, and verifies
    `/healthz`. Authenticates to GCP via Workload Identity Federation (no
    long-lived service account keys in GitHub).
+
+Two helper scripts wrap the one-time GCP setup and VM creation from a
+Windows / PowerShell 5.1 dev box:
+
+- **`extras/scripts/setup_gcp_deployer.ps1`** — idempotent one-time setup of
+  the `github-deployer` service account, IAM roles, Workload Identity
+  Federation pool/provider scoped to your repo, and the
+  `roles/iam.workloadIdentityUser` binding. Prints the values to paste
+  into GitHub repo Variables. Run once per project.
+- **`extras/scripts/create_rendezvous_vm.ps1`** — wraps the
+  `gcloud compute instances create` invocation with the cloud-init
+  user-data and metadata baked in. Defaults match the recipe documented
+  here; only `-DuckdnsToken` is required.
 
 The ZeroTier identity files (`vn-rendezvous-identity/`) and
 `config-rendezvous.json` are produced by the `tm-rendezvous` installer
@@ -375,7 +390,20 @@ itself; the cloud-init script does **not** manage them.
 
 ### One-time GCP setup
 
-Replace `OWNER`, project ID, etc. as appropriate.
+The quickest path is the PowerShell helper:
+
+```powershell
+.\extras\scripts\setup_gcp_deployer.ps1 `
+    -Project task-messenger-prod -Owner OWNER
+```
+
+It creates the service account, grants the three IAM roles, creates the WIF
+pool + OIDC provider scoped to `OWNER/task-messenger`, and prints the
+`GCP_DEPLOY_SA` and `GCP_WIF_PROVIDER` values to paste into GitHub repo
+Variables. The script is idempotent — safe to re-run.
+
+The equivalent raw `gcloud` commands (substitute `OWNER`, project ID, etc.)
+are:
 
 ```bash
 PROJECT=task-messenger-prod
@@ -431,6 +459,21 @@ No secrets are required (WIF is keyless).
 
 ### Create the VM with cloud-init
 
+From PowerShell (defaults match the values in this doc; only the DuckDNS
+token is required):
+
+```powershell
+.\extras\scripts\create_rendezvous_vm.ps1 -DuckdnsToken <YOUR_DUCKDNS_TOKEN>
+```
+
+With no `-Tag`, cloud-init installs only Caddy + DuckDNS and leaves the
+`tm-rendezvous` binary install to the GitHub Actions workflow's first run
+(triggered by publishing a release or via **Run workflow** in the Actions
+tab). Pass `-Tag v1.2.3` if you want the VM to come up already serving
+that release on first boot.
+
+The equivalent raw `gcloud` invocation is:
+
 ```bash
 gcloud compute instances create tm-rendezvous \
   --zone=us-west1-a \
@@ -441,8 +484,11 @@ gcloud compute instances create tm-rendezvous \
   --boot-disk-type=pd-standard \
   --tags=http-server,https-server \
   --metadata-from-file=user-data=extras/scripts/cloud-init-rendezvous.yaml \
-  --metadata=duckdns-domain=taskmessenger-rdv,duckdns-token=YOUR_DUCKDNS_TOKEN,rendezvous-repo=OWNER/task-messenger,rendezvous-tag=v1.2.3,rendezvous-dashboard-port=8080
+  --metadata=duckdns-domain=taskmessenger-rdv,duckdns-token=YOUR_DUCKDNS_TOKEN,rendezvous-repo=OWNER/task-messenger,rendezvous-dashboard-port=8080
 ```
+
+(Add `,rendezvous-tag=v1.2.3` to the `--metadata` flag to bake a release
+into first boot.)
 
 After ~3–5 minutes the VM finishes bootstrapping. Verify with:
 

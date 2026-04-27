@@ -125,8 +125,8 @@ write_files:
       if [[ -z "$DUCKDNS_DOMAIN" || -z "$DUCKDNS_TOKEN" ]]; then
         log "ERROR: duckdns-domain / duckdns-token metadata missing"; exit 1
       fi
-      if [[ -z "$REPO" || -z "$TAG" ]]; then
-        log "ERROR: rendezvous-repo / rendezvous-tag metadata missing"; exit 1
+      if [[ -z "$REPO" ]]; then
+        log "ERROR: rendezvous-repo metadata missing"; exit 1
       fi
 
       # ── DuckDNS env file ───────────────────────────────────────────────
@@ -166,6 +166,13 @@ write_files:
       # the rendezvous identity files.
       RDV_HOME=/var/lib/tm-rendezvous
       install -d -o tmrdv -g tmrdv -m 750 "$RDV_HOME"
+
+      if [[ -z "$TAG" ]]; then
+        log "rendezvous-tag not set; skipping installer."
+        log "tm-rendezvous will be installed by the GH Actions deploy workflow."
+        log "Bootstrap complete (waiting for first deploy)"
+        exit 0
+      fi
 
       ASSET="tm-rendezvous-${TAG}-linux-x86_64.run"
       URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"

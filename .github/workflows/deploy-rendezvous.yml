@@ -124,10 +124,12 @@ jobs:
           URL="https://github.com/\${REPO}/releases/download/\${TAG}/\${ASSET}"
           TMP="\$(mktemp -d)"
           trap 'rm -rf "\$TMP"' EXIT
+          # mktemp -d creates 0700 owned by the SSH user; tmrdv can't enter it.
+          chmod 0755 "\$TMP"
 
           echo "[deploy] downloading \$URL"
           curl -fL --retry 3 -o "\$TMP/\$ASSET" "\$URL"
-          chmod +x "\$TMP/\$ASSET"
+          chmod 0755 "\$TMP/\$ASSET"
 
           echo "[deploy] running installer as tmrdv"
           sudo -u tmrdv -H bash -c "cd '\$TMP' && ./\$ASSET"

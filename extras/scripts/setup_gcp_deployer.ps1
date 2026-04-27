@@ -125,6 +125,17 @@ function Test-GcloudSuccess {
 Write-Step "Setting active project to $Project"
 Invoke-Gcloud -Description "set project" config set project $Project | Out-Null
 
+# Required APIs for WIF impersonation + Compute / IAP SSH from GH Actions.
+Write-Step "Enabling required GCP APIs"
+Invoke-Gcloud -Description "enable APIs" `
+    services enable `
+    iamcredentials.googleapis.com `
+    iam.googleapis.com `
+    compute.googleapis.com `
+    sts.googleapis.com `
+    --project=$Project | Out-Null
+Write-OK "APIs enabled"
+
 $sa = "$ServiceAccountId@$Project.iam.gserviceaccount.com"
 $repoFull = "$Owner/$Repo"
 
@@ -156,6 +167,24 @@ foreach ($role in $roles) {
         "--quiet" | Out-Null
     Write-OK $role
 }
+
+# ── 2b. Allow the deployer to "act as" the VM's default compute SA ──────────
+# `gcloud compute ssh` updates instance/project SSH metadata, which requires
+# iam.serviceAccountUser on the SA attached to the VM (the default compute SA
+# unless the VM was created with --service-account=<other>).
+$projectNumForCompute = (& $gcloud projects describe $Project --format="value(projectNumber)").Trim()
+if ($LASTEXITCODE -ne 0 -or -not $projectNumForCompute) {
+    throw "Failed to resolve project number for $Project"
+}
+$computeSa = "$projectNumForCompute-compute@developer.gserviceaccount.com"
+Write-Step "Granting roles/iam.serviceAccountUser on $computeSa to $sa"
+Invoke-GcloudWithRetry -Description "actAs binding on compute SA" `
+    iam service-accounts add-iam-policy-binding $computeSa `
+    "--member=serviceAccount:$sa" `
+    "--role=roles/iam.serviceAccountUser" `
+    "--project=$Project" `
+    "--quiet" | Out-Null
+Write-OK "actAs binding applied"
 
 # ── 3. Workload Identity pool ───────────────────────────────────────────────
 Write-Step "Creating workload identity pool '$PoolId'"
