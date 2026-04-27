@@ -1,23 +1,57 @@
-# Hosting `tm-rendezvous` on GCP Free Tier (e2-micro + DuckDNS)
+# Hosting `tm-rendezvous` on GCP Free Tier
 
 This document describes how to host the TaskMessenger rendezvous server on
-Google Cloud Platform at zero ongoing cost, using:
+Google Cloud Platform at zero ongoing cost, with deployment fully automated
+via cloud-init and GitHub Actions.
 
-- A free-tier **`e2-micro`** Compute Engine VM
-- The VM's **automatically-assigned ephemeral external IPv4** (free while
-  attached to a free-tier VM)
-- **DuckDNS** to give the VM a stable hostname even if the IP changes
-
-The dashboard is reachable over HTTP(S) from the public internet; the actual
-rendezvous service binds to the ZeroTier virtual NIC and is unreachable from
-outside the ZT network.
+- **Stack:** `e2-micro` Compute Engine VM + Caddy + DuckDNS + libzt-embedded
+  rendezvous service.
+- **Bootstrap:** `cloud-init` user-data installs Caddy + DuckDNS on first
+  boot and creates the `tmrdv` service user.
+- **Updates:** GitHub Actions deploy workflow installs/updates the
+  `tm-rendezvous` binary on every release (auth via Workload Identity
+  Federation — no long-lived service account keys in GitHub).
 
 ---
 
-## Topology
+## TL;DR — operate the deployment
+
+| Action | Command |
+| --- | --- |
+| One-time GCP IAM setup (per project) | `.\extras\scripts\setup_gcp_deployer.ps1 -Project <proj> -Owner <gh-user>` |
+| Create / recreate the VM | `.\extras\scripts\create_rendezvous_vm.ps1 -DuckdnsToken <token>` |
+| Deploy latest non-prerelease | `gh workflow run deploy-rendezvous.yml` |
+| Deploy a prerelease (`vtest`) | `gh workflow run deploy-rendezvous.yml -f tag=vtest -f deploy_prerelease=true` |
+| Watch a deploy | `gh run watch` |
+| Tail rendezvous logs | `gcloud compute ssh tm-rendezvous --zone=us-west1-a --tunnel-through-iap --command "sudo journalctl -u tm-rendezvous -f"` |
+| Health check | `curl -fsS https://taskmessenger-rdv.duckdns.org/healthz` |
+| Destroy VM | `gcloud compute instances delete tm-rendezvous --zone=us-west1-a` |
+
+After publishing a non-prerelease GitHub release, deployment is automatic —
+the workflow runs on the `release: published` event, installs the new
+`.run`, restarts the service, and verifies `/healthz`.
+
+---
+
+## Files in this repo
+
+| File | Purpose |
+| --- | --- |
+| [`extras/scripts/setup_gcp_deployer.ps1`](../scripts/setup_gcp_deployer.ps1) | One-time per project: enables required APIs, creates `github-deployer` SA, grants IAM roles, creates Workload Identity Federation pool/provider scoped to the repo, binds `iam.serviceAccountUser` on the default compute SA. Idempotent. |
+| [`extras/scripts/create_rendezvous_vm.ps1`](../scripts/create_rendezvous_vm.ps1) | Wraps `gcloud compute instances create` with the cloud-init user-data and required metadata. Only `-DuckdnsToken` is required. |
+| [`extras/scripts/cloud-init-rendezvous.yaml`](../scripts/cloud-init-rendezvous.yaml) | First-boot bootstrap: creates `tmrdv` user, installs Caddy + DuckDNS timer, drops the `tm-rendezvous.service` unit. Optionally pre-installs a release if `rendezvous-tag` metadata is provided. |
+| [`.github/workflows/deploy-rendezvous.yml`](../../.github/workflows/deploy-rendezvous.yml) | Deploy workflow. Triggered by `release: published` (non-prereleases only) or `workflow_dispatch`. WIF-auth → IAP-tunneled SSH → installer → restart → healthcheck. |
+
+The ZeroTier identity files (`vn-rendezvous-identity/`) and
+`config-rendezvous.json` are produced by the `tm-rendezvous` installer
+itself — neither cloud-init nor the workflow manages them.
+
+---
+
+## Architecture
 
 ```
-Public internet  ──HTTPS──▶  [Caddy :443]  ──HTTP──▶  127.0.0.1:<dashboard-port>
+Public internet  ──HTTPS──▶  [Caddy :443]  ──HTTP──▶  127.0.0.1:8080
                                                               │
                                                               ▼
                                                   tm-rendezvous process
@@ -26,402 +60,266 @@ Public internet  ──HTTPS──▶  [Caddy :443]  ──HTTP──▶  127.0.
 ZeroTier network  ◀── rendezvous service port (bound to ZT IP only) ──▶  dispatchers / workers
 ```
 
-DNS:
+- DuckDNS A record `taskmessenger-rdv.duckdns.org` → VM ephemeral IPv4
+  (refreshed every 5 min by a systemd timer on the VM).
+- Caddy auto-provisions a Let's Encrypt certificate for the DuckDNS hostname
+  the first time it's hit.
+- The dashboard listens on `127.0.0.1:8080` (loopback only); only Caddy can
+  reach it from outside.
+- The rendezvous service binds to the libzt virtual NIC and is
+  unreachable from the public internet — even if 8080 were exposed,
+  dispatchers/workers must be ZeroTier members to talk to it.
+- libzt joins the ZT network using the identity in
+  `~tmrdv/.config/task-messenger/tm-rendezvous/vn-rendezvous-identity/`
+  and connects outbound to ZeroTier root servers over UDP/9993 (allowed
+  by GCP's default egress rules).
+
+### Cost summary
+
+| Item | Cost |
+| --- | --- |
+| `e2-micro` VM in `us-west1` / `us-central1` / `us-east1`, 24/7 | **Free** (730 h/mo included) |
+| 30 GB standard persistent disk | **Free** (free tier covers 30 GB) |
+| Ephemeral IPv4 attached to a free-tier VM | **Free** |
+| 1 GB/month outbound network egress | **Free** |
+| DuckDNS hostname + Let's Encrypt cert | **Free** |
+| **Total** | **$0/mo** |
+
+Watch out for: regions other than the three US ones above; egress beyond
+1 GB/mo (~$0.12/GB); SSDs (`pd-ssd` is not free).
+
+### Auth model
 
 ```
-rendezvous.duckdns.org  ──A──▶  <VM ephemeral IPv4>   (refreshed every 5 min)
+GitHub Actions runner ──OIDC token──▶ GCP STS
+                                        │
+                                        ▼
+                          Workload Identity Federation pool/provider
+                                        │
+                                        ▼ (scoped to OWNER/task-messenger)
+                          Impersonates github-deployer@<proj>.iam.gserviceaccount.com
+                                        │
+                                        ▼
+                          IAP-tunneled SSH into tm-rendezvous VM
 ```
+
+No long-lived secrets are stored in GitHub. The provider's
+`attribute-condition` restricts impersonation to the configured repository.
 
 ---
 
-## Cost summary
+## First-time setup (per project)
 
-| Item                                            | Cost       |
-| ----------------------------------------------- | ---------- |
-| `e2-micro` VM in `us-west1` / `us-central1` / `us-east1`, 24/7 | **Free** (730 hours/month included) |
-| 30 GB standard persistent disk                  | **Free** (free tier includes 30 GB) |
-| Ephemeral IPv4 attached to free-tier VM         | **Free**   |
-| 1 GB/month outbound network egress (excl. China/Australia) | **Free**   |
-| DuckDNS hostname                                | **Free**   |
-| Let's Encrypt TLS certificate (via Caddy)       | **Free**   |
-| **Total**                                       | **$0/month** |
-
-Watch out:
-- Region matters — only the three US regions above qualify for the free `e2-micro`.
-- Egress beyond 1 GB/month is billed (~$0.12/GB to most destinations). The dashboard is light, but plan accordingly.
-- Stopping and starting the VM may change the ephemeral IP. DuckDNS update job (below) handles this.
-
----
-
-## Prerequisites
-
-- A Google Cloud account with billing enabled (free tier still requires a billing account on file).
-- A DuckDNS account (sign in with GitHub/Google at <https://www.duckdns.org/>) and a chosen subdomain, e.g. `taskmessenger-rdv.duckdns.org`. Note the **token** shown on the DuckDNS dashboard.
-- A ZeroTier network ID and the rendezvous identity files from a local install (or generate them on the VM after install).
-- The release artifact: `tm-rendezvous-v<VERSION>-linux-x86_64.run` from a GitHub Release.
-
----
-
-## Step-by-step setup
-
-### 1. Create the VM
-
-```bash
-gcloud compute instances create tm-rendezvous \
-  --zone=us-west1-a \
-  --machine-type=e2-micro \
-  --image-family=ubuntu-2404-lts-amd64 \
-  --image-project=ubuntu-os-cloud \
-  --boot-disk-size=30GB \
-  --boot-disk-type=pd-standard \
-  --tags=http-server,https-server
-```
-
-> **PowerShell users:** PowerShell mangles the comma in `--tags=a,b`. Either
-> quote the whole flag (`"--tags=http-server,https-server"`) or pass `--tags`
-> twice (`--tags=http-server --tags=https-server`). Use backticks `` ` `` for
-> line continuation instead of `\`.
-
-Equivalent in the Console: **Compute Engine → VM instances → Create instance**,
-machine type `e2-micro`, region one of `us-west1` / `us-central1` / `us-east1`,
-30 GB standard disk, network tags `http-server` and `https-server`.
-
-> If the Console shows a "monthly estimate" that isn't $0, double-check the
-> region and disk type — only the three US regions and `pd-standard` qualify.
-
-### 2. Configure firewall
-
-GCP's default `default-allow-http` and `default-allow-https` rules cover the
-network-tag setup above. Verify with:
-
-```bash
-gcloud compute firewall-rules list --filter="name~'http'"
-```
-
-If they're missing, create them:
-
-```bash
-gcloud compute firewall-rules create allow-http \
-  --network=default --action=ALLOW --rules=tcp:80 \
-  --source-ranges=0.0.0.0/0 --target-tags=http-server
-
-gcloud compute firewall-rules create allow-https \
-  --network=default --action=ALLOW --rules=tcp:443 \
-  --source-ranges=0.0.0.0/0 --target-tags=https-server
-```
-
-**Do not** open the rendezvous service port to `0.0.0.0/0`. The service binds
-only to the ZeroTier virtual NIC; libzt traffic tunnels over outbound UDP/9993
-(allowed by default egress) and never traverses the GCP firewall on inbound.
-
-### 3. SSH in to the VM
-
-```bash
-gcloud compute ssh tm-rendezvous --zone=us-west1-a
-```
-
-ZeroTier connectivity is provided by **libzt embedded in `tm-rendezvous`** —
-no system ZeroTier daemon is required, and you do **not** need to run
-`zerotier-cli` on the VM. The rendezvous server joins the ZT network using
-the identity files in `vn-rendezvous-identity/` and binds its service port
-to its libzt-assigned IP.
-
-The libzt-managed NIC is private to the `tm-rendezvous` process; it does not
-appear in `ip a` and is not reachable from the public internet. Outbound
-UDP/9993 (used by libzt to talk to ZeroTier root servers) is permitted by
-GCP's default egress rules — no firewall change needed.
-
-> If you ever want to install the system-wide ZeroTier daemon instead (e.g.
-> for SSH'ing into the VM over ZT), run `curl -s https://install.zerotier.com | sudo bash`
-> and `sudo zerotier-cli join <network-id>`. That path is supported but not
-> required for the rendezvous server itself.
-
-### 4. Install `tm-rendezvous`
-
-Download the latest Linux self-extracting installer (`.run`) and execute it.
-The `.run` file unpacks itself into a temp directory and invokes
-`install_linux.sh rendezvous` internally.
-
-```bash
-TAG=v1.2.3   # or vtest for the rolling prerelease
-curl -L -o tm-rendezvous.run \
-  "https://github.com/<owner>/task-messenger/releases/download/${TAG}/tm-rendezvous-${TAG}-linux-x86_64.run"
-chmod +x tm-rendezvous.run
-./tm-rendezvous.run
-```
-
-> Draft releases (e.g. those produced by `workflow_dispatch`) require
-> authentication. Use `gh` instead:
-> ```bash
-> gh release download <tag> --repo <owner>/task-messenger \
->   --pattern 'tm-rendezvous-*-linux-x86_64.run'
-> ```
-
-This places binaries under `~/.local/share/task-messenger/tm-rendezvous/` and
-configs under `~/.config/task-messenger/tm-rendezvous/`.
-
-Edit `~/.config/task-messenger/tm-rendezvous/config-rendezvous.json` to:
-- Bind the rendezvous service to your ZeroTier IP (or `0.0.0.0` — libzt only
-  exposes the ZT-side NIC, so this is still ZT-only in practice).
-- Bind the dashboard / monitoring HTTP port to `127.0.0.1:<port>` (loopback
-  only). Caddy will reverse-proxy 443 → that port. Pick any unprivileged
-  port (8080 is the convention used in the Caddyfile example below); the
-  exact number doesn't matter as long as the Caddyfile matches.
-
-### 5. Run as a systemd service
-
-Create `/etc/systemd/system/tm-rendezvous.service`:
-
-```ini
-[Unit]
-Description=TaskMessenger Rendezvous Server
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-User=<your-user>
-Environment=LD_LIBRARY_PATH=/home/<your-user>/.local/share/task-messenger/tm-rendezvous/lib
-ExecStart=/home/<your-user>/.local/share/task-messenger/tm-rendezvous/bin/tm-rendezvous \
-  -c /home/<your-user>/.config/task-messenger/tm-rendezvous/config-rendezvous.json
-Restart=on-failure
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now tm-rendezvous
-sudo systemctl status tm-rendezvous
-```
-
-### 6. Set up DuckDNS auto-update
-
-Pick a subdomain on the DuckDNS dashboard (e.g. `taskmessenger-rdv`) and copy
-the token shown at the top of the page.
-
-Create `/usr/local/bin/duckdns-update.sh`:
-
-```bash
-#!/bin/bash
-DOMAIN="taskmessenger-rdv"
-TOKEN="<your-duckdns-token>"
-# Empty ip= means "use the source IP of this request" (your VM's external IP).
-curl -fsS "https://www.duckdns.org/update?domains=${DOMAIN}&token=${TOKEN}&ip=" \
-  >> /var/log/duckdns.log 2>&1
-```
-
-```bash
-sudo chmod +x /usr/local/bin/duckdns-update.sh
-sudo /usr/local/bin/duckdns-update.sh   # initial registration; should print "OK"
-```
-
-Run it every 5 minutes via systemd timer:
-
-`/etc/systemd/system/duckdns.service`:
-
-```ini
-[Unit]
-Description=DuckDNS update
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/duckdns-update.sh
-```
-
-`/etc/systemd/system/duckdns.timer`:
-
-```ini
-[Unit]
-Description=Run DuckDNS update every 5 minutes
-
-[Timer]
-OnBootSec=1min
-OnUnitActiveSec=5min
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-```
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable --now duckdns.timer
-```
-
-(A simple `*/5 * * * * /usr/local/bin/duckdns-update.sh` cron entry works
-equally well.)
-
-### 7. Reverse proxy + TLS with Caddy
-
-Install Caddy (Ubuntu):
-
-```bash
-sudo apt install -y curl gnupg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' \
-  | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' \
-  | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-sudo apt update && sudo apt install -y caddy
-```
-
-> The `debian-keyring` / `debian-archive-keyring` packages from Caddy's
-> upstream instructions are Debian-only and are **not** in Ubuntu's apt
-> repository — skip them. Cloudsmith's own GPG key (fetched above) is what
-> actually verifies the Caddy package.
-
-Replace `/etc/caddy/Caddyfile` with:
-
-```caddyfile
-taskmessenger-rdv.duckdns.org {
-    reverse_proxy 127.0.0.1:8080
-}
-```
-
-```bash
-sudo systemctl reload caddy
-```
-
-Caddy will automatically request a Let's Encrypt certificate the first time
-the hostname is hit (the DuckDNS A record must already point at the VM, so
-do this *after* step 6 reports `OK`).
-
-### 8. Verify
-
-From your laptop:
-
-```bash
-curl -I https://taskmessenger-rdv.duckdns.org/
-# expect HTTP/2 200 (or whatever the dashboard root returns)
-```
-
-From a ZeroTier-joined dispatcher/worker (one that **does** have a system
-ZeroTier daemon, or that runs another libzt-based TaskMessenger component):
-
-```bash
-# rendezvous service should respond on its libzt ZT IP, but NOT on the public IP
-nc -zv <zt-ip-of-rendezvous> <rendezvous-port>      # OK
-nc -zv <public-ip-of-rendezvous> <rendezvous-port>  # should refuse / time out
-```
-
----
-
-## Operational notes
-
-- **Ephemeral IP changes** happen only when the VM is **stopped and started**
-  (a reboot keeps the same address). The DuckDNS timer corrects DNS within
-  five minutes.
-- **DNS propagation** at DuckDNS is fast (~60 s TTL), so brief outages after
-  an IP change are limited by the timer interval, not DNS.
-- **Outbound egress** is metered. Keep dashboard payloads small or budget for
-  it (~$0.12/GB beyond the free 1 GB).
-- **Monthly billing alert**: set a budget alert at $1 in **Billing → Budgets &
-  alerts** as a tripwire — any unexpected charge means something fell out of
-  the free tier.
-- **Backups**: snapshot the boot disk on a schedule, or copy the
-  `vn-rendezvous-identity/` directory off-host. Losing `identity.secret`
-  means dispatchers/workers will reject the rebuilt rendezvous server.
-
----
-
-## Alternative: Oracle Cloud Always Free
-
-If you want a static public IPv4 included for free (instead of relying on
-DuckDNS), **Oracle Cloud Always Free** is worth knowing about:
-
-- Always Free includes up to **2 reserved public IPv4 addresses** at no cost
-  while they're attached to running instances.
-- The Ampere ARM (`VM.Standard.A1.Flex`) shape gives you up to **4 OCPUs and
-  24 GB RAM** total across up to 4 VMs, free indefinitely.
-- ZeroTier and the rendezvous binary build cleanly on ARM64 Linux.
-
-Trade-offs vs. GCP free tier:
-
-- Oracle has historically reclaimed Always Free instances during regional
-  capacity pressure; GCP has not.
-- The Ampere ARM shape can be hard to provision in popular regions — you may
-  need to retry over several days.
-- ARM64 means you'd need an ARM64 Linux build of `tm-rendezvous` (the
-  current release matrix only produces `linux-x86_64`).
-
-If a stable static IP without DDNS hassle matters more than ARM64 build work,
-Oracle Always Free is a viable alternative. Otherwise, the GCP + DuckDNS
-recipe above is the simpler path.
-
----
-
-## Automated deployment
-
-Two pieces of automation live in this repo to remove the manual steps above:
-
-1. **`extras/scripts/cloud-init-rendezvous.yaml`** — `cloud-init` user-data
-   that runs on the VM's first boot. It creates the unprivileged `tmrdv`
-   service user, installs Caddy + DuckDNS timer + the `tm-rendezvous`
-   systemd unit. If `rendezvous-tag` metadata is supplied, it also
-   downloads/runs that release's `.run` installer; otherwise the binary
-   is installed by the next GitHub Actions deploy. Replaces manual
-   steps 4–7.
-2. **`.github/workflows/deploy-rendezvous.yml`** — GitHub Actions workflow
-   that, on each published release (or via `workflow_dispatch`), SSHes into
-   the VM, installs the new `.run`, restarts the service, and verifies
-   `/healthz`. Authenticates to GCP via Workload Identity Federation (no
-   long-lived service account keys in GitHub).
-
-Two helper scripts wrap the one-time GCP setup and VM creation from a
-Windows / PowerShell 5.1 dev box:
-
-- **`extras/scripts/setup_gcp_deployer.ps1`** — idempotent one-time setup of
-  the `github-deployer` service account, IAM roles, Workload Identity
-  Federation pool/provider scoped to your repo, and the
-  `roles/iam.workloadIdentityUser` binding. Prints the values to paste
-  into GitHub repo Variables. Run once per project.
-- **`extras/scripts/create_rendezvous_vm.ps1`** — wraps the
-  `gcloud compute instances create` invocation with the cloud-init
-  user-data and metadata baked in. Defaults match the recipe documented
-  here; only `-DuckdnsToken` is required.
-
-The ZeroTier identity files (`vn-rendezvous-identity/`) and
-`config-rendezvous.json` are produced by the `tm-rendezvous` installer
-itself; the cloud-init script does **not** manage them.
-
-### One-time GCP setup
-
-The quickest path is the PowerShell helper:
+### 1. One-time GCP IAM setup
 
 ```powershell
 .\extras\scripts\setup_gcp_deployer.ps1 `
-    -Project task-messenger-prod -Owner OWNER
+    -Project task-messenger-prod -Owner <github-user>
 ```
 
-It creates the service account, grants the three IAM roles, creates the WIF
-pool + OIDC provider scoped to `OWNER/task-messenger`, and prints the
-`GCP_DEPLOY_SA` and `GCP_WIF_PROVIDER` values to paste into GitHub repo
-Variables. The script is idempotent — safe to re-run.
+The script:
 
-The equivalent raw `gcloud` commands (substitute `OWNER`, project ID, etc.)
-are:
+1. Enables `iamcredentials`, `iam`, `compute`, `sts` APIs.
+2. Creates the `github-deployer` service account.
+3. Grants `roles/compute.instanceAdmin.v1`, `roles/iap.tunnelResourceAccessor`,
+   `roles/compute.osLogin` at the project level.
+4. Grants `roles/iam.serviceAccountUser` on the default compute SA (required
+   to push SSH keys into instance metadata).
+5. Creates the `github` Workload Identity pool + OIDC provider scoped to
+   `<owner>/task-messenger`.
+6. Binds `roles/iam.workloadIdentityUser` so the GitHub repo can impersonate
+   the SA.
+7. Prints the values to paste into GitHub repo Variables.
+
+### 2. GitHub repo variables
+
+Repo → **Settings → Secrets and variables → Actions → Variables**:
+
+| Variable | Example |
+| --- | --- |
+| `GCP_PROJECT` | `task-messenger-prod` |
+| `GCP_ZONE` | `us-west1-a` |
+| `GCP_VM_NAME` | `tm-rendezvous` |
+| `GCP_WIF_PROVIDER` | (printed by script) |
+| `GCP_DEPLOY_SA` | `github-deployer@task-messenger-prod.iam.gserviceaccount.com` |
+| `RENDEZVOUS_HEALTHCHECK_URL` | `https://taskmessenger-rdv.duckdns.org/healthz` |
+
+No secrets needed — WIF is keyless.
+
+### 3. Allow IAP SSH (one-time)
+
+```bash
+gcloud compute firewall-rules create allow-iap-ssh \
+  --direction=INGRESS --action=ALLOW --rules=tcp:22 \
+  --source-ranges=35.235.240.0/20
+```
+
+### 4. Create the VM
+
+```powershell
+.\extras\scripts\create_rendezvous_vm.ps1 -DuckdnsToken <token>
+```
+
+Defaults match this doc (`task-messenger-prod`, `us-west1-a`,
+`tm-rendezvous`, repo `ilya-yusim/task-messenger`, domain
+`taskmessenger-rdv`, dashboard port `8080`). Override with named
+parameters; see the script header.
+
+cloud-init runs in ~3–5 minutes:
+
+- Creates the `tmrdv` system user (homedir `/var/lib/tm-rendezvous`).
+- Installs Caddy from Cloudsmith's apt repo and writes a Caddyfile that
+  reverse-proxies the DuckDNS host to `127.0.0.1:8080`.
+- Installs a DuckDNS systemd timer (every 5 min) and runs it once
+  immediately so Caddy can fetch a cert.
+- Drops `tm-rendezvous.service` (hardened: `NoNewPrivileges`,
+  `ProtectSystem=strict`, `ReadWritePaths=/var/lib/tm-rendezvous`).
+- If `-Tag` was supplied, downloads and runs that release's `.run`
+  installer as `tmrdv` and starts the service. Otherwise leaves
+  `tm-rendezvous` un-installed for the GH Actions workflow to handle.
+
+Watch progress:
+
+```powershell
+gcloud compute ssh tm-rendezvous --zone=us-west1-a --tunnel-through-iap `
+  --command "sudo tail -f /var/log/cloud-init-output.log"
+```
+
+### 5. First deploy
+
+Trigger the workflow manually:
+
+```powershell
+gh workflow run deploy-rendezvous.yml -f tag=vtest -f deploy_prerelease=true
+gh run watch
+```
+
+(or publish a non-prerelease release on GitHub).
+
+### 6. Authorize the libzt node in ZeroTier Central
+
+After the service starts, find its node ID:
+
+```powershell
+gcloud compute ssh tm-rendezvous --zone=us-west1-a --tunnel-through-iap `
+  --command "sudo journalctl -u tm-rendezvous -n 30 --no-pager | grep 'ZeroTier node online'"
+```
+
+Authorize that ID in [ZeroTier Central](https://my.zerotier.com/) for the
+network. Confirm:
+
+```powershell
+curl -fsS https://taskmessenger-rdv.duckdns.org/healthz
+```
+
+---
+
+## Operations
+
+### Update behavior
+
+| Trigger | `deploy_prerelease` | Tag is prerelease? | Deploys? |
+| --- | --- | --- | --- |
+| `release: published` | n/a | no | ✅ |
+| `release: published` | n/a | yes (e.g. `vtest`) | ❌ skipped |
+| `workflow_dispatch` (no input) | false | latest non-prerelease | ✅ |
+| `workflow_dispatch` (tag=`vtest`) | false | yes | ❌ skipped |
+| `workflow_dispatch` (tag=`vtest`) | **true** | yes | ✅ |
+| `workflow_dispatch` (tag=`v1.2.3`) | false | no | ✅ |
+
+Prereleases are **never** deployed automatically. To push a prerelease, run
+the workflow manually with `deploy_prerelease=true`.
+
+### Common tasks
+
+```powershell
+# Status of the three services
+gcloud compute ssh tm-rendezvous --zone=us-west1-a --tunnel-through-iap `
+  --command "sudo systemctl is-active tm-rendezvous caddy duckdns.timer"
+
+# Tail rendezvous logs
+gcloud compute ssh tm-rendezvous --zone=us-west1-a --tunnel-through-iap `
+  --command "sudo journalctl -u tm-rendezvous -f"
+
+# Force a DuckDNS update
+gcloud compute ssh tm-rendezvous --zone=us-west1-a --tunnel-through-iap `
+  --command "sudo systemctl start duckdns.service && sudo cat /var/log/duckdns.log"
+```
+
+### Identity & config
+
+The libzt identity and `config-rendezvous.json` live under
+`/var/lib/tm-rendezvous/.config/task-messenger/tm-rendezvous/`. **Both are
+owned by the running tm-rendezvous installer**, not by cloud-init or the
+workflow. To preserve identity across a VM rebuild, either:
+
+- Copy that directory off the VM before destroying it, then drop it back
+  before the next deploy runs, **or**
+- Skip preservation and authorize the new node ID in ZeroTier Central
+  after the rebuild.
+
+### Backups
+
+Snapshot the boot disk, or just back up
+`/var/lib/tm-rendezvous/.config/task-messenger/tm-rendezvous/`. Losing
+`identity.secret` means dispatchers/workers will reject the rebuilt
+rendezvous server.
+
+### Billing tripwire
+
+Set a $1 budget alert in **Billing → Budgets & alerts**. Any unexpected
+charge means something fell out of the free tier.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause / fix |
+| --- | --- |
+| Workflow: *"IAM Service Account Credentials API has not been used…"* | Re-run `setup_gcp_deployer.ps1` (it enables the API), or `gcloud services enable iamcredentials.googleapis.com --project=<proj>`. |
+| Workflow: *"User does not have access to service account 'N-compute@developer.gserviceaccount.com'"* | The deployer SA needs `iam.serviceAccountUser` on the VM's compute SA. Re-run `setup_gcp_deployer.ps1`. |
+| Installer hangs on license prompt | The `.run` is invoked without `--accept`; the deploy workflow and cloud-init both pass it. If you ran the installer manually, re-run with `./tm-rendezvous-*.run --accept`. |
+| `mkdir: cannot create directory '/home/tmrdv'` during install | `tmrdv` was created with the wrong homedir. Fix: `sudo usermod -d /var/lib/tm-rendezvous tmrdv`. cloud-init now uses `homedir:` (not `home:`) so new VMs are correct. |
+| Healthcheck `502` from Caddy | tm-rendezvous isn't listening on the port Caddy proxies to. Check `sudo ss -tlnp` and the dashboard port in `config-rendezvous.json` vs. `/etc/caddy/Caddyfile`. Default is 8080 on both sides. |
+| `cd: <tmpdir>: Permission denied` running installer over SSH | `mktemp -d` gave 0700 to the SSH user; `sudo -u tmrdv` then can't enter it. Workflow does `chmod 0755` after `mktemp -d`. |
+| New ephemeral IP after VM stop/start | DuckDNS timer corrects it within 5 min; cert is preserved. |
+
+---
+
+## Manual reference
+
+If you need to do this without the helper scripts (debugging, different
+cloud, different repo layout, etc.), the equivalent raw commands are below.
+
+<details>
+<summary><strong>Raw <code>gcloud</code> for one-time IAM setup</strong></summary>
 
 ```bash
 PROJECT=task-messenger-prod
+OWNER=<github-user>
 SA=github-deployer@${PROJECT}.iam.gserviceaccount.com
 
-# Service account for the GitHub deployer
+# Required APIs
+gcloud services enable iamcredentials.googleapis.com iam.googleapis.com \
+  compute.googleapis.com sts.googleapis.com --project=$PROJECT
+
+# Service account + project-level roles
 gcloud iam service-accounts create github-deployer \
   --display-name="GitHub Actions deployer"
+for role in roles/compute.instanceAdmin.v1 roles/iap.tunnelResourceAccessor \
+            roles/compute.osLogin; do
+  gcloud projects add-iam-policy-binding $PROJECT \
+    --member="serviceAccount:$SA" --role="$role" --condition=None
+done
 
-# Minimum IAM roles
-gcloud projects add-iam-policy-binding $PROJECT \
-  --member="serviceAccount:$SA" --role="roles/compute.instanceAdmin.v1"
-gcloud projects add-iam-policy-binding $PROJECT \
-  --member="serviceAccount:$SA" --role="roles/iap.tunnelResourceAccessor"
-gcloud projects add-iam-policy-binding $PROJECT \
-  --member="serviceAccount:$SA" --role="roles/compute.osLogin"
+# Allow deployer to "act as" the VM's default compute SA (for SSH metadata)
+PROJECT_NUM=$(gcloud projects describe $PROJECT --format='value(projectNumber)')
+COMPUTE_SA="${PROJECT_NUM}-compute@developer.gserviceaccount.com"
+gcloud iam service-accounts add-iam-policy-binding $COMPUTE_SA \
+  --member="serviceAccount:$SA" --role=roles/iam.serviceAccountUser \
+  --project=$PROJECT
 
-# Workload Identity Federation pool + provider, scoped to this repo
+# WIF pool + provider scoped to this repo
 gcloud iam workload-identity-pools create github \
   --location=global --display-name="GitHub Actions"
 gcloud iam workload-identity-pools providers create-oidc github \
@@ -429,50 +327,20 @@ gcloud iam workload-identity-pools providers create-oidc github \
   --display-name="GitHub" \
   --issuer-uri="https://token.actions.githubusercontent.com" \
   --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
-  --attribute-condition="assertion.repository == 'OWNER/task-messenger'"
+  --attribute-condition="assertion.repository == '${OWNER}/task-messenger'"
 
-# Allow the GitHub repo to impersonate the SA
-PROJECT_NUM=$(gcloud projects describe $PROJECT --format='value(projectNumber)')
 gcloud iam service-accounts add-iam-policy-binding $SA \
   --role=roles/iam.workloadIdentityUser \
-  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUM}/locations/global/workloadIdentityPools/github/attribute.repository/OWNER/task-messenger"
+  --member="principalSet://iam.googleapis.com/projects/${PROJECT_NUM}/locations/global/workloadIdentityPools/github/attribute.repository/${OWNER}/task-messenger"
 
-# Allow IAP SSH (used by the deploy workflow)
 gcloud compute firewall-rules create allow-iap-ssh \
   --direction=INGRESS --action=ALLOW --rules=tcp:22 \
   --source-ranges=35.235.240.0/20
 ```
+</details>
 
-Then configure GitHub repo **Settings → Secrets and variables → Actions →
-Variables**:
-
-| Variable                      | Example                                                                        |
-| ----------------------------- | ------------------------------------------------------------------------------ |
-| `GCP_PROJECT`                 | `task-messenger-prod`                                                          |
-| `GCP_ZONE`                    | `us-west1-a`                                                                   |
-| `GCP_VM_NAME`                 | `tm-rendezvous`                                                                |
-| `GCP_WIF_PROVIDER`            | `projects/N/locations/global/workloadIdentityPools/github/providers/github`    |
-| `GCP_DEPLOY_SA`               | `github-deployer@task-messenger-prod.iam.gserviceaccount.com`                  |
-| `RENDEZVOUS_HEALTHCHECK_URL`  | `https://taskmessenger-rdv.duckdns.org/healthz`                                |
-
-No secrets are required (WIF is keyless).
-
-### Create the VM with cloud-init
-
-From PowerShell (defaults match the values in this doc; only the DuckDNS
-token is required):
-
-```powershell
-.\extras\scripts\create_rendezvous_vm.ps1 -DuckdnsToken <YOUR_DUCKDNS_TOKEN>
-```
-
-With no `-Tag`, cloud-init installs only Caddy + DuckDNS and leaves the
-`tm-rendezvous` binary install to the GitHub Actions workflow's first run
-(triggered by publishing a release or via **Run workflow** in the Actions
-tab). Pass `-Tag v1.2.3` if you want the VM to come up already serving
-that release on first boot.
-
-The equivalent raw `gcloud` invocation is:
+<details>
+<summary><strong>Raw <code>gcloud</code> for VM creation with cloud-init</strong></summary>
 
 ```bash
 gcloud compute instances create tm-rendezvous \
@@ -487,31 +355,54 @@ gcloud compute instances create tm-rendezvous \
   --metadata=duckdns-domain=taskmessenger-rdv,duckdns-token=YOUR_DUCKDNS_TOKEN,rendezvous-repo=OWNER/task-messenger,rendezvous-dashboard-port=8080
 ```
 
-(Add `,rendezvous-tag=v1.2.3` to the `--metadata` flag to bake a release
-into first boot.)
+Add `,rendezvous-tag=v1.2.3` to bake a release into first boot.
+</details>
 
-After ~3–5 minutes the VM finishes bootstrapping. Verify with:
+<details>
+<summary><strong>Fully manual install on a hand-provisioned VM</strong></summary>
 
-```bash
-gcloud compute ssh tm-rendezvous --zone=us-west1-a -- \
-  'sudo systemctl status tm-rendezvous caddy duckdns.timer'
-```
+The earlier (pre-automation) recipe still works if you want to provision
+everything by hand. Summary:
 
-then authorize the libzt member ID shown in `journalctl -u tm-rendezvous`
-in [ZeroTier Central](https://my.zerotier.com/).
+1. Create an `e2-micro` Ubuntu 24.04 VM in one of `us-west1`, `us-central1`,
+   `us-east1` with a 30 GB `pd-standard` disk and tags `http-server,https-server`.
+2. SSH in. Download the `.run` installer from a release and execute it
+   (`./tm-rendezvous-*.run --accept`). Files land under
+   `~/.local/share/task-messenger/tm-rendezvous/` and
+   `~/.config/task-messenger/tm-rendezvous/`.
+3. Install Caddy from the Cloudsmith apt repo (the `debian-keyring` packages
+   from Caddy's upstream instructions are Debian-only — skip them on Ubuntu).
+   Caddyfile: `taskmessenger-rdv.duckdns.org { reverse_proxy 127.0.0.1:8080 }`.
+4. Drop a `duckdns-update.sh` script + `duckdns.service` + `duckdns.timer`
+   that POSTs to `https://www.duckdns.org/update?domains=…&token=…&ip=`
+   every 5 minutes. The empty `ip=` parameter tells DuckDNS to use the
+   request source IP.
+5. Drop a `tm-rendezvous.service` systemd unit pointing at the installed
+   binary and config. Enable and start it.
+6. Authorize the libzt node ID in ZeroTier Central.
 
-### Update behavior
+This is what cloud-init automates. Use the cloud-init YAML as a reference
+if you ever need to redo it manually.
+</details>
 
-| Trigger                                           | `deploy_prerelease` | Tag is prerelease? | Deploys? |
-| ------------------------------------------------- | ------------------- | ------------------ | -------- |
-| `release: published`                              | n/a                 | no                 | ✅       |
-| `release: published`                              | n/a                 | yes (e.g. `vtest`) | ❌ skipped |
-| `workflow_dispatch` (no input)                    | false               | latest non-prerelease | ✅    |
-| `workflow_dispatch` (tag=`vtest`)                 | false               | yes                | ❌ skipped |
-| `workflow_dispatch` (tag=`vtest`)                 | **true**            | yes                | ✅       |
-| `workflow_dispatch` (tag=`v1.2.3`)                | false               | no                 | ✅       |
+---
 
-In short: prereleases are **never** deployed automatically. To push a
-prerelease (e.g. `vtest`), trigger the workflow manually from the Actions
-tab and tick **"Allow deploying a prerelease tag"**.
+## Alternative: Oracle Cloud Always Free
 
+If a static public IPv4 (no DDNS hassle) matters more than ARM64 build
+work, **Oracle Cloud Always Free** is worth knowing about:
+
+- Up to **2 reserved public IPv4 addresses** at no cost while attached to
+  running instances.
+- The Ampere ARM (`VM.Standard.A1.Flex`) shape gives up to **4 OCPUs / 24
+  GB RAM** total across up to 4 VMs, free indefinitely.
+
+Trade-offs vs. GCP free tier:
+
+- Oracle has historically reclaimed Always Free instances during regional
+  capacity pressure; GCP has not.
+- The Ampere ARM shape can be hard to provision in popular regions.
+- ARM64 means you need an ARM64 Linux build of `tm-rendezvous` (the
+  current release matrix only produces `linux-x86_64`).
+
+For most workloads the GCP + DuckDNS recipe above is the simpler path.
