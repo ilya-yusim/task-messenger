@@ -1,7 +1,7 @@
 class TmRendezvous < Formula
   desc "TaskMessenger Rendezvous - Discovery and monitoring service"
   homepage "https://github.com/ilya-yusim/task-messenger"
-  version "0.0.1"
+  version "0.0.2"
   license "MIT"
 
   on_macos do
