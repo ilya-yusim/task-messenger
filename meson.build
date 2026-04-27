@@ -1,4 +1,4 @@
-project('task-messenger', 'cpp', version: '0.0.1', default_options : ['cpp_std=c++20', 'warning_level=3'])
+project('task-messenger', 'cpp', version: '0.0.2', default_options : ['cpp_std=c++20', 'warning_level=3'])
 
 # =============================================================================
 # Compiler Arguments Configuration
