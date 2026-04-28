@@ -1,7 +1,7 @@
 class TmDispatcher < Formula
   desc "TaskMessenger Dispatcher - Distributed task coordination and dispatch"
   homepage "https://github.com/ilya-yusim/task-messenger"
-  version "0.0.1"
+  version "0.0.2"
   license "MIT"
 
   on_macos do
