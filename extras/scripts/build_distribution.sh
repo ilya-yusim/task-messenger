@@ -152,10 +152,22 @@ build_component() {
 }
 
 # Bundle libopenblas.so.* alongside the executable so the installed binary
-# does not rely on the user having libopenblas-dev installed at runtime.
-# Uses `ldd` on the built executable to locate the exact library that was
-# linked, and copies it (dereferencing symlinks) into the archive's lib/
-# as `libopenblas.so.0` (the SONAME the binary actually requests).
+# does not rely on the user having libopenblas installed at runtime.
+#
+# Detects whether the executable's NEEDED entries reference libopenblas
+# (via readelf/objdump — does not require RPATH resolution to succeed,
+# which previously caused silent skips because the archive's lib/ dir
+# isn't yet populated when this runs).
+#
+# Locates the .so in this order and copies it into the archive's lib/
+# under the SONAME the binary actually requests:
+#   1. The openblas-wrapper subproject's local install dir
+#      (subprojects/openblas-wrapper/dist/linux-x64/lib).
+#   2. ldd output, with LD_LIBRARY_PATH augmented to include the above.
+#
+# If the binary needs libopenblas but no .so can be located, this
+# function FAILS LOUDLY (exit 1) — silent skips here have caused
+# releases to ship without libopenblas.
 bundle_libopenblas() {
     local exe_path=$1
     local archive_lib_dir=$2
@@ -164,30 +176,62 @@ bundle_libopenblas() {
         return 0
     fi
 
-    if ! command -v ldd >/dev/null 2>&1; then
-        echo "  warning: ldd not available; skipping libopenblas bundling"
+    # Find the NEEDED SONAME (e.g. libopenblas.so.0). Prefer readelf,
+    # fall back to objdump.
+    local needed=""
+    if command -v readelf >/dev/null 2>&1; then
+        needed=$(readelf -d "$exe_path" 2>/dev/null \
+            | awk '/NEEDED.*libopenblas/ {match($0,/\[[^]]+\]/); print substr($0,RSTART+1,RLENGTH-2); exit}')
+    fi
+    if [[ -z "$needed" ]] && command -v objdump >/dev/null 2>&1; then
+        needed=$(objdump -p "$exe_path" 2>/dev/null \
+            | awk '/NEEDED.*libopenblas/ {print $2; exit}')
+    fi
+
+    if [[ -z "$needed" ]]; then
+        # Binary doesn't link libopenblas at all; nothing to bundle.
         return 0
     fi
 
-    # Parse `ldd` output for libopenblas; example line:
-    #   libopenblas.so.0 => /lib/x86_64-linux-gnu/libopenblas.so.0 (0x00007f...)
-    local resolved
-    resolved=$(ldd "$exe_path" 2>/dev/null | awk '/libopenblas\.so/ {print $3; exit}')
+    echo "  binary needs $needed; locating it..."
 
-    if [[ -z "$resolved" || "$resolved" == "not" ]]; then
-        # Either binary doesn't link libopenblas or ldd couldn't resolve it.
-        return 0
+    local subproj_lib="$PROJECT_ROOT/subprojects/openblas-wrapper/dist/linux-x64/lib"
+    local resolved=""
+
+    # 1) Direct hit on SONAME inside the subproject.
+    if [[ -e "$subproj_lib/$needed" ]]; then
+        resolved=$(readlink -f "$subproj_lib/$needed" 2>/dev/null || echo "$subproj_lib/$needed")
     fi
 
-    if [[ ! -f "$resolved" ]]; then
-        echo "  warning: ldd reports libopenblas at '$resolved' but file not found"
-        return 0
+    # 2) Fall back to libopenblas.so symlink inside the subproject.
+    if [[ -z "$resolved" && ( -L "$subproj_lib/libopenblas.so" || -f "$subproj_lib/libopenblas.so" ) ]]; then
+        resolved=$(readlink -f "$subproj_lib/libopenblas.so" 2>/dev/null || echo "")
+    fi
+
+    # 3) ldd, augmenting LD_LIBRARY_PATH so the subproject dir is searched.
+    if [[ -z "$resolved" ]] && command -v ldd >/dev/null 2>&1; then
+        local r
+        r=$(LD_LIBRARY_PATH="$subproj_lib:${LD_LIBRARY_PATH:-}" \
+            ldd "$exe_path" 2>/dev/null \
+            | awk -v n="$needed" '$1 == n {print $3; exit}')
+        if [[ -n "$r" && "$r" != "not" && -f "$r" ]]; then
+            resolved="$r"
+        fi
+    fi
+
+    if [[ -z "$resolved" ]]; then
+        echo "  ERROR: $exe_path NEEDs $needed but it could not be found in:" >&2
+        echo "    - $subproj_lib" >&2
+        echo "    - any ldd-discoverable system path" >&2
+        echo "  Refusing to ship a broken release. Build OpenBLAS via the openblas-wrapper subproject before packaging." >&2
+        exit 1
     fi
 
     mkdir -p "$archive_lib_dir"
-    # Dereference symlinks so the archive contains the real shared object.
-    cp -L "$resolved" "$archive_lib_dir/libopenblas.so.0"
-    echo "  bundled libopenblas: $resolved -> $archive_lib_dir/libopenblas.so.0"
+    # Dereference symlinks so the archive contains the real shared object,
+    # named with the SONAME the binary actually requests.
+    cp -L "$resolved" "$archive_lib_dir/$needed"
+    echo "  bundled libopenblas: $resolved -> $archive_lib_dir/$needed"
 }
 
 # Function to create archive for a component

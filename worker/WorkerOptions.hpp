@@ -21,7 +21,6 @@ struct WorkerOptions {
 namespace transport { namespace worker_opts {
     std::optional<std::string> get_manager_host();
     std::optional<int> get_manager_port();
-    std::optional<std::string> get_identity_dir_override();
     std::optional<std::string> get_worker_mode();
     std::optional<bool> get_ui_enabled();
     void register_options();

@@ -44,7 +44,6 @@ The UI and log sinks receive string-formatted values (e.g., `1.5MB`). The raw `u
 | `--ui` / `worker.ui` | CLI / JSON | Enables the FTXUI dashboard when available. Falling back to headless if FTXUI is missing. |
 | `--manager-host` / `worker.manager_host` | CLI / JSON | Manager host. |
 | `--manager-port` / `worker.manager_port` | CLI / JSON | Manager port. |
-| `--identity-dir` / `worker.identity_dir` | CLI / JSON | Override ZeroTier identity directory. |
 
 ## UI & Demo
 

@@ -20,14 +20,11 @@ static std::optional<bool> g_ui_enabled;
 static std::optional<std::string> g_manager_host;
 /// Cached manager port override.
 static std::optional<int> g_manager_port;
-/// Cached identity directory override path.
-static std::optional<std::string> g_identity_dir_override;
 
 std::optional<std::string> get_worker_mode() { return g_mode_str; }
 std::optional<bool> get_ui_enabled() { return g_ui_enabled; }
 std::optional<std::string> get_manager_host() { return g_manager_host; }
 std::optional<int> get_manager_port() { return g_manager_port; }
-std::optional<std::string> get_identity_dir_override() { return g_identity_dir_override; }
 
 void register_options() {
     // Provider for worker mode and UI flag, plus worker-specific options
@@ -57,15 +54,12 @@ void register_options() {
             const auto& w = j["worker"];
             if (w.contains("manager_host") && w["manager_host"].is_string()) host_default = w["manager_host"].get<std::string>();
             if (w.contains("manager_port") && w["manager_port"].is_number_integer()) port_default = w["manager_port"].get<int>();
-            if (w.contains("identity_dir") && w["identity_dir"].is_string()) g_identity_dir_override = w["identity_dir"].get<std::string>();
         }
         g_manager_host = host_default;
         g_manager_port = port_default;
         app.add_option("--manager-host", g_manager_host, "Manager host")
             ->group("Worker");
         app.add_option("--manager-port", g_manager_port, "Manager port")
-            ->group("Worker");
-        app.add_option("--identity-dir", g_identity_dir_override, "Override identity directory")
             ->group("Worker");
     });
 }
