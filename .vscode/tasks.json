@@ -160,6 +160,18 @@
 			}
 		},
 		{
+			"label": "Run Blocking Worker (Headless)",
+			"type": "shell",
+			"command": "builddir\\worker\\tm-worker.exe --noui -c config/config-worker.json --mode blocking",
+			"group": "test",
+			"presentation": {
+				"panel": "dedicated",
+				"reveal": "always",
+				"focus": false,
+				"showReuseMessage": false
+			}
+		},
+		{
 			"label": "Run Blocking Worker",
 			"type": "shell",
 			"command": "cmd.exe /c start \"\" cmd.exe /k \"builddir\\worker\\tm-worker.exe -c config/config-worker.json --mode blocking\"",

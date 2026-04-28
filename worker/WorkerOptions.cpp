@@ -46,7 +46,8 @@ void register_options() {
             ui_default = j["worker"]["ui"].get<bool>();
         }
         g_ui_enabled = ui_default;
-        app.add_flag("--noui,!--ui", g_ui_enabled, "Disable interactive terminal UI (run headless)")
+        app.add_flag("--ui,!--noui", g_ui_enabled,
+                     "Enable interactive terminal UI (default); use --noui to run headless")
             ->group("Worker");
 
         // Worker-specific connection options
