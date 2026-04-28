@@ -80,22 +80,58 @@ if (-not (Test-Path -LiteralPath $installer)) {
     throw "Helper not found: $installer"
 }
 
-$remoteDir = '~/.local/share/tm-worker-farm'
+# Resolve the asset locally — the codespace's gh is typically not authed for
+# foreign-owner repos and draft releases are invisible without auth. Doing
+# the resolve+download here (where the user's gh IS authed) sidesteps both.
+Write-Host "Resolving release asset for $Repo $Tag ..."
+if ($Tag -eq 'latest') {
+    $Tag = (& gh release view -R $Repo --json tagName --jq .tagName 2>$null).Trim()
+    if (-not $Tag) { throw "Could not resolve latest release for $Repo (is gh authed?)" }
+    Write-Host "  resolved latest -> $Tag"
+}
 
-Write-Host "Uploading installer to $Codespace ..."
-& gh codespace ssh -c $Codespace -- "mkdir -p $remoteDir"
-if ($LASTEXITCODE) { throw "Failed to create remote dir on $Codespace" }
+$assetsJson = & gh release view -R $Repo $Tag --json assets 2>&1
+if ($LASTEXITCODE) {
+    throw "gh release view failed for ${Repo} ${Tag}: $($assetsJson | Out-String)"
+}
+$assets = ($assetsJson | ConvertFrom-Json).assets
+$workerAsset = $assets | Where-Object { $_.name -match '^tm-worker-v.*-linux-x86_64\.run$' } | Select-Object -First 1
+if (-not $workerAsset) {
+    throw "No tm-worker-v*-linux-x86_64.run asset found on $Repo $Tag. Available: $($assets.name -join ', ')"
+}
+Write-Host "  asset: $($workerAsset.name)"
 
-& gh codespace cp -c $Codespace -e $installer "remote:$remoteDir/install_tm_worker_release.sh"
-if ($LASTEXITCODE) { throw "Failed to upload installer" }
+$localTmp = Join-Path ([System.IO.Path]::GetTempPath()) ("tm-worker-asset-" + [System.IO.Path]::GetRandomFileName())
+New-Item -ItemType Directory -Path $localTmp | Out-Null
+try {
+    Write-Host "Downloading $($workerAsset.name) locally ..."
+    & gh release download -R $Repo $Tag --pattern $workerAsset.name --dir $localTmp
+    if ($LASTEXITCODE) { throw "gh release download failed" }
+    $localAsset = Join-Path $localTmp $workerAsset.name
+    if (-not (Test-Path -LiteralPath $localAsset)) { throw "Downloaded asset not found at $localAsset" }
 
-& gh codespace ssh -c $Codespace -- "chmod +x $remoteDir/install_tm_worker_release.sh"
-if ($LASTEXITCODE) { throw "Failed to chmod installer" }
+    $remoteDir = '~/.local/share/tm-worker-farm'
 
-Write-Host "Running installer (repo=$Repo tag=$Tag) on $Codespace ..."
-$remoteCmd = "$remoteDir/install_tm_worker_release.sh -r '$Repo' -t '$Tag'"
-& gh codespace ssh -c $Codespace -- $remoteCmd
-if ($LASTEXITCODE) { throw "Remote installer failed (exit $LASTEXITCODE)" }
+    Write-Host "Uploading installer + asset to $Codespace ..."
+    & gh codespace ssh -c $Codespace -- "mkdir -p $remoteDir"
+    if ($LASTEXITCODE) { throw "Failed to create remote dir on $Codespace" }
+
+    & gh codespace cp -c $Codespace -e $installer "remote:$remoteDir/install_tm_worker_release.sh"
+    if ($LASTEXITCODE) { throw "Failed to upload installer" }
+
+    & gh codespace cp -c $Codespace -e $localAsset "remote:$remoteDir/$($workerAsset.name)"
+    if ($LASTEXITCODE) { throw "Failed to upload .run asset" }
+
+    & gh codespace ssh -c $Codespace -- "chmod +x $remoteDir/install_tm_worker_release.sh $remoteDir/$($workerAsset.name)"
+    if ($LASTEXITCODE) { throw "Failed to chmod uploaded files" }
+
+    Write-Host "Running installer on $Codespace (using pre-staged $($workerAsset.name)) ..."
+    $remoteCmd = "$remoteDir/install_tm_worker_release.sh -f $remoteDir/$($workerAsset.name)"
+    & gh codespace ssh -c $Codespace -- $remoteCmd
+    if ($LASTEXITCODE) { throw "Remote installer failed (exit $LASTEXITCODE)" }
+} finally {
+    Remove-Item -Recurse -Force -LiteralPath $localTmp -ErrorAction SilentlyContinue
+}
 
 Write-Host ""
 Write-Host "tm-worker installed on $Codespace."

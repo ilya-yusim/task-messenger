@@ -42,6 +42,8 @@ Usage: $0 [OPTIONS]
 Options:
   --install-dir PATH     Custom installation directory (default: ~/.local/share/task-messenger/tm-{dispatcher|worker})
   --archive PATH         Path to distribution archive (auto-detected if not provided)
+  -y, --yes              Assume "yes" to all prompts (non-interactive upgrade).
+                         Can also be set via TM_ASSUME_YES=1.
   --help                 Show this help message
 
 Note: The component (dispatcher or worker) is automatically detected from the extracted files.
@@ -49,6 +51,7 @@ Note: The component (dispatcher or worker) is automatically detected from the ex
 Examples:
   $0
   $0 --install-dir /custom/path
+  $0 --yes
   $0 --archive tm-dispatcher-v1.0.0-linux-x86_64.tar.gz
 
 EOF
@@ -119,11 +122,15 @@ check_existing_installation() {
             print_warning "Found existing installation of $component"
         fi
         
-        read -p "Do you want to upgrade? This will replace the existing installation. [y/N] " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            print_info "Installation cancelled by user"
-            exit 0
+        if [ "${ASSUME_YES:-0}" = "1" ]; then
+            print_info "--yes/TM_ASSUME_YES set; proceeding with upgrade."
+        else
+            read -p "Do you want to upgrade? This will replace the existing installation. [y/N] " -n 1 -r
+            echo
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                print_info "Installation cancelled by user"
+                exit 0
+            fi
         fi
         
         return 0
@@ -300,6 +307,7 @@ check_path() {
 main() {
     CUSTOM_INSTALL_DIR=""
     ARCHIVE=""
+    ASSUME_YES="${TM_ASSUME_YES:-0}"
     
     # Parse options
     while [ $# -gt 0 ]; do
@@ -311,6 +319,10 @@ main() {
             --archive)
                 ARCHIVE="$2"
                 shift 2
+                ;;
+            -y|--yes)
+                ASSUME_YES=1
+                shift
                 ;;
             --help)
                 show_usage

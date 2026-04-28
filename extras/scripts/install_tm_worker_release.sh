@@ -9,12 +9,15 @@
 #     ~/.local/bin/tm-worker            (symlink)
 #
 # Usage:
-#   install_tm_worker_release.sh [-t TAG] [-r OWNER/REPO] [--keep]
+#   install_tm_worker_release.sh [-t TAG] [-r OWNER/REPO] [-f LOCAL_RUN] [--keep]
 #
 #   -t TAG          Release tag, e.g. v0.4.2. Default: "latest" (resolves
 #                   to the most recent non-draft release for the repo).
 #   -r OWNER/REPO   Override repo. Default: ilya-yusim/task-messenger,
 #                   or the value of $TM_REPO if set.
+#   -f LOCAL_RUN    Skip download; install the given pre-fetched .run file.
+#                   Useful when the host can't reach a draft release (no
+#                   auth) but the caller staged the asset via scp.
 #   --keep          Don't delete the temporary download directory.
 #   -h, --help      Show this help.
 set -euo pipefail
@@ -29,11 +32,13 @@ usage() {
 tag="latest"
 repo="$DEFAULT_REPO"
 keep=0
+local_file=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -t) tag="$2"; shift 2 ;;
         -r) repo="$2"; shift 2 ;;
+        -f) local_file="$2"; shift 2 ;;
         --keep) keep=1; shift ;;
         -h|--help) usage ;;
         *) echo "Unknown arg: $1" >&2; usage ;;
@@ -50,55 +55,91 @@ case "$arch" in
         ;;
 esac
 
-# Resolve "latest" to a real tag.
-have_gh=0
-if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-    have_gh=1
-fi
-
-resolve_latest() {
-    if (( have_gh )); then
-        # gh respects auth; works for private repos too.
-        gh release view --repo "$repo" --json tagName --jq .tagName 2>/dev/null && return 0
-    fi
-    # Fallback: redirect of /releases/latest -> /releases/tag/<tag>
-    local url loc
-    url="https://github.com/$repo/releases/latest"
-    loc="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$url")"
-    echo "${loc##*/tag/}"
-}
-
-if [[ "$tag" == "latest" ]]; then
-    tag="$(resolve_latest)"
-    if [[ -z "$tag" ]]; then
-        echo "Could not resolve latest release for $repo" >&2
-        exit 1
-    fi
-fi
-
-echo "[install] repo=$repo tag=$tag arch=$arch_tag"
-
-asset="tm-worker-${tag}-linux-${arch_tag}.run"
 tmp="$(mktemp -d -t tm-worker-install.XXXXXX)"
 trap '[[ $keep -eq 0 ]] && rm -rf "$tmp"' EXIT
 
-cd "$tmp"
-echo "[install] downloading $asset"
-# Releases are public; prefer plain curl so we don't fail when the host's
-# gh isn't authed against this repo (common in codespaces owned by other
-# accounts). gh is only useful here for private releases, which we don't
-# have today.
-url="https://github.com/$repo/releases/download/$tag/$asset"
-curl -fL --retry 3 -o "$asset" "$url"
+if [[ -n "$local_file" ]]; then
+    if [[ ! -s "$local_file" ]]; then
+        echo "[install] -f file not found or empty: $local_file" >&2
+        exit 1
+    fi
+    asset_path="$local_file"
+    echo "[install] using pre-downloaded asset: $asset_path"
+else
+    # Resolve "latest" to a real tag.
+    have_gh=0
+    if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+        have_gh=1
+    fi
 
-if [[ ! -s "$asset" ]]; then
-    echo "[install] download failed: $asset is missing or empty" >&2
-    exit 1
+    resolve_latest() {
+        if (( have_gh )); then
+            gh release view --repo "$repo" --json tagName --jq .tagName 2>/dev/null && return 0
+        fi
+        local url loc
+        url="https://github.com/$repo/releases/latest"
+        loc="$(curl -fsSLI -o /dev/null -w '%{url_effective}' "$url")"
+        echo "${loc##*/tag/}"
+    }
+
+    if [[ "$tag" == "latest" ]]; then
+        tag="$(resolve_latest)"
+        if [[ -z "$tag" ]]; then
+            echo "Could not resolve latest release for $repo" >&2
+            exit 1
+        fi
+    fi
+
+    echo "[install] repo=$repo tag=$tag arch=$arch_tag"
+
+    # Discover the actual worker .run asset name. Filenames embed the meson
+    # project version (e.g. v0.0.2), not the release tag, so we can't just
+    # construct it from $tag.
+    pattern="tm-worker-v.*-linux-${arch_tag}\\.run"
+    asset=""
+    if (( have_gh )); then
+        asset="$(gh release view --repo "$repo" "$tag" --json assets \
+            --jq ".assets[].name | select(test(\"^${pattern}$\"))" 2>/dev/null \
+            | head -n1 || true)"
+    fi
+    if [[ -z "$asset" ]]; then
+        # Public releases only; drafts are invisible without auth.
+        asset="$(curl -fsSL "https://api.github.com/repos/$repo/releases/tags/$tag" 2>/dev/null \
+            | grep -oE "\"name\": *\"${pattern}\"" \
+            | head -n1 \
+            | sed -E 's/.*"name": *"([^"]+)".*/\1/' || true)"
+    fi
+    if [[ -z "$asset" ]]; then
+        echo "[install] could not find a tm-worker .run asset on $repo $tag." >&2
+        echo "[install] If this is a draft release, the host's gh must be authed for $repo," >&2
+        echo "[install] or pass a pre-downloaded asset via: -f /path/to/tm-worker-vX.Y.Z-linux-x86_64.run" >&2
+        exit 1
+    fi
+
+    cd "$tmp"
+    echo "[install] downloading $asset"
+    if (( have_gh )); then
+        gh release download --repo "$repo" "$tag" --pattern "$asset" --dir . \
+            || { echo "[install] gh release download failed" >&2; exit 1; }
+    else
+        url="https://github.com/$repo/releases/download/$tag/$asset"
+        curl -fL --retry 3 -o "$asset" "$url"
+    fi
+
+    if [[ ! -s "$asset" ]]; then
+        echo "[install] download failed: $asset is missing or empty" >&2
+        exit 1
+    fi
+    asset_path="$tmp/$asset"
 fi
-chmod +x "$asset"
 
-echo "[install] running ./$asset --accept"
-"./$asset" --accept
+chmod +x "$asset_path"
+
+echo "[install] running $asset_path --accept -- --yes"
+# makeself forwards args after `--` to the embedded startup script
+# (install_linux.sh). --accept suppresses the LICENSE prompt; --yes makes
+# install_linux.sh non-interactive on existing-install upgrades.
+"$asset_path" --accept -- --yes
 
 # tm-worker dynamically links against libopenblas (BLAS skills are enabled in
 # release builds). Make sure the runtime lib is present. Best-effort: only

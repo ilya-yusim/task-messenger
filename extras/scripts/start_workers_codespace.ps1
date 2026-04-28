@@ -88,50 +88,64 @@ foreach ($s in @($startScript, $stopScript)) {
     if (-not (Test-Path -LiteralPath $s)) { throw "Missing helper: $s" }
 }
 
-$remoteDir = '~/.local/share/tm-worker-farm'
-
-# Upload helpers.
+# --- Round trip 1: upload both helpers in a single cp call. ---
+# Drop them in $HOME (always exists); the ssh below moves them into place.
+# This avoids a separate `mkdir` round trip.
 Write-Host "Uploading helper scripts to $Codespace ..."
-& gh codespace ssh -c $Codespace -- "mkdir -p $remoteDir"
-if ($LASTEXITCODE) { throw "Failed to create remote dir on $Codespace" }
+& gh codespace cp -c $Codespace -e $startScript $stopScript "remote:."
+if ($LASTEXITCODE) { throw "Failed to upload helper scripts" }
 
-& gh codespace cp -c $Codespace -e $startScript "remote:$remoteDir/start_workers_local.sh"
-if ($LASTEXITCODE) { throw "Failed to upload start script" }
-& gh codespace cp -c $Codespace -e $stopScript  "remote:$remoteDir/stop_workers_local.sh"
-if ($LASTEXITCODE) { throw "Failed to upload stop script" }
-
-& gh codespace ssh -c $Codespace -- "chmod +x $remoteDir/start_workers_local.sh $remoteDir/stop_workers_local.sh"
-if ($LASTEXITCODE) { throw "Failed to chmod remote scripts" }
-
-# Run remote start. We deliberately avoid `bash -lc` here: some codespace
-# images run an `nvs` auto-loader from their login profile that scans the
-# command line and treats our `-n 2` flag as a Node version selector.
-# `gh codespace ssh -- <cmd>` already runs through the user's default
-# shell with ~/.local/bin on PATH, which is what we want.
+# --- Round trip 2: do everything else in one ssh. ---
+# Piping a bash script over stdin lets us run mkdir + mv + chmod + the
+# start helper + emit `$HOME, run-id, and the manifest contents (with
+# delimiters) without paying the codespace ssh setup cost 6 more times.
+# Avoid `bash -lc`: some images run an `nvs` auto-loader from the login
+# profile that misinterprets our `-n N` flag.
 Write-Host "Starting $Count worker(s) on $Codespace ..."
-$remoteCmd = "$remoteDir/start_workers_local.sh -n $Count -b '$RemoteWorkerBin' -c '$RemoteConfig'"
-& gh codespace ssh -c $Codespace -- $remoteCmd
-if ($LASTEXITCODE) { throw "Remote start_workers_local.sh failed (exit $LASTEXITCODE)" }
+$remoteScript = @'
+set -e
+REMOTE_DIR="$HOME/.local/share/tm-worker-farm"
+mkdir -p "$REMOTE_DIR"
+mv -f "$HOME/start_workers_local.sh" "$HOME/stop_workers_local.sh" "$REMOTE_DIR/"
+chmod +x "$REMOTE_DIR/start_workers_local.sh" "$REMOTE_DIR/stop_workers_local.sh"
+"$REMOTE_DIR/start_workers_local.sh" -n __COUNT__ -b '__BIN__' -c '__CONFIG__'
+run_id=$(cat "$HOME/.cache/tm-worker-farm/runs/latest.txt")
+printf '__TM_HOME=%s\n' "$HOME"
+printf '__TM_RUN=%s\n'  "$run_id"
+echo '__TM_MANIFEST_BEGIN'
+cat "$HOME/.cache/tm-worker-farm/runs/$run_id/manifest.json"
+echo
+echo '__TM_MANIFEST_END'
+'@
+$remoteScript = $remoteScript `
+    -replace '__COUNT__',  [string]$Count `
+    -replace '__BIN__',    $RemoteWorkerBin `
+    -replace '__CONFIG__', $RemoteConfig
+# bash on Linux chokes on CR; PowerShell here-strings are CRLF on Windows.
+$remoteScript = $remoteScript -replace "`r`n", "`n"
 
-# Discover the run-id the remote script just wrote.
-$remoteRunId = & gh codespace ssh -c $Codespace -- 'cat $HOME/.cache/tm-worker-farm/runs/latest.txt'
-if ($LASTEXITCODE) { throw "Could not read remote latest.txt" }
-$remoteRunId = $remoteRunId.Trim()
-if (-not $remoteRunId) { throw "Remote latest.txt was empty" }
+$output = $remoteScript | & gh codespace ssh -c $Codespace -- bash
+if ($LASTEXITCODE) { throw "Remote bootstrap failed (exit $LASTEXITCODE):`n$($output | Out-String)" }
 
-# scp (used by `gh codespace cp`) does NOT expand $HOME or ~ on the remote
-# side, so we need an absolute path. Resolve $HOME via ssh first.
-$remoteHome = (& gh codespace ssh -c $Codespace -- 'printf %s "$HOME"').Trim()
-if ($LASTEXITCODE -or -not $remoteHome) { throw "Could not resolve remote `$HOME on $Codespace" }
+# Parse markers out of the combined output.
+$lines = $output -split "`r?`n"
+$remoteHome  = (($lines | Where-Object { $_ -like '__TM_HOME=*' } | Select-Object -First 1) -replace '^__TM_HOME=', '').Trim()
+$remoteRunId = (($lines | Where-Object { $_ -like '__TM_RUN=*'  } | Select-Object -First 1) -replace '^__TM_RUN=',  '').Trim()
+if (-not $remoteHome)  { throw "Did not see __TM_HOME marker in remote output" }
+if (-not $remoteRunId) { throw "Did not see __TM_RUN marker in remote output" }
+
+$beginIdx = [array]::IndexOf($lines, '__TM_MANIFEST_BEGIN')
+$endIdx   = [array]::IndexOf($lines, '__TM_MANIFEST_END')
+if ($beginIdx -lt 0 -or $endIdx -lt 0 -or $endIdx -le $beginIdx + 1) {
+    throw "Could not extract manifest from remote output"
+}
+$manifestJson = ($lines[($beginIdx + 1)..($endIdx - 1)] -join "`n").Trim()
 
 # Mirror the manifest locally so stop_workers_codespace can find it.
 $localBase = Join-Path $env:LOCALAPPDATA "tm-worker-farm\runs\codespace-$Codespace\$remoteRunId"
 New-Item -ItemType Directory -Force -Path $localBase | Out-Null
-
-$remoteManifest = "$remoteHome/.cache/tm-worker-farm/runs/$remoteRunId/manifest.json"
-$tmpManifest    = Join-Path $localBase "manifest.json"
-& gh codespace cp -c $Codespace -e "remote:$remoteManifest" $tmpManifest
-if ($LASTEXITCODE) { throw "Failed to fetch remote manifest" }
+$tmpManifest = Join-Path $localBase "manifest.json"
+Set-Content -LiteralPath $tmpManifest -Value $manifestJson -Encoding UTF8
 
 # Update local "latest" pointer for this codespace.
 $cacheRoot = Join-Path $env:LOCALAPPDATA "tm-worker-farm\runs\codespace-$Codespace"

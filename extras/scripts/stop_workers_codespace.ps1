@@ -49,23 +49,47 @@ if (-not $Codespace) {
     Write-Host "Using codespace: $Codespace"
 }
 
-# If "latest", first try the local pointer for this codespace; fall back to remote.
+# If "latest", first try the local pointer for this codespace. If we have
+# it locally, great — saves a round trip. If not, the remote bash below
+# resolves it on the codespace side as part of a single ssh.
 if ($Run -eq 'latest') {
     $localLatest = Join-Path $env:LOCALAPPDATA "tm-worker-farm\runs\codespace-$Codespace\latest.txt"
     if (Test-Path -LiteralPath $localLatest) {
         $Run = (Get-Content -LiteralPath $localLatest -Raw).Trim()
-    } else {
-        $Run = (& gh codespace ssh -c $Codespace -- 'cat $HOME/.cache/tm-worker-farm/runs/latest.txt').Trim()
-        if ($LASTEXITCODE -or -not $Run) { throw "Could not resolve latest run on $Codespace" }
     }
 }
 
-$remoteDir = '~/.local/share/tm-worker-farm'
-$remoteCmd = "$remoteDir/stop_workers_local.sh -r '$Run' -g $GraceSeconds"
-
+# One ssh round trip: resolve `latest` if still unresolved, then run the
+# stop helper. Piping bash over stdin lets us keep both steps in a single
+# session without paying the gh codespace ssh setup cost twice.
 Write-Host "Stopping run $Run on $Codespace ..."
-& gh codespace ssh -c $Codespace -- $remoteCmd
-if ($LASTEXITCODE) { throw "Remote stop_workers_local.sh failed (exit $LASTEXITCODE)" }
+$remoteScript = @'
+set -e
+REMOTE_DIR="$HOME/.local/share/tm-worker-farm"
+run="__RUN__"
+if [ "$run" = "latest" ]; then
+    run=$(cat "$HOME/.cache/tm-worker-farm/runs/latest.txt" 2>/dev/null || true)
+    if [ -z "$run" ]; then
+        echo "Could not resolve latest run on remote" >&2
+        exit 1
+    fi
+fi
+printf '__TM_RUN=%s\n' "$run"
+"$REMOTE_DIR/stop_workers_local.sh" -r "$run" -g __GRACE__
+'@
+$remoteScript = $remoteScript `
+    -replace '__RUN__',   $Run `
+    -replace '__GRACE__', [string]$GraceSeconds
+# bash on Linux chokes on CR; PowerShell here-strings are CRLF on Windows.
+$remoteScript = $remoteScript -replace "`r`n", "`n"
+
+$output = $remoteScript | & gh codespace ssh -c $Codespace -- bash
+if ($LASTEXITCODE) { throw "Remote stop_workers_local.sh failed (exit $LASTEXITCODE):`n$($output | Out-String)" }
+$output | Write-Host
+
+# Surface the resolved run id (in case we passed 'latest').
+$resolvedLine = ($output -split "`r?`n") | Where-Object { $_ -like '__TM_RUN=*' } | Select-Object -First 1
+if ($resolvedLine) { $Run = ($resolvedLine -replace '^__TM_RUN=', '').Trim() }
 
 Write-Host ""
 Write-Host "Codespace $Codespace : run $Run stopped."
