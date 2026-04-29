@@ -13,6 +13,10 @@ Codespaces) afterwards. Web UI for the operator.
 | First remote target | **GitHub Codespaces** over SSH. Inventory schema must allow other backends later. |
 | Worker self-reporting | None today (no JSON status, no `/healthz`). Controller treats workers as opaque processes for Phase 1. |
 | Worker per-instance identity | Not needed today. Default `config-worker.json` does not set `zerotier.identity_path`, so libzt generates a fresh ephemeral ZT node ID per process. Each spawned worker only needs a unique log file. Revisit if stable per-slot identities or on-disk worker state are introduced (see Open Issue #1). |
+| Manifest schema | Shell scripts already write a per-run `manifest.json` (`{run_id, started_at, host, os, base_dir, worker_bin, config, args[], workers:[{id,pid,log,pidfile}]}`) under `${XDG_CACHE_HOME:-$HOME/.cache}/tm-worker-farm/runs/<run-id>/` (POSIX) or `%LOCALAPPDATA%\tm-worker-farm\runs\<run-id>\` (Windows), with a sibling `latest.txt` pointer. Phase 2 controller persistence should be a superset of this so the scripts and the controller can read each other's runs. |
+| Run directory layout | `tm-worker-farm/runs/<run-id>/{manifest.json,worker-NN.log,worker-NN.log.err,worker-NN.pid}`. Codespace runs are mirrored locally under `tm-worker-farm/runs/codespace-<name>/<run-id>/manifest.json` so the local controller can list/stop remote runs without round-tripping over ssh. |
+| Codespace transport | `gh codespace ssh -- <cmd>` and `gh codespace cp` only. **No `bash -lc`** — codespace login profiles run an `nvs` auto-loader that hijacks `-n N` flags. Multi-step bootstraps go as a single `ssh -- bash` with the script piped on stdin (CRLF→LF normalized first). Manifest payloads come back inline between sentinel markers instead of via a follow-up `gh codespace cp`. |
+| Codespace bootstrap (release path) | `tm-worker` is installed from a published GitHub Release via a makeself `.run` archive. The PowerShell wrapper resolves and downloads the asset locally (where `gh` is authenticated for foreign-owner repos and draft releases) and pre-stages it into the codespace; the bash installer runs makeself with `--accept -- --yes` to skip both the LICENSE and the upgrade prompt. |
 
 ---
 
@@ -112,7 +116,7 @@ Single-page vanilla JS, no framework:
 ### Repo layout
 
 ```
-extras/worker-farm/
+worker-farm/
   README.md
   go.mod
   cmd/tm-worker-farm/main.go
@@ -126,21 +130,150 @@ extras/worker-farm/
 ### Build & ship
 
 - Single binary built with `go build -o tm-worker-farm ./cmd/tm-worker-farm`.
-- No external deps at runtime; `tm-worker` must be on `$PATH` (or pass
-  `--worker-bin /path/to/tm-worker`).
+- No external deps at runtime; `tm-worker` is resolved as in Tactical Decision #6.
+
+### Phase 1 tactical decisions
+
+These were settled before implementation; defaults are baked in.
+
+1. **Spawn concurrency.** `POST /workers` with `count: N` spawns all N
+   workers concurrently (one goroutine per spawn) and returns once all
+   have either started or reported a start error. Per-worker errors are
+   surfaced individually (see #7).
+2. **Worker config.** Controller carries a `--config <path>` flag
+   (default: same path the install_linux.sh installer writes —
+   `~/.config/task-messenger/tm-worker/config-worker.json` on POSIX,
+   `%APPDATA%\task-messenger\tm-worker\config-worker.json` on Windows).
+   Every spawn invokes `tm-worker -c <config> --mode blocking --noui ...args`.
+   Operator-supplied `args` are appended verbatim; if they include their
+   own `-c`, the operator's wins (Go's `exec` will pass both, last one
+   typically wins for CLI11-based parsers — document, don't enforce).
+3. **Log file growth.** Phase 1 accepts unbounded growth. Operator
+   cleans `~/.cache/tm-worker-controller/` periodically. Rotation is a
+   Phase 2 item (lumberjack-style, 10 MB × 3) once anyone actually runs
+   a worker for >a few hours.
+4. **Port collision.** Hardcoded default `127.0.0.1:8090`. Override
+   with `--port <N>`. If the chosen port is taken, fail fast with a
+   clear message naming the port and suggesting `--port`.
+5. **Single-instance guard.** On startup, write a pidfile at
+   `~/.cache/tm-worker-controller/controller.pid` (POSIX) /
+   `%LOCALAPPDATA%\tm-worker-controller\controller.pid` (Windows). If
+   the file exists and the PID is alive, refuse to start with a clear
+   message ("controller already running as PID N; logs at ..."). Remove
+   on clean shutdown; ignore stale pidfiles whose PID is dead.
+6. **`tm-worker` discovery.** Same precedence as the shell scripts:
+   1. `--worker-bin <path>` (explicit override wins).
+   2. `$PATH` lookup for `tm-worker` (`tm-worker.exe` on Windows).
+   3. POSIX fallback: `~/.local/bin/tm-worker`.
+   4. Windows fallback: `%LOCALAPPDATA%\Programs\tm-worker\bin\tm-worker.exe`.
+   If none resolve to an executable file, controller exits at startup
+   with a message naming all four candidate paths.
+7. **Per-worker spawn errors.** `POST /workers` returns a JSON body of
+   the form `{"workers":[{"id":"...","ok":true,"pid":1234}, {"id":"...","ok":false,"error":"exec: ..."}, ...]}`
+   and HTTP 207 (Multi-Status) if any spawn failed, 200 if all succeeded.
+   Failed spawns get a registry entry with `State=Exited`, `ExitCode=null`,
+   and the error stashed in a new `LastError string` field so the UI can
+   render it in the table.
+8. **Embedded asset cache headers.** Serve `embed.FS` assets with
+   `Cache-Control: no-store` in Phase 1. Revisit when the UI stabilizes
+   (Phase 2: hash-bust filenames + `immutable`).
+9. **Recent-runs file.** On every spawn, append to
+   `~/.cache/tm-worker-controller/recent.json` a record of
+   `{timestamp, count, args, config_path}`. `tm-worker-farm --restart-last`
+   reads the most recent entry and re-spawns the same set. ~20 LoC; saves
+   a retro-fit later.
+10. **Worker tagging.** The controller picks a per-process UUID at
+    startup (`controller_id`) and exports `TM_WORKER_FARM_ID=<controller_id>`
+    in the env of every spawned worker. Used by Phase 2 orphan
+    reconciliation (`pgrep -af 'TM_WORKER_FARM_ID=<id>'`); does nothing
+    in Phase 1 but costs nothing to set now.
 
 ---
 
 ## Phase 2 — local polish
 
 - Persist worker registry to JSON on every state change so the controller
-  can reattach to its workers across restarts.
+  can reattach to its workers across restarts. Reuse the existing
+  `manifest.json` schema written by `extras/scripts/start_workers_local.{ps1,sh}`
+  so a controller restart can adopt script-started runs and vice versa.
 - Reconcile-orphans button (scan all `tm-worker` processes; adopt by
   matching a controller-set env var like `TM_WORKER_FARM_ID`).
 - Resource limits per worker (Linux: cgroups v2 via `os/exec` + `systemd-run --user`; Windows: Job Objects).
 - Optional: structured log parsing — if `tm-worker` ever emits JSON status
   lines, the UI can show "tasks completed", "current task", etc. Until
   then, the log tail is enough.
+
+---
+
+## Lessons from the script prototype (`extras/scripts/*_workers_*`)
+
+These behaviours surfaced while shipping the shell-only prototype and are
+load-bearing for the Go controller's Codespaces backend. Encode them in
+the backend implementation, not in operator README prose.
+
+- **Never invoke `bash -lc` over `gh codespace ssh --`.** Codespace login
+  profiles run an `nvs` Node-version auto-loader that scans the command
+  line and treats e.g. `-n 2` as a Node version selector. Pass commands
+  directly: `gh codespace ssh -c <cs> -- <cmd>` runs through the user's
+  default non-login shell, which is what we want.
+- **Pipe multi-step bootstraps as a single `ssh -- bash` over stdin.**
+  Each `gh codespace ssh` invocation pays a multi-second connection
+  setup, so chaining 6–8 of them is painfully slow. Instead, send one
+  bash script over stdin that does mkdir + mv + chmod + start helper +
+  reads any results we need, and returns those results inline between
+  sentinel markers (e.g. `__TM_MANIFEST_BEGIN/END`). This collapsed our
+  start path from ~8 round trips to 2 (one `gh codespace cp` for
+  helpers, one `ssh` for everything else).
+- **CRLF kills bash-over-stdin.** PowerShell here-strings on Windows are
+  CRLF and bash chokes (`set: invalid optiont: -`, `\r` glued onto every
+  path). Normalize with `-replace "`r`n", "`n"` before piping.
+- **`gh codespace cp` (scp) does NOT expand `$HOME` or `~` on the remote
+  side.** Either use absolute paths the local side already knows, or
+  resolve `$HOME` once (via `gh codespace ssh -- 'printf %s "$HOME"'`)
+  and substitute it. Inside `gh codespace ssh -- ...` arguments,
+  single-quote `'$HOME/...'` so bash receives `$HOME` literally and
+  expands it remotely; backslash-escaping mangles the path.
+- **`gh codespace cp` accepts multiple sources in one call.** Use it
+  to upload all helpers / assets in one round trip rather than a cp
+  per file.
+- **Codespaces ssh auto-resumes Shutdown codespaces.** State filter
+  should accept any state (`Available`/`Running`/`Shutdown`); just warn
+  when resuming so the operator knows about the ~30 s stall.
+- **Local `gh` may be missing the `codespace` scope.** Symptom: `gh
+  codespace list` returns 403 with "admin rights" wording. Backend
+  should detect that and surface a precise hint:
+  `gh auth refresh -h github.com -s codespace`.
+- **Public release assets must be fetched with plain `curl`, not `gh`,
+  from the codespace.** A codespace's `gh` is typically not authed for
+  foreign-owner repos. **Draft releases** are invisible to
+  unauthenticated callers, however, so the controller (running on the
+  user's box where `gh` *is* authed) must resolve and download draft
+  assets locally and stage them onto the codespace via `gh codespace cp`.
+- **Asset filenames embed the meson project version, not the dispatch
+  tag.** A `workflow_dispatch`-built draft release tagged `draft-<sha>`
+  ships assets like `tm-worker-v0.0.1-dev-linux-x86_64.run` (the release
+  workflow hardcodes `0.0.1-dev` for manual dispatches and rewrites
+  `meson.build` before building). Always discover the asset name via
+  `gh release view --json assets`, never construct it from the tag.
+- **`install_linux.sh` (bundled inside the makeself `.run`) is
+  interactive on upgrades.** It now honors `--yes` / `TM_ASSUME_YES=1`;
+  invoke as `<asset>.run --accept -- --yes` so makeself forwards the
+  flag to the embedded installer. Note: only takes effect for releases
+  built **after** the flag landed in `install_linux.sh`.
+- **`tm-worker` ships its libopenblas next to libzt.** Both live under
+  the archive's `lib/` directory and are picked up via RPATH
+  (`$ORIGIN/../lib` on Linux, `@executable_path/../lib` on macOS). If a
+  worker fails to start with `libopenblas.so.0: cannot open shared
+  object file`, the bundling step (`bundle_libopenblas` in
+  `extras/scripts/build_distribution.sh`) silently dropped it — that
+  function is now fail-loud and resolves the SONAME via
+  `readelf -d` + the openblas-wrapper subproject, but verify on every
+  release.
+- **A run already has a stable identifier the operator can reference.**
+  The shell scripts use `<run-id> = YYYYMMDD-HHMMSS` plus a `latest.txt`
+  pointer; the controller should reuse the same convention so
+  CLI/curl/UI users can interchangeably name a run started by either
+  driver.
 
 ---
 
@@ -154,13 +287,15 @@ hosts:
   - id: local
     backend: local                 # spawns directly
   - id: cs-mybox
-    backend: ssh
-    ssh:
-      host: mybox-abc123.github.dev
-      user: codespace
-      identity_file: ~/.ssh/codespaces_rsa
-      worker_bin: ./tm-worker      # path on the remote
-      log_dir: /tmp/tm-worker-farm-logs
+    backend: codespace             # uses gh codespace ssh / cp
+    codespace:
+      name: glorious-space-acorn-97q979gjr9wr3pv5j
+      worker_bin: tm-worker        # on remote PATH after install
+      config: ~/.config/task-messenger/tm-worker/config-worker.json
+  - id: cs-anyrunning
+    backend: codespace
+    codespace:
+      name: ""                     # empty = pick first available
   - id: gcp-rdv
     backend: gcp-iap               # future
     gcp_iap:
@@ -169,8 +304,8 @@ hosts:
       instance: tm-worker-1
 ```
 
-`backend` is the discriminator — local / ssh / gcp-iap / etc. Adding a new
-backend is implementing one Go interface:
+`backend` is the discriminator — local / codespace / ssh / gcp-iap / etc.
+Adding a new backend is implementing one Go interface:
 
 ```go
 type Backend interface {
@@ -183,34 +318,58 @@ type Backend interface {
 
 ### Codespaces specifics
 
-- Auth: `gh codespace ssh -c <name>` is the canonical entrypoint and
-  handles the keys for you. The controller can shell out to it directly:
-  `gh codespace ssh -c <name> -- bash -lc '...'`.
-- Use a remote-side helper script (`tm-worker-farm-remote.sh`) installed
-  in `~/.local/bin` on the codespace. The local controller invokes:
-  - `start <id> <args...>` → `nohup tm-worker --noui <args> >log 2>&1 &`,
-    prints the spawned PID.
-  - `status <pid>` → prints `running` / `exited:<code>`.
-  - `stop <pid>` → `kill -TERM` + wait + `kill -KILL`.
-  - `logs <id> [--follow]` → `tail [-f] log`.
-- One persistent SSH multiplex connection per host (`ssh -o ControlMaster=auto -o ControlPersist=10m`)
-  to keep latency reasonable for status polls. `gh codespace ssh` may not
-  expose ControlMaster — fallback is to call `gh codespace ssh ... -- ssh-config`
-  and use the resulting `ssh` invocation directly.
-- Bootstrap step: a `POST /hosts/{id}/bootstrap` endpoint that pushes the
-  remote helper script and a fresh `tm-worker` binary (downloaded from a
-  GitHub Release) over SCP/`gh codespace cp`.
+- **Transport.** Shell out to `gh codespace ssh -c <name> -- <cmd>` and
+  `gh codespace cp -c <name> -e <src> remote:<dst>` directly. Never
+  wrap commands in `bash -lc` (see Lessons). For multi-step operations,
+  pipe a single bash script to stdin via `gh codespace ssh -- bash` and
+  return structured results between sentinel markers. Normalize
+  CRLF→LF before piping.
+- **Auth preflight.** On controller start (or first use of a codespace
+  backend), call `gh codespace list --json name,state`. On 403, surface
+  the precise fix: `gh auth refresh -h github.com -s codespace`. On
+  success, cache the codespace state for one bootstrap window — don't
+  hammer the API.
+- **Auto-resume.** Pick any-state codespace if no name is configured;
+  warn when resuming a `Shutdown` one. `gh codespace ssh` does the
+  resume for us (~30 s).
+- **Remote helper.** Reuse the existing `start_workers_local.sh` /
+  `stop_workers_local.sh` from `extras/scripts/` as the codespace-side
+  helpers. They already speak the manifest schema the controller will
+  consume. Upload via a single multi-source `gh codespace cp` (drop in
+  `~/`, mv into `~/.local/share/tm-worker-farm/` inside the bootstrap
+  script). Re-upload-on-version-bump only — track helper hash locally.
+- **Bootstrap (install `tm-worker`).** `POST /hosts/{id}/bootstrap` runs
+  the equivalent of `install_tm_worker_codespace.ps1`:
+  1. Resolve target tag (default = latest non-draft) via `gh release view`.
+  2. Discover the actual asset name (`tm-worker-v.*-linux-x86_64.run`).
+  3. `gh release download` locally (handles draft releases + foreign-owner
+     auth quirks where the codespace `gh` would 403).
+  4. `gh codespace cp` the `.run` and the helper scripts into the codespace.
+  5. `gh codespace ssh -- bash` to run `<asset>.run --accept -- --yes`.
+- **Lifecycle.** Once installed, lifecycle calls map 1:1 to today's
+  shell helpers: `start_workers_local.sh -n <count> -b <bin> -c <config>`
+  / `stop_workers_local.sh -r <run> -g <grace>`. Manifest is read back
+  inline in the same ssh that started the run; the controller mirrors it
+  to `%LOCALAPPDATA%\tm-worker-farm\runs\codespace-<name>\<run-id>\manifest.json`
+  so subsequent stop/list calls are local.
+- **Connection multiplexing (later).** `gh codespace ssh` does not
+  expose OpenSSH `ControlMaster`. If polling latency hurts, fall back to
+  `gh codespace ssh --config` to extract the underlying ssh invocation
+  and run our own ssh with `-o ControlMaster=auto -o ControlPersist=10m`.
+  Keep this behind a feature flag — the bash-over-stdin batching pattern
+  already buys most of the win.
 
 ### UI changes
 
 - Add a "Host" column to the worker table.
 - Add a "Host" dropdown to the start form (defaults to `local`).
-- Per-host status badge (reachable / unreachable / bootstrapping).
+- Per-host status badge (reachable / unreachable / bootstrapping /
+  needs-auth-scope).
 
 ### Two-stage rollout
 
-1. **A — push model:** controller calls `gh codespace ssh -- helper
-   start/stop/status/logs` per request. No agent. Works today.
+1. **A — push model:** controller calls `gh codespace ssh -- bash`
+   per request, exactly like the prototype scripts. Works today.
 2. **B — pull model:** ship the controller binary itself as the remote
    agent (`tm-worker-farm --agent` mode listening on a unix socket
    forwarded via `ssh -L`). Better for high-frequency polling and log
@@ -270,6 +429,22 @@ These need decisions before or during Phase 1:
 5. **Browser hosting.** Phase 1 controller listens on `127.0.0.1:8090`
    only — no auth. If we ever bind to a non-loopback interface, add an
    auth token header.
+6. **Release versioning for controller-driven bootstraps.** The release
+   workflow currently stamps every `workflow_dispatch` build with
+   `version=0.0.1-dev` and rewrites `meson.build` before building, so
+   draft assets are named `tm-worker-v0.0.1-dev-linux-x86_64.run`
+   regardless of the source `meson.build` version. This is fine for the
+   controller because asset name is discovered from the release JSON,
+   not constructed from the tag, but it means `tm-worker --version` on a
+   draft-installed codespace will read `0.0.1-dev`. If/when the
+   controller wants to display the running worker's release version
+   accurately, fix the release workflow to read `meson.build` (or a
+   `workflow_dispatch` input) instead of hardcoding.
+7. **`bundle_libopenblas` is load-bearing.** `extras/scripts/build_distribution.sh`
+   resolves `libopenblas.so.<N>` via the openblas-wrapper subproject and
+   exits non-zero if the NEEDED SONAME isn't found. Don't paper over
+   future failures here — a release archive without `lib/libopenblas.so.0`
+   ships a worker that won't start on minimal codespace images.
 
 ---
 

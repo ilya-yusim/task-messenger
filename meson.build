@@ -176,6 +176,10 @@ if get_option('build_rendezvous')
   subdir('services/rendezvous')
 endif
 
+if get_option('build_worker_farm')
+  subdir('worker-farm')
+endif
+
 # Serialization tests (optional, for evaluating FlatBuffers/Cap'n Proto)
 if get_option('build_serialize_tests')
   subdir('serialize')

@@ -263,6 +263,30 @@
 			"isBackground": true
 		},
 		{
+			"label": "Run Worker Farm (builddir)",
+			"type": "shell",
+			"command": "${workspaceFolder}\\builddir\\worker-farm\\tm-worker-farm.exe",
+			"args": [
+				"--worker-bin", "${workspaceFolder}\\builddir\\worker\\tm-worker.exe",
+				"--config",     "${workspaceFolder}\\config\\config-worker.json"
+			],
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"presentation": {
+				"panel": "dedicated",
+				"reveal": "always",
+				"focus": false,
+				"showReuseMessage": false
+			},
+			"isBackground": true,
+			"group": {
+				"kind": "test",
+				"isDefault": false
+			},
+			"problemMatcher": []
+		},
+		{
 			"label": "Run multiple worker instances",
 			"type": "shell",
 			"command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"${workspaceFolder}\\extras\\scripts\\run_workers.ps1\" -Count ${input:workerInstanceCount}",

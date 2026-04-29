@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>tm-worker-farm</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header>
+    <h1>tm-worker-farm</h1>
+    <p class="muted">Local controller for <code>tm-worker</code> processes.</p>
+  </header>
+
+  <section id="spawn">
+    <h2>Spawn workers</h2>
+    <form id="spawn-form">
+      <label>
+        Count
+        <input type="number" id="count" min="1" max="256" value="1" required>
+      </label>
+      <label class="grow">
+        Extra args (optional, space-separated)
+        <input type="text" id="args" placeholder="--flag value">
+      </label>
+      <button type="submit" id="spawn-btn">Start</button>
+      <button type="button" id="stop-all-btn">Stop all</button>
+    </form>
+    <p id="spawn-status" class="muted"></p>
+  </section>
+
+  <section id="workers">
+    <h2>Workers <span id="worker-count" class="muted"></span></h2>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Host</th>
+          <th>State</th>
+          <th>PID</th>
+          <th>Started</th>
+          <th>Uptime</th>
+          <th>Exit</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="worker-rows">
+        <tr><td colspan="8" class="muted">Loading…</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <dialog id="log-modal">
+    <header>
+      <strong id="log-title">Logs</strong>
+      <button type="button" id="log-close">Close</button>
+    </header>
+    <pre id="log-pre"></pre>
+  </dialog>
+
+  <script src="/app.js"></script>
+</body>
+</html>

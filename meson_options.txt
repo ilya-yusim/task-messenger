@@ -5,6 +5,7 @@ option('build_dispatcher', type: 'boolean', value: true, description: 'Build the
 option('build_worker', type: 'boolean', value: true, description: 'Build the worker component')
 option('build_generators', type: 'boolean', value: true, description: 'Build the bundled generator executables')
 option('build_rendezvous', type: 'boolean', value: true, description: 'Build the rendezvous service binary')
+option('build_worker_farm', type: 'boolean', value: true, description: 'Build the tm-worker-farm Go controller (requires Go 1.22+)')
 option('build_serialize_tests', type: 'boolean', value: false, description: 'Build serialization library test cases')
 option('enable_blas_skills', type: 'boolean', value: true, description: 'Build BLAS/LAPACK skills (requires OpenBLAS or Apple Accelerate)')
 option('dashboard_dir', type: 'string', value: '', description: 'Absolute path to dashboard assets directory (overrides runtime discovery when set)')
