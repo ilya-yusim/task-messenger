@@ -175,9 +175,19 @@ jobs:
       
       - name: Install Python dependencies
         if: matrix.macos_variant != 'self-hosted'
+        shell: bash
         run: |
-          python -m pip install --upgrade pip
-          pip install meson==1.9.2 ninja
+          # The pre-installed pip is fine; skipping `pip install --upgrade pip`
+          # avoids a needless network round-trip that has flaked on the
+          # GitHub-hosted macOS runner with transient DNS errors. Retry the
+          # real install a few times to absorb similar hiccups.
+          set -e
+          for i in 1 2 3; do
+            pip install --disable-pip-version-check meson==1.9.2 ninja && exit 0
+            echo "pip install failed (attempt $i), retrying in 10s..." >&2
+            sleep 10
+          done
+          exit 1
       
       - name: Install Linux build dependencies
         if: runner.os == 'Linux'
