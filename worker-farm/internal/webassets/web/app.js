@@ -18,6 +18,9 @@ const els = {
   logTitle: $("#log-title"),
   logPre: $("#log-pre"),
   logClose: $("#log-close"),
+  quarantineSection: $("#quarantine"),
+  quarantineRows: $("#quarantine-rows"),
+  quarantineCount: $("#quarantine-count"),
 };
 
 let activeStream = null; // { es: EventSource, id: string }
@@ -62,7 +65,7 @@ function renderRows(workers) {
     tr.innerHTML = `
       <td class="id" title="${w.id}">${w.id}</td>
       <td>${w.host || "local"}</td>
-      <td><span class="${stateClass(w.state)}">${w.state}</span></td>
+      <td><span class="${stateClass(w.state)}">${w.state}${w.adopted && w.state === 'exited' ? ' (orphan)' : ''}</span></td>
       <td>${w.pid || "—"}</td>
       <td>${fmtTime(w.started_at)}</td>
       <td>${fmtUptime(w.started_at, w.stopped_at)}</td>
@@ -84,6 +87,14 @@ function renderRows(workers) {
       stopBtn.textContent = "Stop";
       stopBtn.addEventListener("click", () => stopWorker(w.id, stopBtn));
       actions.appendChild(stopBtn);
+    } else if (w.state === "exited") {
+      const purgeBtn = document.createElement("button");
+      purgeBtn.type = "button";
+      purgeBtn.className = "row-purge";
+      purgeBtn.textContent = "Purge";
+      purgeBtn.title = "Delete log + sentinel + pidfile and remove this row";
+      purgeBtn.addEventListener("click", () => purgeWorker(w.id, purgeBtn));
+      actions.appendChild(purgeBtn);
     }
     frag.appendChild(tr);
   }
@@ -135,6 +146,21 @@ async function stopWorker(id, btn) {
     if (!res.ok) throw new Error(`stop -> ${res.status}`);
   } catch (err) {
     els.spawnStatus.textContent = `Stop failed: ${err.message}`;
+  } finally {
+    poll();
+  }
+}
+
+async function purgeWorker(id, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`/workers/${encodeURIComponent(id)}/purge`, { method: "POST" });
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(`purge -> ${res.status}: ${txt.trim()}`);
+    }
+  } catch (err) {
+    els.spawnStatus.textContent = `Purge failed: ${err.message}`;
   } finally {
     poll();
   }
@@ -214,3 +240,70 @@ els.modal.addEventListener("close", closeStream);
 
 poll();
 setInterval(poll, POLL_MS);
+
+// Quarantine ----------------------------------------------------------
+
+async function pollQuarantine() {
+  try {
+    const res = await fetch("/quarantine", { cache: "no-store" });
+    if (!res.ok) throw new Error(`GET /quarantine -> ${res.status}`);
+    const data = await res.json();
+    renderQuarantine(Array.isArray(data) ? data : []);
+  } catch (err) {
+    // Soft-fail; the section just stays hidden if the endpoint is down.
+    els.quarantineSection.hidden = true;
+  }
+}
+
+function renderQuarantine(items) {
+  if (!items.length) {
+    els.quarantineSection.hidden = true;
+    els.quarantineRows.replaceChildren();
+    return;
+  }
+  els.quarantineSection.hidden = false;
+  els.quarantineCount.textContent = `(${items.length})`;
+  const frag = document.createDocumentFragment();
+  for (const it of items) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${it.run_id}</td>
+      <td>${String(it.slot).padStart(2, "0")}</td>
+      <td>${it.pid}</td>
+      <td title="${it.controller_id || ''}">${(it.controller_id || '').slice(0, 12)}…</td>
+      <td>${it.alive ? "yes" : "no"}</td>
+      <td class="actions"></td>
+    `;
+    const actions = tr.querySelector("td.actions");
+    for (const action of ["adopt", "kill", "ignore"]) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = action[0].toUpperCase() + action.slice(1);
+      b.addEventListener("click", () => quarantineAct(it, action, b));
+      actions.appendChild(b);
+    }
+    frag.appendChild(tr);
+  }
+  els.quarantineRows.replaceChildren(frag);
+}
+
+async function quarantineAct(item, action, btn) {
+  if (action === "kill" && !confirm(`Kill PID ${item.pid} (run ${item.run_id} slot ${item.slot})?`)) return;
+  btn.disabled = true;
+  try {
+    const url = `/quarantine/${encodeURIComponent(item.run_id)}/${String(item.slot).padStart(2, "0")}/${action}`;
+    const res = await fetch(url, { method: "POST" });
+    if (!res.ok) {
+      const txt = await res.text();
+      throw new Error(`${action} -> ${res.status}: ${txt.trim()}`);
+    }
+  } catch (err) {
+    els.spawnStatus.textContent = `Quarantine ${action} failed: ${err.message}`;
+  } finally {
+    pollQuarantine();
+    poll();
+  }
+}
+
+pollQuarantine();
+setInterval(pollQuarantine, POLL_MS * 3);

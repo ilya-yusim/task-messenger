@@ -141,3 +141,5 @@ dialog#log-modal pre {
   background: #0b0d10;
   color: #e6e6e6;
 }
+
+.badge { display: inline-block; font-size: 0.7em; padding: 0.05em 0.4em; margin-left: 0.4em; border-radius: 4px; background: var(--warn); color: white; vertical-align: middle; }

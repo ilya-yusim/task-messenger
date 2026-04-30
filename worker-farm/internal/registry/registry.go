@@ -25,9 +25,18 @@ const (
 // Fields that change after creation are guarded by Registry.mu — never
 // mutate a Worker directly; go through Registry.Update.
 type Worker struct {
-	ID        string     `json:"id"`
-	PID       int        `json:"pid"`
-	State     State      `json:"state"`
+	ID    string `json:"id"`
+	PID   int    `json:"pid"`
+	State State  `json:"state"`
+	// RunID groups workers that were spawned together by one
+	// `POST /workers` (or `--restart-last`) call. Format is
+	// `YYYYMMDD-HHMMSS` with a `-N` collision suffix; matches the
+	// convention in `extras/scripts/start_workers_local.{ps1,sh}`.
+	RunID string `json:"run_id"`
+	// Slot is the 1-based ordinal of this worker within its run. Used
+	// for the on-disk `worker-NN.log` filename and for the future
+	// manifest-driven CLI/script driver.
+	Slot      int        `json:"slot"`
 	StartedAt time.Time  `json:"started_at"`
 	StoppedAt *time.Time `json:"stopped_at,omitempty"`
 	ExitCode  *int       `json:"exit_code,omitempty"`
@@ -35,6 +44,14 @@ type Worker struct {
 	LogPath   string     `json:"log_path"`
 	LastError string     `json:"last_error,omitempty"`
 	Host      string     `json:"host"`
+	// Adopted is true if this worker was discovered at startup via a
+	// `worker-NN.adopt` sentinel rather than fork-spawned by this
+	// controller. Adopted workers have no parent/child relationship
+	// with the controller: their lifecycle is observed via liveness
+	// polling and their exit codes are unobtainable (kernel only
+	// reports those to the parent). The UI uses this to render
+	// "exited (orphan)" once the poll detects exit.
+	Adopted bool `json:"adopted,omitempty"`
 }
 
 // Registry is a concurrent map of worker ID → Worker. All mutations
@@ -82,6 +99,18 @@ func (r *Registry) Update(id string, fn func(*Worker)) bool {
 		return false
 	}
 	fn(w)
+	return true
+}
+
+// Remove deletes a worker from the registry. Returns false if it
+// didn't exist. Used by the "purge" action to forget exited workers.
+func (r *Registry) Remove(id string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, ok := r.workers[id]; !ok {
+		return false
+	}
+	delete(r.workers, id)
 	return true
 }
 

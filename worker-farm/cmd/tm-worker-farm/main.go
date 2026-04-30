@@ -4,8 +4,6 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"flag"
 	"fmt"
@@ -20,7 +18,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ilya-yusim/task-messenger/worker-farm/internal/adopt"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/api"
+	"github.com/ilya-yusim/task-messenger/worker-farm/internal/identity"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/local"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/paths"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/pidfile"
@@ -65,6 +65,15 @@ func run() error {
 		return fmt.Errorf("create cache dir %s: %w", cacheDir, err)
 	}
 
+	// Warn (don't migrate) if the pre-Phase-2 cache dir still exists.
+	// Operators rename their habits, not their data; the legacy directory
+	// is harmless but no longer read.
+	if legacy, lerr := paths.LegacyCacheDir(); lerr == nil {
+		if info, statErr := os.Stat(legacy); statErr == nil && info.IsDir() && legacy != cacheDir {
+			log.Printf("note: legacy cache dir still present at %s (no longer used; safe to remove)", legacy)
+		}
+	}
+
 	// Tee the controller log to a file (in addition to stderr) unless
 	// disabled with --log-file=-. Default: <cacheDir>/controller.log.
 	logFilePath := logFileArg
@@ -107,7 +116,16 @@ func run() error {
 		}
 	}
 
-	controllerID := newControllerID()
+	controllerID, fresh, err := identity.LoadOrCreate(paths.IdentityPath(cacheDir))
+	if err != nil {
+		return fmt.Errorf("load controller identity: %w", err)
+	}
+	if fresh {
+		log.Printf("minted new controller id: %s", controllerID)
+	} else {
+		log.Printf("loaded existing controller id: %s", controllerID)
+	}
+	_, history, _, _ := identity.Load(paths.IdentityPath(cacheDir))
 	reg := registry.New()
 	mgr := local.New(local.Options{
 		Registry:     reg,
@@ -117,6 +135,34 @@ func run() error {
 		ControllerID: controllerID,
 	})
 	recentLog := recent.New(paths.RecentRunsPath(cacheDir))
+
+	// Adoption pass: scan worker-NN.adopt sentinels left by previous
+	// controller runs and classify each. ClassMine → auto-adopt;
+	// ClassStale → register as exited; ClassTheirs → quarantine for
+	// operator decision through the UI.
+	cands, scanErr := adopt.Scan(cacheDir, history)
+	if scanErr != nil {
+		log.Printf("adopt scan: %v", scanErr)
+	}
+	var quarantine []adopt.Candidate
+	mineN, staleN, theirsN := 0, 0, 0
+	for _, c := range cands {
+		switch c.Class {
+		case adopt.ClassMine:
+			mgr.Adopt(c)
+			mineN++
+		case adopt.ClassStale:
+			mgr.RegisterStale(c)
+			staleN++
+		case adopt.ClassTheirs:
+			quarantine = append(quarantine, c)
+			theirsN++
+		}
+	}
+	mgr.SetQuarantine(quarantine)
+	if len(cands) > 0 {
+		log.Printf("adopt scan: %d candidate(s): adopted=%d stale=%d quarantined=%d", len(cands), mineN, staleN, theirsN)
+	}
 
 	srv := api.New(api.Options{
 		WebFS:      webassets.FS(),
@@ -193,8 +239,11 @@ func run() error {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	log.Print("stopping all workers")
-	mgr.StopAll(shutdownCtx)
+	// Phase 2 design: workers are detached and outlive the controller.
+	// We do NOT call mgr.StopAll here. Manifests + .adopt sentinels
+	// stay on disk so the next controller launch picks them up via
+	// the adoption scan. Operators who actually want to stop workers
+	// must use the UI / `POST /workers/stop-all` before quitting.
 	if err := httpServer.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("graceful shutdown: %w", err)
 	}
@@ -202,12 +251,12 @@ func run() error {
 }
 
 func newControllerID() string {
-	var b [8]byte
-	if _, err := rand.Read(b[:]); err != nil {
-		return fmt.Sprintf("ctl-%x", time.Now().UnixNano())
-	}
-	return "ctl-" + hex.EncodeToString(b[:])
+	return fmt.Sprintf("ctl-%x", time.Now().UnixNano())
 }
+
+// (newControllerID is kept as a fallback signature for now but is no
+// longer the source of truth for controller identity — see
+// internal/identity.LoadOrCreate.)
 
 // isAddrInUse returns true for the platform-specific "port already in
 // use" errno without pulling in syscall constants we'd otherwise have to

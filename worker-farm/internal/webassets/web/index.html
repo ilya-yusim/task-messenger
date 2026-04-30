@@ -50,6 +50,24 @@
     </table>
   </section>
 
+  <section id="quarantine" hidden>
+    <h2>Quarantine <span id="quarantine-count" class="muted"></span></h2>
+    <p class="muted">Live workers from another install (or shell-script run) found at startup. Choose an action per row.</p>
+    <table>
+      <thead>
+        <tr>
+          <th>Run</th>
+          <th>Slot</th>
+          <th>PID</th>
+          <th>Controller</th>
+          <th>Alive</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody id="quarantine-rows"></tbody>
+    </table>
+  </section>
+
   <dialog id="log-modal">
     <header>
       <strong id="log-title">Logs</strong>

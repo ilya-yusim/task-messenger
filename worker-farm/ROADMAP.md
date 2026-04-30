@@ -83,7 +83,7 @@ or wherever the `--worker-bin` default is resolved.
 ## Phase E — Homebrew
 
 Decision point:
-
+scm-history-item:c%3A%5CUsers%5Ciyusi%5Cprojects%5Ctask-messenger?%7B%22repositoryId%22%3A%22scm0%22%2C%22historyItemId%22%3A%22220073fcdacba0000e721e7bc74375936a9c6ba4%22%2C%22historyItemParentId%22%3A%22a503be7ed5efcdbd4e5a2b4ab8deb372981bdfe9%22%2C%22historyItemDisplayId%22%3A%22220073f%22%7D
 - **Option 1:** new `tm-worker-farm.rb` formula (Go-only build,
   `depends_on "go" => :build`).
 - **Option 2:** extend `tm-worker.rb` to compile both — installs

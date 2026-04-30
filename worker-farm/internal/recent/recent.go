@@ -1,5 +1,5 @@
 // Package recent keeps an append-only log of spawn events at
-// ~/.cache/tm-worker-controller/recent.json (JSONL, one record per
+// ~/.cache/tm-worker-farm/recent.json (JSONL, one record per
 // line). Phase 1 tactical decision #9: ~20 LoC, saves a retro-fit.
 package recent
 

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ilya-yusim/task-messenger/worker-farm/internal/adopt"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/local"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/logbuf"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/recent"
@@ -63,6 +64,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/healthz", s.handleHealthz)
 	s.mux.HandleFunc("/workers", s.handleWorkers)
 	s.mux.HandleFunc("/workers/", s.handleWorkerByID)
+	s.mux.HandleFunc("/quarantine", s.handleQuarantineList)
+	s.mux.HandleFunc("/quarantine/", s.handleQuarantineAct)
 	if s.webFS != nil {
 		s.mux.Handle("/", s.staticHandler())
 	}
@@ -180,6 +183,8 @@ func (s *Server) handleWorkerByID(w http.ResponseWriter, r *http.Request) {
 		s.handleWorkerGet(w, r, id)
 	case len(parts) == 2 && parts[1] == "stop":
 		s.handleWorkerStop(w, r, id)
+	case len(parts) == 2 && parts[1] == "purge":
+		s.handleWorkerPurge(w, r, id)
 	case len(parts) == 2 && parts[1] == "log":
 		s.handleWorkerLog(w, r, id)
 	case len(parts) == 3 && parts[1] == "log" && parts[2] == "stream":
@@ -213,6 +218,22 @@ func (s *Server) handleWorkerStop(w http.ResponseWriter, r *http.Request, id str
 	defer cancel()
 	if err := s.mgr.Stop(ctx, id); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleWorkerPurge deletes the on-disk trace of an exited worker
+// (log, pidfile, sentinel) and removes the row from the registry.
+// Refuses to purge a still-running worker.
+func (s *Server) handleWorkerPurge(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if err := s.mgr.Purge(id); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -292,4 +313,79 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// quarantineEntry is the trimmed-down JSON shape exposed to the UI.
+// Mirrors enough of adopt.Candidate to render a useful row, no more.
+type quarantineEntry struct {
+	Key          string   `json:"key"`
+	RunID        string   `json:"run_id"`
+	Slot         int      `json:"slot"`
+	PID          int      `json:"pid"`
+	ControllerID string   `json:"controller_id"`
+	StartedAt    int64    `json:"started_at_unix"`
+	WorkerBin    string   `json:"worker_bin"`
+	Args         []string `json:"args"`
+	LogPath      string   `json:"log_path"`
+	Alive        bool     `json:"alive"`
+	HistoryHit   bool     `json:"history_hit"`
+	Note         string   `json:"note"`
+}
+
+func (s *Server) handleQuarantineList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	cands := s.mgr.Quarantine()
+	out := make([]quarantineEntry, 0, len(cands))
+	for _, c := range cands {
+		out = append(out, toEntry(c))
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleQuarantineAct(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	// URL: /quarantine/<run-id>/<slot>/<action>
+	rest := strings.TrimPrefix(r.URL.Path, "/quarantine/")
+	parts := strings.Split(rest, "/")
+	if len(parts) != 3 {
+		http.Error(w, "expected /quarantine/<run-id>/<slot>/<action>", http.StatusBadRequest)
+		return
+	}
+	key := parts[0] + "/" + parts[1]
+	action := parts[2]
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	if err := s.mgr.QuarantineAct(ctx, key, action); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func toEntry(c adopt.Candidate) quarantineEntry {
+	e := quarantineEntry{
+		Key:        c.Key(),
+		Alive:      c.Alive,
+		HistoryHit: c.HistoryHit,
+		Note:       c.HistoryNote,
+	}
+	if c.Sentinel != nil {
+		e.RunID = c.Sentinel.RunID
+		e.Slot = c.Sentinel.Slot
+		e.PID = c.Sentinel.PID
+		e.ControllerID = c.Sentinel.ControllerID
+		e.StartedAt = c.Sentinel.StartedAtUnix
+		e.WorkerBin = c.Sentinel.WorkerBin
+		e.Args = c.Sentinel.Args
+		e.LogPath = c.Sentinel.LogPath
+	}
+	return e
 }

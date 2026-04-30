@@ -192,16 +192,67 @@ These were settled before implementation; defaults are baked in.
 
 ## Phase 2 — local polish
 
-- Persist worker registry to JSON on every state change so the controller
-  can reattach to its workers across restarts. Reuse the existing
-  `manifest.json` schema written by `extras/scripts/start_workers_local.{ps1,sh}`
-  so a controller restart can adopt script-started runs and vice versa.
-- Reconcile-orphans button (scan all `tm-worker` processes; adopt by
-  matching a controller-set env var like `TM_WORKER_FARM_ID`).
-- Resource limits per worker (Linux: cgroups v2 via `os/exec` + `systemd-run --user`; Windows: Job Objects).
-- Optional: structured log parsing — if `tm-worker` ever emits JSON status
-  lines, the UI can show "tasks completed", "current task", etc. Until
-  then, the log tail is enough.
+Status as of April 2026: **complete.** Slices 1–4 shipped; the controller
+now owns persistent run state, cross-restart adoption, and a quarantine
+UI for foreign workers. Decisions that landed:
+
+- **Cache directory rename.** `~/.cache/tm-worker-controller/` →
+  `~/.cache/tm-worker-farm/` (and the Windows `%LOCALAPPDATA%`
+  equivalent). On startup the controller logs a one-line warning if the
+  legacy path still exists; no automatic migration. Breaking for
+  existing dev installs by design — there are no production users yet.
+- **Run-id format.** `YYYYMMDD-HHMMSS` with a `-N` collision suffix
+  (`20260429-143012-2`) — same convention as `start_workers_local.sh`.
+  Each `POST /workers` (or `--restart-last`) creates one run.
+- **Run directory layout.**
+  `~/.cache/tm-worker-farm/runs/<run-id>/{manifest.json,worker-NN.log,worker-NN.adopt}`.
+  Workers within a run get sequential slot numbers `01..NN`. The
+  internal `Worker.ID` (ULID-style) remains the HTTP/registry handle;
+  slot is only used in filenames to keep the on-disk layout
+  human-grep-friendly and compatible with the shell scripts.
+- **Persistence.** Write-through: every spawn / state transition writes
+  the run's `manifest.json` via temp + `os.Rename`. No debouncing,
+  no compaction. Schema is a superset of what
+  `start_workers_local.{ps1,sh}` produce so a future CLI/script driver
+  can read the controller's runs and vice versa.
+- **Adoption side-channel.** Drop `worker-NN.adopt` JSON next to each
+  log when spawning: `{controller_id, started_at_unix, pid, args,
+  log_path, config_path}`. Adoption scans `runs/*/worker-*.adopt` and
+  classifies each into:
+    - **Mine** — `controller_id` is in `~/.cache/tm-worker-farm/identity.json`
+      (the controller's persistent identity history). Auto-adopted on
+      startup.
+    - **Theirs** — sentinel exists, PID is alive, `controller_id` not in
+      history. Surfaced in a quarantine list with [Adopt]/[Kill]/[Ignore]
+      actions in the UI.
+    - **Stale** — sentinel's PID is dead. Treated as a normally-exited
+      worker (state=exited, exit_code=null) and its row is folded into
+      the registry on startup.
+  This replaces the earlier `/proc/<pid>/environ` /
+  `pgrep -af TM_WORKER_FARM_ID=<id>` plan: the env var is still
+  exported on every spawn for ad-hoc grepping, but it isn't
+  load-bearing for adoption. Liveness uses `os.FindProcess` +
+  `Signal(syscall.Signal(0))` on POSIX and `OpenProcess` +
+  `GetExitCodeProcess` on Windows; no `/proc`, no cgo.
+- **Adopted-worker semantics.** No `cmd.Wait()` (we didn't fork them).
+  Poll-based liveness at 2 s. Exit code is `null` (kernel won't tell us
+  about a process we're not the parent of). Logs are tail-attached to
+  the existing file. Stop sends SIGTERM/`TerminateProcess` with the
+  same grace timer as native spawns. UI shows `exited (orphan)` once
+  the poll detects exit.
+- **Cross-driver visibility.** Startup-scan only — the controller does
+  not watch `runs/` while running. A future CLI (`tm-worker-farm <verb>`)
+  will replace `start_workers_local.*` and reuse the same on-disk
+  schema; until then, mixing drivers is operator-disciplined.
+- **Deferred out of Phase 2.**
+  - Resource limits (Linux cgroups, Windows Job Objects). Codespaces
+    have per-VM quotas already; local fences arrive with the next
+    iteration of process control.
+  - Structured log parsing (NDJSON event stream from `tm-worker`).
+    Pushed to Phase 4 — requires a worker-side change.
+  - The current Windows process group control via
+    `CREATE_NEW_PROCESS_GROUP` + `CTRL_BREAK_EVENT` stays as-is until
+    Job Objects land alongside resource limits.
 
 ---
 
