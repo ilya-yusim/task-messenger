@@ -20,7 +20,9 @@ import (
 
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/adopt"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/api"
+	"github.com/ilya-yusim/task-messenger/worker-farm/internal/codespace"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/identity"
+	"github.com/ilya-yusim/task-messenger/worker-farm/internal/inventory"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/local"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/paths"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/pidfile"
@@ -39,15 +41,17 @@ func main() {
 
 func run() error {
 	var (
-		addr        string
-		port        int
-		configArg   string
-		workerBin   string
-		logFileArg  string
-		restartLast bool
+		addr          string
+		port          int
+		configArg     string
+		workerBin     string
+		logFileArg    string
+		restartLast   bool
+		inventoryPath string
 	)
 
 	defaultConfig, _ := paths.DefaultWorkerConfig()
+	defaultInventory, _ := inventory.DefaultPath()
 
 	flag.StringVar(&addr, "addr", "127.0.0.1", "Bind address (loopback by default; do not bind publicly without auth).")
 	flag.IntVar(&port, "port", 8090, "TCP port to listen on. Fails fast if the port is in use.")
@@ -55,6 +59,7 @@ func run() error {
 	flag.StringVar(&workerBin, "worker-bin", "", "Override path to tm-worker. Default: $PATH lookup, then OS-specific fallback.")
 	flag.StringVar(&logFileArg, "log-file", "", "Append controller log to this file in addition to stderr. Default: <cacheDir>/controller.log. Pass '-' to disable.")
 	flag.BoolVar(&restartLast, "restart-last", false, "On startup, re-spawn the most recent run from recent.json.")
+	flag.StringVar(&inventoryPath, "inventory", defaultInventory, "Path to hosts.json. Missing file ⇒ synthesized single-host {id:local}.")
 	flag.Parse()
 
 	cacheDir, err := paths.CacheDir()
@@ -164,13 +169,45 @@ func run() error {
 		log.Printf("adopt scan: %d candidate(s): adopted=%d stale=%d quarantined=%d", len(cands), mineN, staleN, theirsN)
 	}
 
+	inv, synthesized, err := inventory.Load(inventoryPath)
+	if err != nil {
+		// Validation errors are *inventory.Error and already include
+		// the path + offending host index; surface verbatim.
+		return err
+	}
+	if synthesized {
+		log.Printf("inventory: no file at %s, using synthesized [{id:local,backend:local}]", inventoryPath)
+	} else {
+		log.Printf("inventory: %d host(s) loaded from %s", len(inv.Hosts), inventoryPath)
+	}
+
+	// Codespace manager is built whenever the inventory has at least
+	// one codespace host; constructing it is cheap and lets the API
+	// surface remote support uniformly. The poll goroutine starts
+	// alongside the HTTP server below.
+	var csmgr *codespace.Manager
+	for _, h := range inv.Hosts {
+		if h.Backend == inventory.BackendCodespace {
+			csmgr = codespace.New(codespace.Options{
+				Registry:     reg,
+				Inventory:    inv,
+				CacheDir:     cacheDir,
+				ControllerID: controllerID,
+			})
+			break
+		}
+	}
+
 	srv := api.New(api.Options{
 		WebFS:      webassets.FS(),
 		Registry:   reg,
 		Manager:    mgr,
+		Codespace:  csmgr,
 		Recent:     recentLog,
 		ConfigPath: configArg,
 		WorkerBin:  resolvedWorker,
+		CacheDir:   cacheDir,
+		Inventory:  inv,
 	})
 
 	listenAddr := net.JoinHostPort(addr, fmt.Sprint(port))
@@ -219,6 +256,12 @@ func run() error {
 	// Graceful shutdown on SIGINT/SIGTERM.
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Codespace liveness poll. Started after `ctx` so the same
+	// signal that drains HTTP also stops polling.
+	if csmgr != nil {
+		go csmgr.Run(ctx)
+	}
 
 	serveErr := make(chan error, 1)
 	go func() {

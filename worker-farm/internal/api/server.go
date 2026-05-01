@@ -13,6 +13,10 @@ import (
 	"time"
 
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/adopt"
+	"github.com/ilya-yusim/task-messenger/worker-farm/internal/bootstrap"
+	"github.com/ilya-yusim/task-messenger/worker-farm/internal/codespace"
+	"github.com/ilya-yusim/task-messenger/worker-farm/internal/gh"
+	"github.com/ilya-yusim/task-messenger/worker-farm/internal/inventory"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/local"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/logbuf"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/recent"
@@ -21,14 +25,17 @@ import (
 
 // Server is the HTTP handler set for the controller.
 type Server struct {
-	mux     *http.ServeMux
-	webFS   fs.FS
-	noCache bool
-	reg     *registry.Registry
-	mgr     *local.Manager
-	rec     *recent.Log
-	cfgPath string
-	binPath string
+	mux      *http.ServeMux
+	webFS    fs.FS
+	noCache  bool
+	reg      *registry.Registry
+	mgr      *local.Manager
+	csmgr    *codespace.Manager
+	rec      *recent.Log
+	cfgPath  string
+	binPath  string
+	cacheDir string
+	inv      *inventory.Inventory
 }
 
 // Options configures Server.
@@ -36,22 +43,28 @@ type Options struct {
 	WebFS      fs.FS
 	Registry   *registry.Registry
 	Manager    *local.Manager
+	Codespace  *codespace.Manager
 	Recent     *recent.Log
 	ConfigPath string
 	WorkerBin  string
+	CacheDir   string
+	Inventory  *inventory.Inventory
 }
 
 // New constructs a Server.
 func New(opts Options) *Server {
 	s := &Server{
-		mux:     http.NewServeMux(),
-		webFS:   opts.WebFS,
-		noCache: true, // Tactical Decision #8
-		reg:     opts.Registry,
-		mgr:     opts.Manager,
-		rec:     opts.Recent,
-		cfgPath: opts.ConfigPath,
-		binPath: opts.WorkerBin,
+		mux:      http.NewServeMux(),
+		webFS:    opts.WebFS,
+		noCache:  true, // Tactical Decision #8
+		reg:      opts.Registry,
+		mgr:      opts.Manager,
+		csmgr:    opts.Codespace,
+		rec:      opts.Recent,
+		cfgPath:  opts.ConfigPath,
+		binPath:  opts.WorkerBin,
+		cacheDir: opts.CacheDir,
+		inv:      opts.Inventory,
 	}
 	s.routes()
 	return s
@@ -62,6 +75,8 @@ func (s *Server) Handler() http.Handler { return s.mux }
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("/healthz", s.handleHealthz)
+	s.mux.HandleFunc("/hosts", s.handleHosts)
+	s.mux.HandleFunc("/hosts/", s.handleHostByID)
 	s.mux.HandleFunc("/workers", s.handleWorkers)
 	s.mux.HandleFunc("/workers/", s.handleWorkerByID)
 	s.mux.HandleFunc("/quarantine", s.handleQuarantineList)
@@ -77,6 +92,35 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte("ok\n"))
 }
 
+// /hosts — list hosts from the inventory. Read-only in Phase 3;
+// editing is via hosts.json + restart, per the plan.
+func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	type hostView struct {
+		ID        string `json:"id"`
+		Backend   string `json:"backend"`
+		Supported bool   `json:"supported"` // false ⇒ UI grays out the dropdown entry
+	}
+	var out []hostView
+	if s.inv != nil {
+		out = make([]hostView, 0, len(s.inv.Hosts))
+		for _, h := range s.inv.Hosts {
+			supported := h.Backend == inventory.BackendLocal ||
+				(h.Backend == inventory.BackendCodespace && s.csmgr != nil)
+			out = append(out, hostView{
+				ID:        h.ID,
+				Backend:   string(h.Backend),
+				Supported: supported,
+			})
+		}
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
 func (s *Server) staticHandler() http.Handler {
 	fileServer := http.FileServer(http.FS(s.webFS))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -85,6 +129,200 @@ func (s *Server) staticHandler() http.Handler {
 		}
 		fileServer.ServeHTTP(w, r)
 	})
+}
+
+// /hosts/{id}/status — backend-aware reachability + auth check.
+//
+// Status codes (all returned in the JSON body's "status" field):
+//
+//	ok                       — host is fully reachable
+//	gh-missing               — `gh` not on PATH (codespace only)
+//	not-logged-in            — `gh auth status` reports no session
+//	needs-codespace-scope    — token missing the `codespace` scope
+//	codespace-not-found      — `gh codespace list` doesn't list it
+//	codespace-not-available  — codespace exists but isn't running
+//	error                    — anything else (`detail` populated)
+func (s *Server) handleHostByID(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.Path, "/hosts/")
+	parts := strings.Split(rest, "/")
+	id := parts[0]
+	if id == "" {
+		http.NotFound(w, r)
+		return
+	}
+	if len(parts) < 2 {
+		http.NotFound(w, r)
+		return
+	}
+
+	if s.inv == nil {
+		http.Error(w, "inventory not configured", http.StatusInternalServerError)
+		return
+	}
+	host, ok := s.inv.Get(id)
+	if !ok {
+		http.Error(w, fmt.Sprintf("unknown host_id %q", id), http.StatusNotFound)
+		return
+	}
+
+	switch parts[1] {
+	case "status":
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", "GET")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		s.handleHostStatus(w, r, host)
+		return
+	case "bootstrap":
+		if r.Method != http.MethodPost {
+			w.Header().Set("Allow", "POST")
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		s.handleHostBootstrap(w, r, host)
+		return
+	default:
+		http.NotFound(w, r)
+		return
+	}
+}
+
+// handleHostStatus is the GET /hosts/{id}/status implementation.
+func (s *Server) handleHostStatus(w http.ResponseWriter, r *http.Request, host inventory.Host) {
+	type statusResp struct {
+		ID        string             `json:"id"`
+		Backend   string             `json:"backend"`
+		Status    string             `json:"status"`
+		Detail    string             `json:"detail,omitempty"`
+		Hint      string             `json:"hint,omitempty"`
+		Auth      *gh.AuthStatusInfo `json:"auth,omitempty"`
+		Codespace *gh.Codespace      `json:"codespace,omitempty"`
+	}
+
+	resp := statusResp{ID: host.ID, Backend: string(host.Backend)}
+
+	switch host.Backend {
+	case inventory.BackendLocal:
+		resp.Status = "ok"
+		writeJSON(w, http.StatusOK, resp)
+		return
+	case inventory.BackendCodespace:
+		ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+		defer cancel()
+
+		auth, err := gh.AuthStatus(ctx)
+		resp.Auth = auth
+		if err != nil {
+			var miss *gh.MissingBinaryError
+			var noScope *gh.NeedsCodespaceScopeError
+			var notLogin *gh.NotLoggedInError
+			switch {
+			case errors.As(err, &miss):
+				resp.Status = "gh-missing"
+				resp.Detail = err.Error()
+				writeJSON(w, http.StatusOK, resp)
+				return
+			case errors.As(err, &notLogin):
+				resp.Status = "not-logged-in"
+				resp.Detail = err.Error()
+				resp.Hint = "gh auth login"
+				writeJSON(w, http.StatusOK, resp)
+				return
+			case errors.As(err, &noScope):
+				resp.Status = "needs-codespace-scope"
+				resp.Detail = err.Error()
+				resp.Hint = "gh auth refresh -h github.com -s codespace"
+				writeJSON(w, http.StatusOK, resp)
+				return
+			default:
+				resp.Status = "error"
+				resp.Detail = err.Error()
+				writeJSON(w, http.StatusOK, resp)
+				return
+			}
+		}
+
+		var name string
+		if host.Codespace != nil {
+			name = host.Codespace.Name
+		}
+		cs, err := gh.Resolve(ctx, name)
+		if err != nil {
+			var nf *gh.NotFoundError
+			if errors.As(err, &nf) {
+				resp.Status = "codespace-not-found"
+				resp.Detail = err.Error()
+				writeJSON(w, http.StatusOK, resp)
+				return
+			}
+			resp.Status = "error"
+			resp.Detail = err.Error()
+			writeJSON(w, http.StatusOK, resp)
+			return
+		}
+		resp.Codespace = cs
+		if !strings.EqualFold(cs.State, "Available") {
+			resp.Status = "codespace-not-available"
+			resp.Detail = fmt.Sprintf("codespace state is %q; start it in the GitHub UI", cs.State)
+			writeJSON(w, http.StatusOK, resp)
+			return
+		}
+		resp.Status = "ok"
+		writeJSON(w, http.StatusOK, resp)
+		return
+	default:
+		// ssh / gcp-iap reserved by inventory but no transport landed
+		// yet. Surface a clean "not implemented" instead of a vague
+		// error so the UI can hide the badge.
+		resp.Status = "error"
+		resp.Detail = fmt.Sprintf("backend %q has no status probe yet", host.Backend)
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+}
+
+// handleHostBootstrap is the POST /hosts/{id}/bootstrap implementation.
+// Body (all optional): {"repo":"OWNER/REPO","tag":"v0.4.2"}.
+func (s *Server) handleHostBootstrap(w http.ResponseWriter, r *http.Request, host inventory.Host) {
+	if host.Backend != inventory.BackendCodespace {
+		http.Error(w, fmt.Sprintf("bootstrap is only supported for backend=codespace (host %q is %s)", host.ID, host.Backend), http.StatusBadRequest)
+		return
+	}
+	if host.Codespace == nil || host.Codespace.Name == "" {
+		http.Error(w, fmt.Sprintf("host %q: codespace.name is required for bootstrap", host.ID), http.StatusBadRequest)
+		return
+	}
+
+	var body struct {
+		Repo string `json:"repo"`
+		Tag  string `json:"tag"`
+	}
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
+	// Bootstrap can take minutes (download + upload + run installer).
+	// Cap at 10 min so a hung gh process doesn't pin a goroutine
+	// forever.
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
+	defer cancel()
+
+	res, err := bootstrap.Bootstrap(ctx, bootstrap.Request{
+		HostID:    host.ID,
+		Codespace: host.Codespace.Name,
+		Repo:      body.Repo,
+		Tag:       body.Tag,
+		CacheDir:  s.cacheDir,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
 }
 
 // /workers — POST = spawn, GET = list.
@@ -101,12 +339,23 @@ func (s *Server) handleWorkers(w http.ResponseWriter, r *http.Request) {
 }
 
 type spawnRequest struct {
-	Count int      `json:"count"`
-	Args  []string `json:"args"`
+	Count  int      `json:"count"`
+	Args   []string `json:"args"`
+	HostID string   `json:"host_id,omitempty"`
 }
 
 type spawnResponse struct {
-	Workers []local.SpawnResult `json:"workers"`
+	Workers []spawnEntry `json:"workers"`
+}
+
+// spawnEntry is the per-worker shape the API returns. Local and
+// codespace backends produce structurally-identical results — keeping
+// one shape lets the UI render uniformly without sniffing the host.
+type spawnEntry struct {
+	ID    string `json:"id"`
+	OK    bool   `json:"ok"`
+	PID   int    `json:"pid,omitempty"`
+	Error string `json:"error,omitempty"`
 }
 
 func (s *Server) handleSpawn(w http.ResponseWriter, r *http.Request) {
@@ -124,7 +373,45 @@ func (s *Server) handleSpawn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results := s.mgr.Spawn(r.Context(), req.Count, req.Args)
+	hostID := req.HostID
+	if hostID == "" {
+		hostID = "local"
+	}
+
+	var host inventory.Host
+	var haveHost bool
+	if s.inv != nil {
+		h, ok := s.inv.Get(hostID)
+		if !ok {
+			http.Error(w, fmt.Sprintf("unknown host_id %q", hostID), http.StatusBadRequest)
+			return
+		}
+		host = h
+		haveHost = true
+	}
+
+	var entries []spawnEntry
+	switch {
+	case !haveHost || host.Backend == inventory.BackendLocal:
+		results := s.mgr.Spawn(r.Context(), req.Count, req.Args)
+		entries = make([]spawnEntry, len(results))
+		for i, r := range results {
+			entries[i] = spawnEntry{ID: r.ID, OK: r.OK, PID: r.PID, Error: r.Error}
+		}
+	case host.Backend == inventory.BackendCodespace:
+		if s.csmgr == nil {
+			http.Error(w, "codespace backend not configured", http.StatusInternalServerError)
+			return
+		}
+		results := s.csmgr.Spawn(r.Context(), host, req.Count, req.Args)
+		entries = make([]spawnEntry, len(results))
+		for i, r := range results {
+			entries[i] = spawnEntry{ID: r.ID, OK: r.OK, PID: r.PID, Error: r.Error}
+		}
+	default:
+		http.Error(w, fmt.Sprintf("host %q backend=%s is not yet supported", hostID, host.Backend), http.StatusNotImplemented)
+		return
+	}
 
 	if s.rec != nil {
 		_ = s.rec.Append(recent.Entry{
@@ -137,13 +424,13 @@ func (s *Server) handleSpawn(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := http.StatusOK
-	for _, r := range results {
-		if !r.OK {
+	for _, e := range entries {
+		if !e.OK {
 			status = http.StatusMultiStatus
 			break
 		}
 	}
-	writeJSON(w, status, spawnResponse{Workers: results})
+	writeJSON(w, status, spawnResponse{Workers: entries})
 }
 
 // /workers/{id}            -> GET worker
@@ -160,9 +447,12 @@ func (s *Server) handleWorkerByID(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(r.Context(), 60*time.Second)
 		defer cancel()
 		s.mgr.StopAll(ctx)
+		if s.csmgr != nil {
+			s.csmgr.StopAll(ctx)
+		}
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -214,9 +504,17 @@ func (s *Server) handleWorkerStop(w http.ResponseWriter, r *http.Request, id str
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
-	if err := s.mgr.Stop(ctx, id); err != nil {
+	// Dispatch by ownership: codespace manager owns its workers'
+	// remote PIDs; everything else is local.
+	var err error
+	if s.csmgr != nil && s.csmgr.IsCodespaceWorker(id) {
+		err = s.csmgr.Stop(ctx, id)
+	} else {
+		err = s.mgr.Stop(ctx, id)
+	}
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -255,13 +553,32 @@ func (s *Server) handleWorkerLog(w http.ResponseWriter, r *http.Request, id stri
 		}
 		tail = n
 	}
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	// Codespace logs live on the remote; tail via ssh. We treat
+	// `tail` as a line count rather than a byte count for remote
+	// workers so the operator gets sensible output without us having
+	// to byte-seek over ssh.
+	if s.csmgr != nil && s.csmgr.IsCodespaceWorker(id) {
+		lines := int(tail)
+		if lines == 0 {
+			lines = 200 // sane default; SSH for the entire log on demand only
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+		defer cancel()
+		data, err := s.csmgr.TailLog(ctx, id, lines)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		_, _ = w.Write(data)
+		return
+	}
 	data, err := logbuf.Tail(worker.LogPath, tail)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-store")
 	_, _ = w.Write(data)
 }
 
@@ -269,6 +586,12 @@ func (s *Server) handleWorkerLogStream(w http.ResponseWriter, r *http.Request, i
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	// SSE log streaming for remote workers is deferred to Phase 4
+	// (plan, slice 3.5). The UI falls back to /log?tail=N polling.
+	if s.csmgr != nil && s.csmgr.IsCodespaceWorker(id) {
+		http.Error(w, "log streaming not supported for codespace workers; use /log?tail=N", http.StatusNotImplemented)
 		return
 	}
 	worker, _ := s.reg.Get(id)

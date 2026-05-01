@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"runtime"
 	"sort"
 	"strings"
@@ -19,7 +18,7 @@ import (
 	"time"
 
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/adopt"
-	"github.com/ilya-yusim/task-messenger/worker-farm/internal/liveness"
+	"github.com/ilya-yusim/task-messenger/worker-farm/internal/backend"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/logbuf"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/manifest"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/paths"
@@ -36,6 +35,7 @@ type Manager struct {
 	configPath   string
 	controllerID string // exported as TM_WORKER_FARM_ID
 	gracePeriod  time.Duration
+	backend      backend.Backend // process-control abstraction; LocalBackend in Phase 2
 
 	mu      sync.Mutex
 	running map[string]*procEntry // workers actively supervised by this controller
@@ -49,18 +49,12 @@ type Manager struct {
 }
 
 type procEntry struct {
-	cmd       *exec.Cmd // nil for adopted workers
-	logFile   *os.File  // nil for adopted workers (we don't own the file handle)
+	handle    *backend.Handle // backend-owned handle; carries PID + adopted flag
+	logFile   *os.File        // nil for adopted workers (we don't own the file handle)
 	startedAt time.Time
 	stopOnce  sync.Once
 	stopCh    chan struct{} // closed once Wait/poll observes exit
 	killed    bool          // set true when the grace timer fired
-
-	// Adopted-worker fields. Set when this entry tracks a process the
-	// controller did NOT fork (discovered via worker-NN.adopt at
-	// startup). cmd is nil; lifecycle is observed via poll-based
-	// liveness instead of cmd.Wait().
-	adoptedPID int
 }
 
 // runState is the per-run bookkeeping the manager keeps so it can
@@ -85,6 +79,9 @@ type Options struct {
 	// GracePeriod is the time between graceful stop and SIGKILL.
 	// Defaults to 10 s if zero.
 	GracePeriod time.Duration
+	// Backend is the process-control implementation. Nil ⇒
+	// backend.NewLocal() (Phase 2 default).
+	Backend backend.Backend
 }
 
 // New constructs a Manager. The caller owns the registry; Manager only
@@ -93,6 +90,10 @@ func New(opts Options) *Manager {
 	g := opts.GracePeriod
 	if g == 0 {
 		g = 10 * time.Second
+	}
+	b := opts.Backend
+	if b == nil {
+		b = backend.NewLocal()
 	}
 	hostname, _ := os.Hostname()
 	return &Manager{
@@ -103,6 +104,7 @@ func New(opts Options) *Manager {
 		configPath:   opts.ConfigPath,
 		controllerID: opts.ControllerID,
 		gracePeriod:  g,
+		backend:      b,
 		running:      make(map[string]*procEntry),
 		runs:         make(map[string]*runState),
 		quarantine:   make(map[string]adopt.Candidate),
@@ -206,7 +208,7 @@ func (m *Manager) allocateRunDir() (string, string, error) {
 	return "", "", fmt.Errorf("could not allocate unique run dir under %s after 100 attempts", runsDir)
 }
 
-func (m *Manager) spawnOne(_ context.Context, runID, runDir string, slot int, extraArgs []string) SpawnResult {
+func (m *Manager) spawnOne(ctx context.Context, runID, runDir string, slot int, extraArgs []string) SpawnResult {
 	id := newWorkerID()
 	logPath := paths.WorkerSlotLogPath(runDir, slot)
 	args := []string{"-c", m.configPath, "--mode", "blocking", "--noui"}
@@ -219,13 +221,14 @@ func (m *Manager) spawnOne(_ context.Context, runID, runDir string, slot int, ex
 		return SpawnResult{ID: id, OK: false, Error: err.Error()}
 	}
 
-	cmd := exec.Command(m.workerBin, args...)
-	cmd.Stdout = logFile
-	cmd.Stderr = logFile
-	cmd.Env = append(os.Environ(), "TM_WORKER_FARM_ID="+m.controllerID)
-	configureProc(cmd) // platform-specific: process group / job object
-
-	if err := cmd.Start(); err != nil {
+	h, err := m.backend.Start(ctx, backend.Spec{
+		Bin:    m.workerBin,
+		Args:   args,
+		Env:    []string{"TM_WORKER_FARM_ID=" + m.controllerID},
+		Stdout: logFile,
+		Stderr: logFile,
+	})
+	if err != nil {
 		_ = logFile.Close()
 		m.recordFailure(id, runID, slot, args, logPath, fmt.Errorf("start: %w", err))
 		log.Printf("spawn %s [run=%s slot=%02d]: FAILED to start: %v (cmd: %s %s)", id, runID, slot, err, m.workerBin, strings.Join(args, " "))
@@ -235,7 +238,7 @@ func (m *Manager) spawnOne(_ context.Context, runID, runDir string, slot int, ex
 	startedAt := time.Now().UTC()
 	w := &registry.Worker{
 		ID:        id,
-		PID:       cmd.Process.Pid,
+		PID:       h.PID,
 		State:     registry.StateRunning,
 		RunID:     runID,
 		Slot:      slot,
@@ -246,7 +249,7 @@ func (m *Manager) spawnOne(_ context.Context, runID, runDir string, slot int, ex
 	}
 	m.reg.Add(w)
 
-	entry := &procEntry{cmd: cmd, logFile: logFile, startedAt: startedAt, stopCh: make(chan struct{})}
+	entry := &procEntry{handle: h, logFile: logFile, startedAt: startedAt, stopCh: make(chan struct{})}
 	m.mu.Lock()
 	m.running[id] = entry
 	if run, ok := m.runs[runID]; ok && slot >= 1 && slot <= len(run.workerIDs) {
@@ -258,14 +261,14 @@ func (m *Manager) spawnOne(_ context.Context, runID, runDir string, slot int, ex
 	// Best-effort: a sentinel-write failure is logged but doesn't
 	// fail the spawn — the worker is already running.
 	pidfilePath := paths.WorkerSlotPidPath(runDir, slot)
-	if werr := os.WriteFile(pidfilePath, []byte(fmt.Sprintf("%d\n", cmd.Process.Pid)), 0o644); werr != nil {
+	if werr := os.WriteFile(pidfilePath, []byte(fmt.Sprintf("%d\n", h.PID)), 0o644); werr != nil {
 		log.Printf("spawn %s [run=%s slot=%02d]: warning: write pidfile %s: %v", id, runID, slot, pidfilePath, werr)
 	}
 	sentinelPath := paths.WorkerSlotSentinelPath(runDir, slot)
 	if serr := sentinel.Write(sentinelPath, &sentinel.Sentinel{
 		ControllerID:  m.controllerID,
 		StartedAtUnix: startedAt.Unix(),
-		PID:           cmd.Process.Pid,
+		PID:           h.PID,
 		WorkerBin:     m.workerBin,
 		Args:          args,
 		LogPath:       logPath,
@@ -278,11 +281,11 @@ func (m *Manager) spawnOne(_ context.Context, runID, runDir string, slot int, ex
 
 	m.persistRun(runID)
 
-	log.Printf("spawn %s [run=%s slot=%02d]: started pid=%d cmd=%s %s log=%s", id, runID, slot, cmd.Process.Pid, m.workerBin, strings.Join(args, " "), logPath)
+	log.Printf("spawn %s [run=%s slot=%02d]: started pid=%d cmd=%s %s log=%s", id, runID, slot, h.PID, m.workerBin, strings.Join(args, " "), logPath)
 
 	go m.supervise(id, entry)
 
-	return SpawnResult{ID: id, OK: true, PID: cmd.Process.Pid}
+	return SpawnResult{ID: id, OK: true, PID: h.PID}
 }
 
 func (m *Manager) recordFailure(id, runID string, slot int, args []string, logPath string, err error) {
@@ -307,19 +310,18 @@ func (m *Manager) recordFailure(id, runID string, slot int, args []string, logPa
 	m.persistRun(runID)
 }
 
-// supervise blocks on cmd.Wait, then updates the registry.
+// supervise blocks on backend.Wait, then updates the registry.
 func (m *Manager) supervise(id string, entry *procEntry) {
-	err := entry.cmd.Wait()
-	_ = entry.logFile.Close()
+	info := m.backend.Wait(entry.handle)
+	if entry.logFile != nil {
+		_ = entry.logFile.Close()
+	}
 	now := time.Now().UTC()
 	exitCode := 0
-	if err != nil {
-		var ee *exec.ExitError
-		if errors.As(err, &ee) {
-			exitCode = ee.ExitCode()
-		} else {
-			exitCode = -1
-		}
+	if info.Code != nil {
+		exitCode = *info.Code
+	} else if info.Err != nil {
+		exitCode = -1
 	}
 	var runID string
 	m.reg.Update(id, func(w *registry.Worker) {
@@ -327,12 +329,8 @@ func (m *Manager) supervise(id string, entry *procEntry) {
 		w.StoppedAt = &now
 		ec := exitCode
 		w.ExitCode = &ec
-		if err != nil && w.LastError == "" {
-			// Keep stop-induced exit codes informative without
-			// drowning the operator in noise.
-			if exitCode != 0 && w.State == registry.StateExited {
-				w.LastError = err.Error()
-			}
+		if info.Err != nil && w.LastError == "" {
+			w.LastError = info.Err.Error()
 		}
 		runID = w.RunID
 	})
@@ -344,16 +342,12 @@ func (m *Manager) supervise(id string, entry *procEntry) {
 		m.persistRun(runID)
 	}
 
-	pid := 0
-	if entry.cmd.Process != nil {
-		pid = entry.cmd.Process.Pid
-	}
 	duration := now.Sub(entry.startedAt).Round(time.Millisecond)
 	cause := "natural"
 	if killed {
 		cause = "killed-after-grace"
 	}
-	log.Printf("exit  %s: pid=%d code=%d cause=%s uptime=%s", id, pid, exitCode, cause, duration)
+	log.Printf("exit  %s: pid=%d code=%d cause=%s uptime=%s", id, entry.handle.PID, exitCode, cause, duration)
 
 	close(entry.stopCh)
 }
@@ -367,15 +361,11 @@ func (m *Manager) Stop(ctx context.Context, id string) error {
 	if !ok {
 		return nil
 	}
-	pid := entry.adoptedPID
-	if entry.cmd != nil && entry.cmd.Process != nil {
-		pid = entry.cmd.Process.Pid
-	}
 	adoptedTag := ""
-	if entry.adoptedPID != 0 {
+	if entry.handle.Adopted {
 		adoptedTag = " (adopted)"
 	}
-	log.Printf("stop  %s%s: pid=%d grace=%s", id, adoptedTag, pid, m.gracePeriod)
+	log.Printf("stop  %s%s: pid=%d grace=%s", id, adoptedTag, entry.handle.PID, m.gracePeriod)
 	var runID string
 	m.reg.Update(id, func(w *registry.Worker) {
 		w.State = registry.StateStopping
@@ -419,20 +409,12 @@ func (m *Manager) StopAll(ctx context.Context) {
 }
 
 func (m *Manager) gracefulKill(id string, entry *procEntry) {
-	// Branch on adopted vs forked: adopted workers are not in our
-	// process group on POSIX (so we can't signal the group) and can't
-	// be sent a console event on Windows (TerminateProcess is the
-	// only available verb). Both cases route through the PID-only
-	// helpers; the grace timer still runs, mostly for log clarity and
-	// for POSIX where SIGTERM is honoured by tm-worker.
-	if entry.adoptedPID != 0 {
-		if err := terminatePID(entry.adoptedPID); err != nil {
-			log.Printf("stop  %s: terminate(adopted) failed (will fall back to kill): %v", id, err)
-		}
-	} else {
-		if err := terminateProc(entry.cmd); err != nil {
-			log.Printf("stop  %s: terminate failed (will fall back to kill): %v", id, err)
-		}
+	// Backend abstracts the forked-vs-adopted distinction: Terminate
+	// dispatches to process-group signal for forked children and to
+	// single-PID signal for adopted ones. The grace timer is the
+	// same in both cases.
+	if err := m.backend.Terminate(entry.handle); err != nil {
+		log.Printf("stop  %s: terminate failed (will fall back to kill): %v", id, err)
 	}
 	timer := time.NewTimer(m.gracePeriod)
 	defer timer.Stop()
@@ -443,17 +425,8 @@ func (m *Manager) gracefulKill(id string, entry *procEntry) {
 		m.mu.Lock()
 		entry.killed = true
 		m.mu.Unlock()
-		if entry.adoptedPID != 0 {
-			log.Printf("stop  %s: grace expired, sending KILL pid=%d (adopted)", id, entry.adoptedPID)
-			_ = killPID(entry.adoptedPID)
-			return
-		}
-		pid := 0
-		if entry.cmd.Process != nil {
-			pid = entry.cmd.Process.Pid
-		}
-		log.Printf("stop  %s: grace expired, sending KILL pid=%d", id, pid)
-		_ = killProc(entry.cmd)
+		log.Printf("stop  %s: grace expired, sending KILL pid=%d", id, entry.handle.PID)
+		_ = m.backend.Kill(entry.handle)
 	}
 }
 
@@ -567,10 +540,8 @@ func osLabel() string {
 	}
 }
 
-// adoptedPollInterval controls the cadence of liveness checks for
-// adopted workers. The plan calls for 2 s; cheap on every OS we care
-// about and gives the UI a snappy "exited (orphan)" transition.
-const adoptedPollInterval = 2 * time.Second
+// adoptedPollInterval is owned by the backend now (LocalBackend
+// defaults to 2 s). Kept here as documentation of the cadence.
 
 // Adopt registers a previously-discovered live worker (ClassMine
 // candidate) into the registry as a running, supervised entry. The
@@ -605,9 +576,9 @@ func (m *Manager) Adopt(c adopt.Candidate) string {
 	}
 
 	entry := &procEntry{
-		startedAt:  startedAt,
-		stopCh:     make(chan struct{}),
-		adoptedPID: c.Sentinel.PID,
+		handle:    m.backend.Adopt(c.Sentinel.PID),
+		startedAt: startedAt,
+		stopCh:    make(chan struct{}),
 	}
 	m.mu.Lock()
 	m.running[id] = entry
@@ -658,13 +629,8 @@ func adoptedID(c adopt.Candidate) string {
 // disappears, then marks the registry row exited. Exit code stays
 // nil (we are not the parent; the kernel won't report it to us).
 func (m *Manager) superviseAdopted(id string, entry *procEntry) {
-	tick := time.NewTicker(adoptedPollInterval)
-	defer tick.Stop()
-	for range tick.C {
-		if !liveness.IsAlive(entry.adoptedPID) {
-			break
-		}
-	}
+	info := m.backend.Wait(entry.handle)
+	_ = info // adopted Wait returns ExitInfo{Code:nil} once IsAlive flips false
 
 	now := time.Now().UTC()
 	m.reg.Update(id, func(w *registry.Worker) {
@@ -684,7 +650,7 @@ func (m *Manager) superviseAdopted(id string, entry *procEntry) {
 		cause = "killed-after-grace"
 	}
 	duration := now.Sub(entry.startedAt).Round(time.Millisecond)
-	log.Printf("exit  %s (adopted): pid=%d cause=%s uptime=%s", id, entry.adoptedPID, cause, duration)
+	log.Printf("exit  %s (adopted): pid=%d cause=%s uptime=%s", id, entry.handle.PID, cause, duration)
 
 	close(entry.stopCh)
 }
@@ -712,7 +678,7 @@ func (m *Manager) Quarantine() []adopt.Candidate {
 	}
 	m.mu.Unlock()
 	for i := range cands {
-		cands[i].Alive = liveness.IsAlive(cands[i].Sentinel.PID)
+		cands[i].Alive = backend.IsAliveLocal(cands[i].Sentinel.PID)
 	}
 	return cands
 }
@@ -741,7 +707,7 @@ func (m *Manager) QuarantineAct(ctx context.Context, key, action string) error {
 	case "adopt":
 		// Re-check liveness; an operator that took their time may be
 		// adopting a now-dead PID, in which case fold it as stale.
-		if !liveness.IsAlive(c.Sentinel.PID) {
+		if !backend.IsAliveLocal(c.Sentinel.PID) {
 			m.RegisterStale(c)
 			return nil
 		}
@@ -768,7 +734,10 @@ func (m *Manager) QuarantineAct(ctx context.Context, key, action string) error {
 func (m *Manager) killForeign(ctx context.Context, c adopt.Candidate) error {
 	pid := c.Sentinel.PID
 	log.Printf("quarantine kill: run=%s slot=%02d pid=%d", c.Sentinel.RunID, c.Sentinel.Slot, pid)
-	if err := terminatePID(pid); err != nil {
+	// Adopt the PID into a Handle just for termination plumbing; we
+	// never registered it so there's no procEntry to clean up.
+	h := m.backend.Adopt(pid)
+	if err := m.backend.Terminate(h); err != nil {
 		log.Printf("quarantine kill: terminate(%d): %v", pid, err)
 	}
 	deadline := time.NewTimer(m.gracePeriod)
@@ -781,11 +750,11 @@ func (m *Manager) killForeign(ctx context.Context, c adopt.Candidate) error {
 			return ctx.Err()
 		case <-deadline.C:
 			log.Printf("quarantine kill: grace expired, KILL pid=%d", pid)
-			_ = killPID(pid)
+			_ = m.backend.Kill(h)
 			removeSentinelArtifacts(c)
 			return nil
 		case <-tick.C:
-			if !liveness.IsAlive(pid) {
+			if !backend.IsAliveLocal(pid) {
 				removeSentinelArtifacts(c)
 				return nil
 			}

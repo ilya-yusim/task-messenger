@@ -16,6 +16,10 @@
     <h2>Spawn workers</h2>
     <form id="spawn-form">
       <label>
+        Host
+        <select id="host"></select>
+      </label>
+      <label>
         Count
         <input type="number" id="count" min="1" max="256" value="1" required>
       </label>
@@ -27,6 +31,10 @@
       <button type="button" id="stop-all-btn">Stop all</button>
     </form>
     <p id="spawn-status" class="muted"></p>
+    <p id="host-status" class="muted">
+      <span id="host-status-text"></span>
+      <button type="button" id="bootstrap-btn" hidden>Bootstrap tm-worker</button>
+    </p>
   </section>
 
   <section id="workers">
@@ -71,6 +79,11 @@
   <dialog id="log-modal">
     <header>
       <strong id="log-title">Logs</strong>
+      <span id="log-meta" class="muted"></span>
+      <button type="button" id="log-refresh">Refresh</button>
+      <label class="muted" style="margin-left:0.5rem">
+        <input type="checkbox" id="log-auto" checked> auto-refresh
+      </label>
       <button type="button" id="log-close">Close</button>
     </header>
     <pre id="log-pre"></pre>

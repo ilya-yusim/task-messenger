@@ -330,40 +330,118 @@ the backend implementation, not in operator README prose.
 
 ## Phase 3 — remote VMs (Codespaces first)
 
+Status as of April 2026: Slice 3.1 in progress.
+
+### Slice plan
+
+Phase 3 is sliced so each slice is independently shippable and ends with
+`local`-only behaviour intact.
+
+- **Slice 3.1 — Backend interface refactor.** Define `Backend` +
+  `Handle` types in a new `internal/backend` package; move the local
+  process-control primitives (Setsid/DETACHED_PROCESS spawn, terminate,
+  kill, liveness probe) behind a `LocalBackend` implementation. Refit
+  `local.Manager` to call through the interface for both forked
+  children and adopted PIDs. No behaviour change. The JSON
+  `Worker.Host` field already exists; remains `"local"` everywhere
+  until 3.2.
+- **Slice 3.2 — Inventory config.** Parse a JSON inventory file (not
+  YAML — keeps zero deps) at `~/.config/tm-worker-farm/hosts.json`.
+  Default: synthesize a single `local` host so flag-driven UX still
+  works. Reject duplicate `id` at load time with a typed error
+  (`InventoryError{Index, Field}`); refuse to start. UI gets the host
+  dropdown + table column; only `local` works.
+- **Slice 3.3 — `gh` preflight + ssh transport.** Internal
+  `internal/gh` package: `List`, `SSH(name, script)`, `CP(name, src,
+  dst)`, `AuthStatus()` returning a typed `NeedsCodespaceScope` error
+  (with the precise `gh auth refresh -h github.com -s codespace`
+  remediation hint). Assumes `gh` is on `$PATH`; surfaces a clean
+  error if missing — never auto-installs. New endpoint
+  `GET /hosts/{id}/status` exposes auth/reachability state.
+- **Slice 3.4 — Bootstrap.** `POST /hosts/{id}/bootstrap` implements
+  the equivalent of `install_tm_worker_codespace.ps1`: resolve target
+  tag, discover asset name, `gh release download` locally,
+  `gh codespace cp` the `.run` + helpers, `gh codespace ssh -- bash`
+  to run `<asset>.run --accept -- --yes`. Helper-script hash tracked
+  locally to skip re-uploads. UI shows a "Bootstrap" button when host
+  status is `not-installed`.
+- **Slice 3.5 — Remote spawn/stop/logs.** `CodespaceBackend`
+  implementing the full `Backend` interface. `Start` shells
+  `start_workers_local.sh -n <count>` over ssh, parses the manifest
+  inline between sentinel markers, mirrors it to
+  `runs/codespace-<host-id>/<run-id>/manifest.json`. `Terminate`/`Kill`
+  shell `stop_workers_local.sh`. `IsAlive` polls via a single ssh
+  batched per host. Logs are tail-on-demand only; SSE streaming for
+  remote workers is deferred to Phase 4.
+- **Slice 3.6 — Polish + docs.** README updates for inventory format,
+  bootstrap workflow, codespace troubleshooting; smoke checklist for
+  codespaces; plan.md "Phase 3 complete" stamp.
+
+Stage A (push model — controller drives every call via
+`gh codespace ssh`) only. Stage B (pull model — `tm-worker-farm
+--agent` running on the remote) is deferred until A actually hurts.
+
+### Phase 3 decisions locked in
+
+- **Single binary.** `internal/gh`, inventory parsing, and remote
+  backend all ship in the same `tm-worker-farm` binary as the embedded
+  UI. One thing to deploy.
+- **Inventory format: JSON** (not YAML). Keeps `worker-farm` stdlib-only
+  — no yaml dep just for a config file.
+- **`gh` discovery.** Operator must have `gh` on `$PATH`; controller
+  never auto-installs. Same posture as `tm-worker` discovery.
+- **Duplicate host-id policy.** Reject at config load with a typed
+  error naming the offending index. Single-operator tool; loud-fail
+  beats silent misrouting.
+- **Default config.** No `hosts.json` ⇒ synthesize `[{id: "local",
+  backend: "local"}]` so the existing flag-based UX keeps working.
+
 ### Inventory schema
 
-```yaml
-# ~/.config/tm-worker-controller/config.yaml
-hosts:
-  - id: local
-    backend: local                 # spawns directly
-  - id: cs-mybox
-    backend: codespace             # uses gh codespace ssh / cp
-    codespace:
-      name: glorious-space-acorn-97q979gjr9wr3pv5j
-      worker_bin: tm-worker        # on remote PATH after install
-      config: ~/.config/task-messenger/tm-worker/config-worker.json
-  - id: cs-anyrunning
-    backend: codespace
-    codespace:
-      name: ""                     # empty = pick first available
-  - id: gcp-rdv
-    backend: gcp-iap               # future
-    gcp_iap:
-      project: task-messenger-prod
-      zone: us-west1-a
-      instance: tm-worker-1
+```jsonc
+// ~/.config/tm-worker-farm/hosts.json
+{
+  "hosts": [
+    { "id": "local", "backend": "local" },
+    {
+      "id": "cs-mybox",
+      "backend": "codespace",
+      "codespace": {
+        "name": "glorious-space-acorn-97q979gjr9wr3pv5j",
+        "worker_bin": "tm-worker",
+        "config": "~/.config/task-messenger/tm-worker/config-worker.json"
+      }
+    },
+    {
+      "id": "cs-anyrunning",
+      "backend": "codespace",
+      "codespace": { "name": "" }
+    },
+    {
+      "id": "gcp-rdv",
+      "backend": "gcp-iap",
+      "gcp_iap": {
+        "project": "task-messenger-prod",
+        "zone": "us-west1-a",
+        "instance": "tm-worker-1"
+      }
+    }
+  ]
+}
 ```
 
 `backend` is the discriminator — local / codespace / ssh / gcp-iap / etc.
-Adding a new backend is implementing one Go interface:
+Adding a new backend is implementing one Go interface (see slice 3.1
+for the actual shape that landed):
 
 ```go
 type Backend interface {
-    Spawn(ctx context.Context, id string, args []string) (RemoteHandle, error)
-    Status(ctx context.Context, h RemoteHandle) (WorkerState, *int, error)
-    Stop(ctx context.Context, h RemoteHandle, grace time.Duration) error
-    Logs(ctx context.Context, h RemoteHandle, sink io.Writer) error
+    Start(ctx context.Context, spec Spec) (*Handle, error)
+    Adopt(pid int) *Handle
+    IsAlive(h *Handle) bool
+    Terminate(h *Handle) error
+    Kill(h *Handle) error
+    Wait(h *Handle) ExitInfo
 }
 ```
 

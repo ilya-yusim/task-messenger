@@ -1,8 +1,10 @@
 //go:build !windows
 
-package local
+package backend
 
 import (
+	"errors"
+	"os"
 	"os/exec"
 	"syscall"
 )
@@ -48,4 +50,27 @@ func killPID(pid int) error {
 		return nil
 	}
 	return syscall.Kill(pid, syscall.SIGKILL)
+}
+
+// isAlive returns true if a process with the given PID exists and is
+// reachable by this user. ESRCH ⇒ dead; EPERM ⇒ alive (different uid).
+// Does NOT distinguish "running" from "zombie" — that distinction
+// doesn't matter for adoption decisions.
+func isAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	if err := p.Signal(syscall.Signal(0)); err != nil {
+		if errors.Is(err, syscall.ESRCH) {
+			return false
+		}
+		// EPERM (or anything else that says "process exists but you
+		// can't touch it") still counts as alive.
+		return true
+	}
+	return true
 }

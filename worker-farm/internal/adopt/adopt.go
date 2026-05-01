@@ -16,7 +16,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ilya-yusim/task-messenger/worker-farm/internal/liveness"
+	"github.com/ilya-yusim/task-messenger/worker-farm/internal/backend"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/paths"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/sentinel"
 )
@@ -123,7 +123,7 @@ func classifyOne(path, runDir string, known map[string]struct{}) (Candidate, boo
 		log.Printf("adopt: skip sentinel with invalid pid %d at %s", s.PID, path)
 		return Candidate{}, false
 	}
-	alive := liveness.IsAlive(s.PID)
+	alive := backend.IsAliveLocal(s.PID)
 	_, hit := known[s.ControllerID]
 
 	c := Candidate{

@@ -7,6 +7,10 @@ const POLL_MS = 1000;
 
 const els = {
   form: $("#spawn-form"),
+  host: $("#host"),
+  hostStatus: $("#host-status"),
+  hostStatusText: $("#host-status-text"),
+  bootstrapBtn: $("#bootstrap-btn"),
   count: $("#count"),
   args: $("#args"),
   spawnBtn: $("#spawn-btn"),
@@ -16,14 +20,22 @@ const els = {
   workerCount: $("#worker-count"),
   modal: $("#log-modal"),
   logTitle: $("#log-title"),
+  logMeta: $("#log-meta"),
   logPre: $("#log-pre"),
   logClose: $("#log-close"),
+  logRefresh: $("#log-refresh"),
+  logAuto: $("#log-auto"),
   quarantineSection: $("#quarantine"),
   quarantineRows: $("#quarantine-rows"),
   quarantineCount: $("#quarantine-count"),
 };
 
 let activeStream = null; // { es: EventSource, id: string }
+let logPollTimer = null; // setInterval handle for codespace tail polling
+let activeLogWorker = null; // {id, host, state} of the worker shown in the modal
+const LOG_POLL_MS = 2000;
+const LOG_TAIL_BYTES = 65536;
+const LOG_TAIL_LINES = 500; // codespace endpoint takes a line count
 
 function fmtTime(iso) {
   if (!iso) return "—";
@@ -112,15 +124,19 @@ async function poll() {
   }
 }
 
-async function spawn(count, args) {
+async function spawn(count, args, hostID) {
   els.spawnBtn.disabled = true;
-  els.spawnStatus.textContent = `Starting ${count}…`;
+  els.spawnStatus.textContent = `Starting ${count} on ${hostID}…`;
   try {
     const res = await fetch("/workers", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ count, args }),
+      body: JSON.stringify({ count, args, host_id: hostID }),
     });
+    if (!res.ok && res.status !== 207) {
+      const txt = await res.text();
+      throw new Error(`spawn -> ${res.status}: ${txt.trim()}`);
+    }
     const body = await res.json().catch(() => ({}));
     const workers = body.workers || [];
     const ok = workers.filter((w) => w.ok).length;
@@ -183,30 +199,84 @@ async function stopAll() {
 
 function openLogs(w) {
   els.logTitle.textContent = `${w.id} — ${w.state}`;
+  els.logMeta.textContent = w.host ? `host: ${w.host}` : "";
   els.logPre.textContent = "Loading…";
   els.modal.showModal();
 
-  // Close any prior stream first.
+  // Tear down anything left over from a previous open.
   closeStream();
+  activeLogWorker = { id: w.id, host: w.host, state: w.state };
 
-  // Initial tail (last 64 KB) so the user immediately sees something.
-  fetch(`/workers/${encodeURIComponent(w.id)}/log?tail=65536`, { cache: "no-store" })
-    .then((r) => r.ok ? r.text() : Promise.reject(new Error(`log -> ${r.status}`)))
-    .then((text) => {
-      els.logPre.textContent = text;
-      els.logPre.scrollTop = els.logPre.scrollHeight;
-    })
-    .catch((err) => { els.logPre.textContent = `Error: ${err.message}`; });
+  // Initial fetch + decide refresh strategy. Codespace workers
+  // can't use SSE (the server returns 501 for them, see
+  // handleWorkerLogStream) so we poll the tail endpoint instead.
+  // For local workers we still use SSE for true tail-f behaviour
+  // and fall back to a manual Refresh button if it dies.
+  refreshLog().then(() => {
+    const isCodespace = w.host && w.host !== "local";
+    const isLive = w.state === "running" || w.state === "starting" || w.state === "stopping";
+    if (!isLive) return;
+    if (isCodespace) {
+      startLogPoll();
+    } else {
+      const es = new EventSource(`/workers/${encodeURIComponent(w.id)}/log/stream`);
+      es.onmessage = (ev) => {
+        els.logPre.textContent += ev.data + "\n";
+        els.logPre.scrollTop = els.logPre.scrollHeight;
+      };
+      // If the stream errors out (e.g. server doesn't actually
+      // support SSE for this worker), silently downgrade to
+      // periodic polling so the operator still sees fresh output.
+      es.onerror = () => {
+        es.close();
+        if (activeStream && activeStream.es === es) {
+          activeStream = null;
+          startLogPoll();
+        }
+      };
+      activeStream = { es, id: w.id };
+    }
+  });
+}
 
-  // Live tail via SSE — only meaningful while the worker is running.
-  if (w.state === "running" || w.state === "starting" || w.state === "stopping") {
-    const es = new EventSource(`/workers/${encodeURIComponent(w.id)}/log/stream`);
-    es.onmessage = (ev) => {
-      els.logPre.textContent += ev.data + "\n";
+// refreshLog re-fetches the tail of the active log worker's log file
+// and replaces the pre's contents (auto-scrolled to the bottom).
+// Returns a promise so callers can chain post-load behaviour.
+async function refreshLog() {
+  if (!activeLogWorker) return;
+  const w = activeLogWorker;
+  const isCodespace = w.host && w.host !== "local";
+  const url = isCodespace
+    ? `/workers/${encodeURIComponent(w.id)}/log?tail=${LOG_TAIL_LINES}`
+    : `/workers/${encodeURIComponent(w.id)}/log?tail=${LOG_TAIL_BYTES}`;
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(`log -> ${res.status}`);
+    const text = await res.text();
+    // Preserve user's scroll position only if they've scrolled away
+    // from the bottom (>40 px from the floor). Otherwise stay glued
+    // to the tail.
+    const stuckToBottom =
+      els.logPre.scrollHeight - els.logPre.scrollTop - els.logPre.clientHeight < 40;
+    els.logPre.textContent = text;
+    if (stuckToBottom) {
       els.logPre.scrollTop = els.logPre.scrollHeight;
-    };
-    es.onerror = () => { /* server closed; that's fine */ };
-    activeStream = { es, id: w.id };
+    }
+  } catch (err) {
+    els.logPre.textContent = `Error: ${err.message}`;
+  }
+}
+
+function startLogPoll() {
+  stopLogPoll();
+  if (!els.logAuto.checked) return;
+  logPollTimer = setInterval(() => { refreshLog(); }, LOG_POLL_MS);
+}
+
+function stopLogPoll() {
+  if (logPollTimer) {
+    clearInterval(logPollTimer);
+    logPollTimer = null;
   }
 }
 
@@ -215,6 +285,8 @@ function closeStream() {
     activeStream.es.close();
     activeStream = null;
   }
+  stopLogPoll();
+  activeLogWorker = null;
 }
 
 function parseArgs(text) {
@@ -227,19 +299,122 @@ els.form.addEventListener("submit", (e) => {
   e.preventDefault();
   const count = parseInt(els.count.value, 10);
   if (!Number.isFinite(count) || count < 1) return;
-  spawn(count, parseArgs(els.args.value));
+  spawn(count, parseArgs(els.args.value), els.host.value || "local");
 });
 
 els.stopAllBtn.addEventListener("click", stopAll);
+els.host.addEventListener("change", refreshHostStatus);
+els.bootstrapBtn.addEventListener("click", (e) => bootstrapHost(e.currentTarget.dataset.hostId, e.currentTarget));
 
 els.logClose.addEventListener("click", () => {
   closeStream();
   els.modal.close();
 });
 els.modal.addEventListener("close", closeStream);
+els.logRefresh.addEventListener("click", refreshLog);
+els.logAuto.addEventListener("change", () => {
+  if (!activeLogWorker) return;
+  const isCodespace = activeLogWorker.host && activeLogWorker.host !== "local";
+  // Auto-refresh toggle controls the polling timer. SSE for local
+  // workers is unaffected — its whole point is that it doesn't poll.
+  if (els.logAuto.checked) {
+    if (isCodespace) startLogPoll();
+  } else {
+    stopLogPoll();
+  }
+});
 
 poll();
 setInterval(poll, POLL_MS);
+loadHosts();
+
+// Hosts -------------------------------------------------------------
+
+async function loadHosts() {
+  try {
+    const res = await fetch("/hosts", { cache: "no-store" });
+    if (!res.ok) throw new Error(`GET /hosts -> ${res.status}`);
+    const hosts = await res.json();
+    renderHosts(Array.isArray(hosts) ? hosts : []);
+  } catch (err) {
+    // Fallback: single local entry so the form still works.
+    renderHosts([{ id: "local", backend: "local", supported: true }]);
+  }
+}
+
+function renderHosts(hosts) {
+  const sel = els.host;
+  sel.replaceChildren();
+  for (const h of hosts) {
+    const opt = document.createElement("option");
+    opt.value = h.id;
+    opt.textContent = h.supported ? `${h.id} (${h.backend})` : `${h.id} (${h.backend}, not yet supported)`;
+    if (!h.supported) opt.disabled = true;
+    sel.appendChild(opt);
+  }
+  // Pick the first supported host by default.
+  const firstSupported = hosts.find((h) => h.supported);
+  if (firstSupported) sel.value = firstSupported.id;
+  refreshHostStatus();
+}
+
+async function refreshHostStatus() {
+  const id = els.host.value;
+  if (!id) {
+    els.hostStatusText.textContent = "";
+    els.bootstrapBtn.hidden = true;
+    return;
+  }
+  els.hostStatusText.textContent = `Checking ${id}…`;
+  els.bootstrapBtn.hidden = true;
+  try {
+    const res = await fetch(`/hosts/${encodeURIComponent(id)}/status`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`status -> ${res.status}`);
+    const s = await res.json();
+    els.hostStatusText.textContent = formatHostStatus(s);
+    // Bootstrap is meaningful for codespace hosts that are reachable
+    // (gh authed + codespace running). "ok" today only means gh+cs
+    // are healthy; tm-worker may or may not be installed. Surface
+    // the button so the operator can install on demand.
+    els.bootstrapBtn.hidden = !(s.backend === "codespace" && s.status === "ok");
+    els.bootstrapBtn.dataset.hostId = id;
+  } catch (err) {
+    els.hostStatusText.textContent = `${id}: status check failed: ${err.message}`;
+    els.bootstrapBtn.hidden = true;
+  }
+}
+
+function formatHostStatus(s) {
+  const head = `${s.id} (${s.backend}): ${s.status}`;
+  const tail = [s.detail, s.hint && `→ ${s.hint}`].filter(Boolean).join(" — ");
+  return tail ? `${head} — ${tail}` : head;
+}
+
+async function bootstrapHost(id, btn) {
+  if (!id) return;
+  if (!confirm(`Install tm-worker on ${id}? This downloads the latest release locally and uploads it via gh codespace cp.`)) return;
+  btn.disabled = true;
+  const prev = btn.textContent;
+  btn.textContent = "Bootstrapping…";
+  els.hostStatusText.textContent = `${id}: bootstrapping (this can take a minute)…`;
+  try {
+    const res = await fetch(`/hosts/${encodeURIComponent(id)}/bootstrap`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
+    const txt = await res.text();
+    if (!res.ok) throw new Error(txt.trim() || `bootstrap -> ${res.status}`);
+    let body;
+    try { body = JSON.parse(txt); } catch { body = {}; }
+    els.hostStatusText.textContent = `${id}: bootstrap ok (tag=${body.tag || "?"}, asset=${body.asset_name || "?"})`;
+  } catch (err) {
+    els.hostStatusText.textContent = `${id}: bootstrap failed: ${err.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prev;
+  }
+}
 
 // Quarantine ----------------------------------------------------------
 
