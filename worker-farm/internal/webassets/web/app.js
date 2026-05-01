@@ -11,10 +11,12 @@ const els = {
   hostStatus: $("#host-status"),
   hostStatusText: $("#host-status-text"),
   bootstrapBtn: $("#bootstrap-btn"),
+  bootstrapTag: $("#bootstrap-tag"),
   count: $("#count"),
   args: $("#args"),
   spawnBtn: $("#spawn-btn"),
   stopAllBtn: $("#stop-all-btn"),
+  purgeAllBtn: $("#purge-all-btn"),
   spawnStatus: $("#spawn-status"),
   rows: $("#worker-rows"),
   workerCount: $("#worker-count"),
@@ -197,6 +199,28 @@ async function stopAll() {
   }
 }
 
+async function purgeAll() {
+  if (!confirm("Purge every exited worker? Logs and pidfiles for those rows will be deleted.")) return;
+  els.purgeAllBtn.disabled = true;
+  try {
+    const res = await fetch("/workers/purge-all", { method: "POST" });
+    if (!res.ok) throw new Error(`purge-all -> ${res.status}`);
+    const body = await res.json().catch(() => ({}));
+    const purged = body.purged ?? 0;
+    const skipped = body.skipped ?? 0;
+    const failed = body.failed ?? 0;
+    let msg = `Purged ${purged} row(s).`;
+    if (skipped) msg += ` Skipped ${skipped} (still running).`;
+    if (failed) msg += ` Failed ${failed} (see controller log).`;
+    els.spawnStatus.textContent = msg;
+  } catch (err) {
+    els.spawnStatus.textContent = `Purge-all failed: ${err.message}`;
+  } finally {
+    els.purgeAllBtn.disabled = false;
+    poll();
+  }
+}
+
 function openLogs(w) {
   els.logTitle.textContent = `${w.id} — ${w.state}`;
   els.logMeta.textContent = w.host ? `host: ${w.host}` : "";
@@ -303,6 +327,7 @@ els.form.addEventListener("submit", (e) => {
 });
 
 els.stopAllBtn.addEventListener("click", stopAll);
+els.purgeAllBtn.addEventListener("click", purgeAll);
 els.host.addEventListener("change", refreshHostStatus);
 els.bootstrapBtn.addEventListener("click", (e) => bootstrapHost(e.currentTarget.dataset.hostId, e.currentTarget));
 
@@ -367,6 +392,7 @@ async function refreshHostStatus() {
   }
   els.hostStatusText.textContent = `Checking ${id}…`;
   els.bootstrapBtn.hidden = true;
+  els.bootstrapTag.hidden = true;
   try {
     const res = await fetch(`/hosts/${encodeURIComponent(id)}/status`, { cache: "no-store" });
     if (!res.ok) throw new Error(`status -> ${res.status}`);
@@ -376,11 +402,14 @@ async function refreshHostStatus() {
     // (gh authed + codespace running). "ok" today only means gh+cs
     // are healthy; tm-worker may or may not be installed. Surface
     // the button so the operator can install on demand.
-    els.bootstrapBtn.hidden = !(s.backend === "codespace" && s.status === "ok");
+    const showBootstrap = s.backend === "codespace" && s.status === "ok";
+    els.bootstrapBtn.hidden = !showBootstrap;
+    els.bootstrapTag.hidden = !showBootstrap;
     els.bootstrapBtn.dataset.hostId = id;
   } catch (err) {
     els.hostStatusText.textContent = `${id}: status check failed: ${err.message}`;
     els.bootstrapBtn.hidden = true;
+    els.bootstrapTag.hidden = true;
   }
 }
 
@@ -392,16 +421,18 @@ function formatHostStatus(s) {
 
 async function bootstrapHost(id, btn) {
   if (!id) return;
-  if (!confirm(`Install tm-worker on ${id}? This downloads the latest release locally and uploads it via gh codespace cp.`)) return;
+  const tag = els.bootstrapTag.value.trim();
+  const tagLabel = tag || "latest";
+  if (!confirm(`Install tm-worker on ${id} from release ${tagLabel}? This downloads the asset locally and uploads it via gh codespace cp.`)) return;
   btn.disabled = true;
   const prev = btn.textContent;
-  btn.textContent = "Bootstrapping…";
-  els.hostStatusText.textContent = `${id}: bootstrapping (this can take a minute)…`;
+  btn.textContent = "Bootstrapping\u2026";
+  els.hostStatusText.textContent = `${id}: bootstrapping ${tagLabel} (this can take a minute)\u2026`;
   try {
     const res = await fetch(`/hosts/${encodeURIComponent(id)}/bootstrap`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: "{}",
+      body: JSON.stringify(tag ? { tag } : {}),
     });
     const txt = await res.text();
     if (!res.ok) throw new Error(txt.trim() || `bootstrap -> ${res.status}`);

@@ -43,9 +43,16 @@ Adopted-worker termination:
 - POSIX: SIGTERM, then SIGKILL after `gracePeriod`.
 - Windows: `TerminateProcess` directly (see above).
 
-Purging exited rows: every exited worker (whether it died naturally, was Stop'd, or was registered as `stale` during the adoption scan) gets a **Purge** button that deletes its log file, pidfile, and `.adopt` sentinel and removes the row from the registry. The run directory itself is left alone so any sibling slots still on disk keep their state.
+Purging exited rows: every exited worker (whether it died naturally, was Stop'd, or was registered as `stale` during the adoption scan) gets a **Purge** button that deletes its log file, pidfile, and `.adopt` sentinel and removes the row from the registry. The run directory itself is left alone so any sibling slots still on disk keep their state. The header bar also exposes a **Purge all** button that walks the registry once and purges every exited row in a single click; running/starting/stopping rows are skipped.
 
-Phase 3 (Codespaces backend) is the next phase.
+Phase 3 (remote VMs — Codespaces) is feature-complete. Slices delivered:
+
+- **Slice 3.1 — Backend interface refactor.** `internal/backend` defines `Backend` + `Handle` + `Spec`; `local.Manager` now goes through a `LocalBackend` for spawn/terminate/kill/liveness. No behaviour change; `Worker.Host` is `"local"` everywhere unless an inventory entry says otherwise.
+- **Slice 3.2 — Inventory config.** JSON inventory at `~/.config/tm-worker-farm/hosts.json` (or `%APPDATA%\tm-worker-farm\hosts.json` on Windows). Default when missing: synthesise `[{id:"local", backend:"local"}]`. Duplicate `id` rejects with a typed `InventoryError`. UI gets a host dropdown and per-host status badge.
+- **Slice 3.3 — `gh` preflight + ssh transport.** `internal/gh` shells out to `gh codespace ssh` / `gh codespace cp` only; never `bash -lc`. Typed errors (`MissingBinaryError`, `NotLoggedInError`, `NeedsCodespaceScopeError`, `NotFoundError`) carry remediation hints (e.g. `gh auth refresh -h github.com -s codespace`). `GET /hosts/{id}/status` exposes auth/reachability state.
+- **Slice 3.4 — Bootstrap.** `POST /hosts/{id}/bootstrap` resolves the target release (default = latest non-draft, override via `{"tag":"vtest"}`), `gh release download`s the linux-x86_64 `.run` locally, `gh codespace cp`s the asset + an embedded helper script into `~/.local/share/tm-worker-farm/`, then runs `<asset>.run --accept -- --yes` over a single piped `gh codespace ssh -- bash`. Helper script hash is cached per host so re-bootstraps skip the helper cp.
+- **Slice 3.5 — Remote spawn / stop / logs.** `internal/codespace` is a `Manager` analogous to `local.Manager` for codespace-backed hosts. `Spawn` ssh's `start_workers_local.sh` (embedded; piped over stdin), parses the per-run manifest inline between sentinel markers, mirrors it locally to `runs/codespace-<host-id>/<run-id>/manifest.json`. `Stop` sends a single ssh that SIGTERMs the PID and schedules a SIGKILL after `gracePeriod`. Liveness polls every 5 s with one batched `kill -0` ssh per host. Workers stuck in `stopping` past `gracePeriod + 10 s` are force-marked `exited` so the UI doesn't hang when the codespace becomes unreachable. Per-worker logs are tail-on-demand via `tail -n N` (auto-refreshed in the UI every 2 s). SSE log streaming for remote workers returns `501 Not Implemented` and is deferred to Phase 4.
+- **Slice 3.6 — Polish + docs.** Per-worker purge dispatches by ownership; Codespace workers get a matching `Purge` (drops registry row + per-run bookkeeping; mirror manifest on disk is kept as audit trail). UI gets a release-tag input next to **Bootstrap tm-worker** and a **Purge all** button. Codespace troubleshooting and a smoke checklist live below.
 
 ## HTTP API
 
@@ -58,10 +65,14 @@ Phase 3 (Codespaces backend) is the next phase.
 | `POST` | `/workers/{id}/stop` | 204 on completion |
 | `POST` | `/workers/{id}/purge` | 204; deletes log/pid/sentinel for an exited worker; 400 if still running |
 | `POST` | `/workers/stop-all` | 204 |
+| `POST` | `/workers/purge-all` | 200 with `{purged,skipped,failed}` JSON; purges every exited row across local + codespace backends |
 | `GET` | `/workers/{id}/log?tail=N` | text/plain |
 | `GET` | `/workers/{id}/log/stream` | text/event-stream (SSE; one frame per line) |
 | `GET` | `/quarantine` | JSON array of `theirs` candidates from the startup scan |
 | `POST` | `/quarantine/{run-id}/{NN}/{action}` | `action` ∈ `adopt`/`kill`/`ignore`; 204 on success |
+| `GET` | `/hosts` | JSON array of inventory hosts with `supported` flag |
+| `GET` | `/hosts/{id}/status` | per-host reachability/auth state |
+| `POST` | `/hosts/{id}/bootstrap` | install `tm-worker` on a codespace host; body (optional) `{"repo":"OWNER/REPO","tag":"vX.Y.Z"}`; default tag = latest non-draft |
 
 ## Build
 
@@ -117,3 +128,105 @@ Open `http://127.0.0.1:8090/` in a browser.
   installs (`~/.config/task-messenger/tm-worker/config-worker.json` on
   POSIX, `%APPDATA%\task-messenger\tm-worker\config-worker.json` on
   Windows).
+
+## Inventory (Phase 3)
+
+The controller picks up an optional JSON inventory at:
+
+- POSIX: `~/.config/tm-worker-farm/hosts.json` (or
+  `$XDG_CONFIG_HOME/tm-worker-farm/hosts.json`).
+- Windows: `%APPDATA%\tm-worker-farm\hosts.json`.
+
+When the file is missing the controller synthesises a single
+`local` host so the existing flag-driven UX keeps working.
+
+```jsonc
+{
+  "hosts": [
+    { "id": "local", "backend": "local" },
+    {
+      "id": "cs1",
+      "backend": "codespace",
+      "codespace": {
+        "name": "glorious-space-acorn-97q979gjr9wr3pv5j",
+        "worker_bin": "tm-worker",
+        "config": "~/.config/task-messenger/tm-worker/config-worker.json"
+      }
+    }
+  ]
+}
+```
+
+`backend` is the discriminator; today only `local` and `codespace`
+are wired up. Duplicate `id`s are rejected at startup with a typed
+error naming the offending index. Write the file as **UTF-8 without
+BOM** — PowerShell's `Set-Content -Encoding utf8` writes a BOM that
+breaks the JSON decoder; use `[System.IO.File]::WriteAllText` with
+`UTF8Encoding $false` instead.
+
+## Codespace bootstrap
+
+`POST /hosts/{id}/bootstrap` (button: **Bootstrap tm-worker**)
+resolves the configured GitHub release, downloads the
+`tm-worker-v*-linux-x86_64.run` asset locally, uploads it via
+`gh codespace cp`, and runs `<asset>.run --accept -- --yes` over
+`gh codespace ssh`. The release tag is read from the small input
+next to the button (blank ⇒ latest non-draft, e.g. `vtest` for the
+forced test release). Repository defaults to
+`ilya-yusim/task-messenger`; override per-call by POSTing
+`{"repo":"OWNER/REPO","tag":"vX.Y.Z"}` to the same endpoint.
+
+The controller — not the codespace — runs `gh release download`,
+because the user's local `gh` is typically authed for foreign-owner
+repos and draft releases while the codespace's is not. Asset names
+are discovered from `gh release view --json assets`, never
+constructed from the tag (`workflow_dispatch` builds always ship
+`tm-worker-v0.0.1-dev-...` regardless of the tag).
+
+## Codespace troubleshooting
+
+- **`gh codespace list` returns 403 / "admin rights".** The local
+  `gh` is missing the `codespace` scope. Run
+  `gh auth refresh -h github.com -s codespace`.
+- **Bootstrap fails with `Unknown option: --yes`.** The bundled
+  `install_linux.sh` inside the `.run` predates the `--yes` flag.
+  Cut a fresh release (push or force-push `vtest`, or tag `vX.Y.Z`)
+  and retry; the controller passes the tag verbatim to the
+  bootstrap endpoint.
+- **Spawn fails with `tm-worker: not found`.** Codespace hasn't been
+  bootstrapped yet (or `tm-worker` is not on `$PATH`). The host
+  status badge surfaces this; click **Bootstrap tm-worker**.
+- **A worker sits in `stopping` forever.** The controller forces
+  the transition to `exited` after `gracePeriod + 10 s` even when
+  SSH to the codespace fails (paused codespace, gh hiccup). If you
+  see one stuck longer than that, check the controller log for
+  `codespace poll host=...:` errors.
+- **Log window does not auto-update.** Codespace workers don't have
+  SSE; the modal polls `/workers/{id}/log?tail=N` every 2 s while
+  open. The header has a **Refresh** button and an **auto-refresh**
+  checkbox if you want to pause polling.
+- **Inventory parses but every host is `unsupported`.** The
+  `hosts.json` likely starts with a UTF-8 BOM. Re-write without it
+  (see Inventory section above).
+
+## Codespace smoke checklist
+
+After making any change to the codespace path, run through these
+in order:
+
+1. `meson compile -C builddir tm-worker-farm`, restart the
+   controller, refresh the UI.
+2. Select a codespace host in the dropdown; status badge reads
+   `ok`.
+3. Click **Bootstrap tm-worker** with the tag input blank
+   (latest) — the status line should end with
+   `bootstrap ok (tag=..., asset=tm-worker-v*-linux-x86_64.run)`.
+4. Spawn 2 workers on the codespace host; both should reach
+   `running` within ~5 s.
+5. Open the log modal on each row; you should see worker startup
+   output, and the modal should refresh every 2 s while the worker
+   is running.
+6. Click **Stop** on one row; it should transition `running` →
+   `stopping` → `exited` within ~15 s.
+7. Click **Stop all**; the remaining worker exits.
+8. Click **Purge all**; both rows disappear from the table.

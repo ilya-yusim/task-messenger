@@ -330,7 +330,12 @@ the backend implementation, not in operator README prose.
 
 ## Phase 3 — remote VMs (Codespaces first)
 
-Status as of April 2026: Slice 3.1 in progress.
+Status as of April 2026: **complete.** All slices (3.1–3.6) shipped;
+codespace hosts can be inventoried, bootstrapped, spawned on, stopped,
+and purged from the UI. Logs auto-refresh via tail polling every 2 s
+(SSE for remote workers is deferred to Phase 4). Workers stuck in
+`stopping` are force-marked `exited` after `gracePeriod + 10 s` so
+the UI never wedges when a codespace becomes unreachable.
 
 ### Slice plan
 

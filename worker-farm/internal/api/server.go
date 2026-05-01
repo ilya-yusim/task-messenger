@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -457,6 +458,11 @@ func (s *Server) handleWorkerByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if rest == "purge-all" {
+		s.handleWorkersPurgeAll(w, r)
+		return
+	}
+
 	parts := strings.Split(rest, "/")
 	id := parts[0]
 	if id == "" {
@@ -530,11 +536,55 @@ func (s *Server) handleWorkerPurge(w http.ResponseWriter, r *http.Request, id st
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if err := s.mgr.Purge(id); err != nil {
+	var err error
+	if s.csmgr != nil && s.csmgr.IsCodespaceWorker(id) {
+		err = s.csmgr.Purge(id)
+	} else {
+		err = s.mgr.Purge(id)
+	}
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleWorkersPurgeAll is the POST /workers/purge-all implementation.
+// Iterates the registry once and purges every worker in StateExited,
+// dispatching to the right backend. Running/starting/stopping workers
+// are silently skipped (operator must Stop them first). Always
+// succeeds (204) — per-row failures are logged. Returns a small JSON
+// summary in the response body so the UI can show "purged N row(s)".
+func (s *Server) handleWorkersPurgeAll(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", "POST")
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var purged, skipped, failed int
+	for _, worker := range s.reg.List() {
+		if worker.State != registry.StateExited {
+			skipped++
+			continue
+		}
+		var err error
+		if s.csmgr != nil && s.csmgr.IsCodespaceWorker(worker.ID) {
+			err = s.csmgr.Purge(worker.ID)
+		} else {
+			err = s.mgr.Purge(worker.ID)
+		}
+		if err != nil {
+			log.Printf("purge-all: %s: %v", worker.ID, err)
+			failed++
+			continue
+		}
+		purged++
+	}
+	writeJSON(w, http.StatusOK, map[string]int{
+		"purged":  purged,
+		"skipped": skipped,
+		"failed":  failed,
+	})
 }
 
 func (s *Server) handleWorkerLog(w http.ResponseWriter, r *http.Request, id string) {

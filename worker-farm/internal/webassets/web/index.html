@@ -29,10 +29,12 @@
       </label>
       <button type="submit" id="spawn-btn">Start</button>
       <button type="button" id="stop-all-btn">Stop all</button>
+      <button type="button" id="purge-all-btn">Purge all</button>
     </form>
     <p id="spawn-status" class="muted"></p>
     <p id="host-status" class="muted">
       <span id="host-status-text"></span>
+      <input type="text" id="bootstrap-tag" placeholder="tag (blank=latest, e.g. vtest)" hidden>
       <button type="button" id="bootstrap-btn" hidden>Bootstrap tm-worker</button>
     </p>
   </section>

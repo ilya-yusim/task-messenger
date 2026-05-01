@@ -386,6 +386,41 @@ func (m *Manager) StopAll(ctx context.Context) {
 	wg.Wait()
 }
 
+// Purge removes an exited codespace worker from the registry and
+// drops any per-run bookkeeping (runState entry, stop-tracking) once
+// no live siblings remain. Refuses to purge a still-running worker —
+// caller must Stop first. The local manifest mirror under
+// runs/codespace-<host>/<run-id>/manifest.json is intentionally left
+// in place as an audit trail; same posture as local.Manager.Purge.
+func (m *Manager) Purge(id string) error {
+	w, ok := m.reg.Get(id)
+	if !ok {
+		return fmt.Errorf("purge: no worker %q", id)
+	}
+	if w.State == registry.StateRunning || w.State == registry.StateStarting || w.State == registry.StateStopping {
+		return fmt.Errorf("purge: worker %s is %s; stop it first", id, w.State)
+	}
+	m.reg.Remove(id)
+	m.mu.Lock()
+	delete(m.stopRequested, id)
+	// If this was the last worker in the run, drop the runState too.
+	if w.RunID != "" {
+		stillReferenced := false
+		for _, sib := range m.reg.List() {
+			if sib.RunID == w.RunID {
+				stillReferenced = true
+				break
+			}
+		}
+		if !stillReferenced {
+			delete(m.runs, w.RunID)
+		}
+	}
+	m.mu.Unlock()
+	log.Printf("codespace purge %s: run=%s slot=%02d", id, w.RunID, w.Slot)
+	return nil
+}
+
 // TailLog returns the last `lines` lines of the worker's remote log
 // file via `tail -n N`. lines<=0 ⇒ entire file.
 func (m *Manager) TailLog(ctx context.Context, workerID string, lines int) ([]byte, error) {
