@@ -18,11 +18,29 @@ This document provides instructions for installing TaskMessenger on Windows, Lin
 
 ## Overview
 
-TaskMessenger consists of two components:
-- **Worker**: The task processing client that executes assigned tasks
-- **Dispatcher**: The task distribution server that coordinates task assignment
+TaskMessenger is a small distributed computational network. The two
+components covered by these installers are:
 
-Each component can be installed independently based on your needs. Both components are installed as user applications (not system services) and run on-demand.
+- **Worker** (`tm-worker`): connects to a dispatcher and executes
+  assigned tasks.
+- **Dispatcher** (`tm-dispatcher`): hosts an algorithm/generator and
+  hands tasks to connected workers. Bundles all built-in skills and
+  serves a local monitoring dashboard.
+
+Each component can be installed independently based on your needs. Both
+components are installed as user applications (not system services) and
+run on-demand.
+
+Two additional pieces are distributed separately and are out of scope
+for this guide:
+
+- **Rendezvous service** (`tm-rendezvous`): network-wide endpoint
+  discovery and dashboard relay. Lets workers find a dispatcher without
+  hard-coded addresses. See
+  [services/rendezvous/README.md](../services/rendezvous/README.md).
+- **Worker farm** (`tm-worker-farm`): end-user GUI/CLI for
+  contributing compute by running multiple workers locally or on a
+  GitHub Codespace. See [worker-farm/README.md](../worker-farm/README.md).
 
 ### Installation Locations
 
@@ -551,9 +569,11 @@ After installation, you can run the applications:
 
 ### Accessing the Dispatcher Dashboard
 
-When a dispatcher-backed generator is running, the monitoring dashboard is served locally by the monitoring HTTP service.
+Each running `tm-dispatcher` exposes a **local** monitoring dashboard
+over HTTP. It shows only that dispatcher's own sessions and is visible
+only to whoever started the process.
 
-1. Start the generator/dispatcher process.
+1. Start the dispatcher (or a generator that drives a dispatcher).
 2. Start one or more workers.
 3. Open `http://127.0.0.1:9090/` in a browser.
 
@@ -568,6 +588,9 @@ Notes:
 - Dashboard static files are installed to `<bindir>/dashboard`.
 - If the UI path is missing, `/api/monitor` and `/healthz` still function.
 - If the dashboard does not load, test `/healthz` first to confirm the service is running.
+- For a network-wide view that aggregates multiple dispatchers, use
+  the optional rendezvous service
+  ([services/rendezvous/README.md](../services/rendezvous/README.md)).
 
 ## Downloading installers from the terminal
 

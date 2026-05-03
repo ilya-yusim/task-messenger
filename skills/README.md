@@ -1,79 +1,84 @@
-# Skills Library
+# Skills
 
-Shared skill definitions and handlers used by both dispatcher and worker.
+\defgroup skills_module Skills
 
-## Directory Structure
+A **skill** is a typed compute kernel that workers execute on behalf
+of a dispatcher. Skills are addressed by namespaced string names
+(for example `builtin.StringReversal`), looked up through the skill
+registry, and dispatched against pre-allocated request and response
+buffers.
 
-```
-skills/
-├── builtins/        # Built-in skill implementations (FlatBuffers schemas + C++ sources)
-│   ├── Common.fbs
-│   ├── StringReversalSkill.{fbs,hpp,cpp}
-│   ├── MathOperationSkill.{fbs,hpp,cpp}
-│   ├── VectorMathSkill.{fbs,hpp,cpp}
-│   └── FusedMultiplyAddSkill.{fbs,hpp,cpp}
-├── registry/        # Skill registration, metadata, and dispatch
-│   ├── SkillRegistry.hpp    # Central registry with dispatch
-│   ├── ISkill.hpp           # Complete skill interface (processing + factory + identity)
-│   ├── Skill.hpp            # CRTP base class for skill implementations
-│   ├── SkillKey.hpp         # Deterministic skill ID derivation from names
-│   ├── PayloadBuffer.hpp    # Type-erased owned payload buffers
-│   ├── IPayloadFactory.hpp  # Factory interface for payload creation
-│   ├── CompareUtils.hpp/.cpp# Floating-point comparison helpers
-│   └── VerificationResult.hpp
-└── schemas/         # (reserved for cross-skill shared schemas)
-```
+## Authoring a skill
 
-## Components
+A skill is two files dropped into [builtins/](builtins/README.md):
 
-### Built-ins (`builtins/`)
-Each built-in skill bundles its FlatBuffers `.fbs` schema, a C++ implementation
-(`.cpp`), and a header (`.hpp`) containing the skill's `IPayloadFactory`
-subclass. Schemas are compiled at build time using `flatc`.
+- **`<Skill>.skill.toml`** — the skill schema. Declares the skill
+  name, version, request and response field shapes, and any
+  fixed/maximum sizes. The build pipeline reads this to generate the
+  C++ accessors used by both the dispatcher (for shape lookup and
+  test-buffer creation) and the worker (for typed compute).
+- **`<Skill>_impl.hpp`** — your compute implementation. Reads typed
+  request fields from a generated request type and writes typed
+  response fields to a generated response type.
 
-### Registry (`registry/`)
-- **SkillRegistry**: Central registry for skills with registration, lookup, and dispatch.
-  Can be used as a singleton via `instance()` or instantiated directly.
-- **ISkill / Skill\<Derived\>**: Combined interface and CRTP base class providing identity
-  (name, description, version, ID), handler, and payload factory in a single object.
-- **SkillKey**: Derives deterministic 32-bit skill IDs from namespaced string names via FNV-1a hash.
-- **PayloadBuffer**: Type-erased owned buffer with typed pointer access for zero-copy transfer.
+Built-in skills (e.g. `StringReversalSkill`, `MathOperationSkill`,
+`VectorMathSkill`, `FusedMultiplyAddSkill`, the BLAS skills under
+[builtins/blas/](builtins/blas/)) follow this pattern and are good
+templates. See [builtins/README.md](builtins/README.md) for the
+catalog.
 
-### Handlers
-Task processing is defined by the `ISkill::process()` virtual method.
-The `Skill<Derived>` CRTP base implements it by delegating to
-`scatter_request()` / `scatter_response()` / `compute()` on the derived class.
+> External user-authored skills (drop-in plugins outside this tree)
+> are a roadmap item. Today, adding a skill means adding a pair of
+> files in `skills/builtins/` and rebuilding.
 
-## Usage
+## Using a skill
 
-### Dispatcher Side
+Both the dispatcher and the worker reach skills through a shared
+`SkillRegistry`. The dispatcher looks up the skill by name to obtain
+its ID and to allocate properly sized request and response buffers;
+the worker dispatches incoming requests to the registered handler.
+
 ```cpp
 #include "skills/registry/SkillRegistry.hpp"
 #include "skills/registry/SkillKey.hpp"
 
 using namespace TaskMessenger::Skills;
 
-// Check skill validity by name
 if (SkillRegistry::instance().has_skill("builtin.StringReversal")) {
     auto id = SkillKey::from_name("builtin.StringReversal");
-    // Create typed request + pre-allocated response buffers
-    auto request = SkillRegistry::instance().create_test_request_buffer(id);
+    auto request  = SkillRegistry::instance().create_test_request_buffer(id);
     auto response = SkillRegistry::instance().create_response_buffer(
         id, request->span());
-    // Wrap in a TaskMessage and submit
+    // Wrap in a TaskMessage and submit.
 }
 ```
 
-### Worker Side
+On the worker side:
+
 ```cpp
-#include "skills/registry/SkillRegistry.hpp"
-
-using namespace TaskMessenger::Skills;
-
-// Use the global singleton (or construct with a logger)
 SkillRegistry& registry = SkillRegistry::instance();
-
-// Dispatch request payload to the appropriate handler.
-// 'response' must be a pre-allocated writable span sized for the expected output.
 bool ok = registry.dispatch(skill_id, task_id, request_span, response_span);
 ```
+
+## Submodules
+
+| Path | Scope |
+| --- | --- |
+| [builtins/](builtins/README.md) | Bundled skills shipped with the platform; the public reference for skill authors. |
+| [registry/](registry/) | Skill registration, lookup, and dispatch backend. Implementation detail of the public API. |
+| [codegen/](codegen/) | Schema-to-C++ pipeline that consumes `.skill.toml` files. Implementation detail of the public API. |
+
+## Build options
+
+The BLAS-backed skills under [builtins/blas/](builtins/blas/) are
+gated by the Meson option `enable_blas_skills` (default `true`),
+which pulls in OpenBLAS through the
+[openblas-wrapper](../subprojects/openblas-wrapper/README.md)
+subproject (Apple Accelerate on macOS).
+
+## Related documentation
+
+- Top-level overview: [README.md](../README.md).
+- Worker dispatch: [worker/README.md](../worker/README.md).
+- Dispatcher generators that submit skill requests:
+  [generators/README.md](../generators/README.md).

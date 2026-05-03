@@ -43,4 +43,10 @@ Both variants expose the same `IRuntimeMode` API, so higher-level components do 
 
 ## Byte Counter Access
 
-`WorkerSession` queries the runtime for totals and normalizes them into formatted strings for UI/logging. If you add a new runtime, ensure the `bytes_sent_` and `bytes_received_` accumulators are updated alongside every I/O boundary so the metrics remain accurate.
+`WorkerSession` queries the runtime for totals and normalizes them into formatted strings for UI/logging. New runtimes update the `bytes_sent_` and `bytes_received_` accumulators at every I/O boundary so the metrics remain accurate.
+
+## Related documentation
+
+- Parent component: [worker/README.md](../README.md).
+- Session that selects and drives the runtime: [worker/session/README.md](../session/README.md).
+- Coroutine I/O used by `AsyncRuntime`: [transport/coro/README.md](../../transport/coro/README.md).

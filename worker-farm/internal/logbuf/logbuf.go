@@ -1,6 +1,6 @@
-// Package logbuf manages per-worker log files. Phase 1 keeps it
-// dead-simple: one file per worker, truncated on spawn, tailed via
-// repeated reads. Rotation is a Phase 2 item.
+// Package logbuf manages per-worker log files. The implementation is
+// deliberately simple: one file per worker, truncated on spawn, tailed
+// via repeated reads. Rotation is a future enhancement.
 package logbuf
 
 import (

@@ -8,9 +8,7 @@
 //   - `gh codespace cp` ships files through that same tunnel.
 //
 // Operators must have `gh` on `$PATH`. We never auto-install it; the
-// preflight surfaces a clean error when it's missing. See
-// worker-farm-controller-plan.md ("Phase 3 decisions locked in") for
-// the rationale.
+// preflight surfaces a clean error when it's missing.
 package gh
 
 import (
@@ -228,8 +226,8 @@ func (e *NotFoundError) Error() string {
 // ssh`. The script is fed via stdin to bash, so it can be
 // multi-line. Returns the combined stdout/stderr.
 //
-// This is the workhorse for slice 3.4 (bootstrap) and 3.5 (remote
-// spawn). All host-side commands route through here.
+// This is the workhorse for codespace bootstrap and remote spawn.
+// All host-side commands route through here.
 //
 // Optional scriptArgs are appended after `bash -s --` so the script
 // receives them as positional parameters ($1, $2, ...). This lets us

@@ -1,6 +1,6 @@
 // LocalBackend implementation: starts/stops worker processes on the
-// same machine the controller runs on. This is the only backend Phase
-// 2 ships; Phase 3 will add a CodespaceBackend alongside.
+// same machine the controller runs on. A CodespaceBackend lives
+// alongside it for remote workers.
 //
 // Lifecycle expectations:
 //   - Start invokes os/exec, redirects Stdout/Stderr to the

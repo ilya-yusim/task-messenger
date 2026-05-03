@@ -1,285 +1,90 @@
-# TaskMessenger Homebrew Tap
+# Homebrew tap
 
-This directory contains Homebrew formulas for TaskMessenger components.
+Homebrew formulas for the macOS distribution of Task Messenger. The
+formulas in [Formula/](Formula/) are kept in sync with each release
+by the `release.yml` GitHub Actions workflow: tagging a release
+rebuilds the macOS distributions, recomputes SHA-256 checksums, and
+commits the updated formulas back to the repository.
 
-## ⚠️ Important: System Requirements
+## Install
 
-**Homebrew installation requires write access to `/opt/homebrew` (or `/usr/local` on Intel Macs).**
-
-- ✅ **If you have admin/sudo access**: Use Homebrew (recommended for developers)
-- ❌ **If you don't have admin/sudo access**: Use [.command installers](#alternative-command-installers) instead
-
-To fix Homebrew permissions (requires sudo):
-```bash
-sudo chown -R $(whoami) /opt/homebrew
-```
-
-If you cannot run the above command, **skip to the .command installer section below.**
-
-## Setting Up the Tap
-
-### Option 1: Create a Separate Tap Repository (Recommended)
-
-1. Create a new GitHub repository named `homebrew-task-messenger`
-2. Copy the `Formula/` directory to the root of that repository
-3. Users install with:
-   ```bash
-   brew tap <username>/task-messenger
-   brew install tm-dispatcher tm-worker
-   ```
-
-### Option 2: Use Main Repository (Current Setup)
-
-The formulas are kept in this repository and automatically updated on each release:
 ```bash
 brew tap <username>/task-messenger https://github.com/<username>/task-messenger
 brew install tm-dispatcher tm-worker
 ```
 
-Replace `<username>` with your GitHub username or organization name.
+Replace `<username>` with the GitHub user or organisation hosting the
+tap. The same formulas can also be hosted in a dedicated
+`homebrew-task-messenger` repository if you prefer a separate tap.
 
-## Automated Formula Updates
+After install, configuration files are created under
+`~/Library/Application Support/TaskMessenger/`. Run with:
 
-**Formulas are automatically updated on each release!** 
-
-The `.github/workflows/release.yml` workflow handles everything:
-
-1. **On tag push** (e.g., `git tag v1.0.1 && git push --tags`):
-   - Builds macOS distributions for both architectures
-   - Generates SHA256 checksums
-   - Updates both formulas with new version, URLs, and checksums
-   - Auto-commits changes back to the repository
-
-2. **No manual intervention needed** - formulas stay in sync with releases
-
-3. **Dynamic repository handling** - formulas use `GITHUB_REPOSITORY` placeholder that gets replaced with your actual repo during the workflow
-
-### How It Works
-
-The workflow automatically:
-- Extracts version from git tag
-- Reads SHA256 checksums from generated `.sha256` files
-- Updates version numbers in formulas
-- Updates download URLs to point to new release
-- Replaces placeholder checksums with actual values
-- Injects your GitHub repository name dynamically
-- Commits changes with message: `chore: update Homebrew formulas for vX.Y.Z`
-
-## Testing Formulas Locally
-
-**Note:** Local Homebrew testing requires write access to `/opt/homebrew/Cellar` (sudo access). If you don't have this, use Method 3 below to test the actual installation.
-
-### Method 1: Test from GitHub Repository (Recommended)
-
-After pushing changes to GitHub, test the actual tap:
-
-```bash
-# Add your repository as a tap
-brew tap <username>/task-messenger https://github.com/<username>/task-messenger
-
-# Install and test
-brew install tm-dispatcher
-tm-dispatcher --version
-
-# Uninstall
-brew uninstall tm-dispatcher
-brew untap <username>/task-messenger
-```
-
-### Method 2: Create Local Tap for Testing (Requires sudo)
-
-Homebrew requires formulas to be in a tap. Create a local tap for testing:
-
-```bash
-# Create a local tap directory
-mkdir -p $(brew --repository)/Library/Taps/local/homebrew-task-messenger
-
-# Link your formula directory
-ln -sf $(pwd)/homebrew/Formula $(brew --repository)/Library/Taps/local/homebrew-task-messenger/
-
-# Install from local tap
-brew install local/task-messenger/tm-dispatcher
-
-# Test
-tm-dispatcher --version
-
-# Cleanup
-brew uninstall tm-dispatcher
-rm -rf $(brew --repository)/Library/Taps/local/homebrew-task-messenger
-```
-
-### Method 3: Test Installation Without Homebrew (No sudo required)
-
-**This is the recommended method for local testing without sudo access.**
-
-Test the actual .command installer or manual tar.gz extraction:
-
-```bash
-# Option A: Test .command installer
-./extras/scripts/build_distribution_macos.sh worker
-open dist/tm-worker-v*.command  # Double-click to install
-
-# Option B: Test tar.gz extraction manually
-cd dist
-tar -xzf tm-worker-v*-macos-arm64.tar.gz
-cd tm-worker-v*-macos-arm64
-
-# Test the binary directly
-./bin/tm-worker --version
-
-# Test with libzt.dylib
-./bin/tm-worker --help
-
-# Verify RPATH is set correctly
-otool -L bin/tm-worker
-# Should show: @rpath/libzt.dylib
-
-# Cleanup
-cd ../..
-rm -rf dist/tm-worker-v*-macos-arm64
-```
-
-### What Homebrew Formulas Actually Do
-
-The Homebrew formulas essentially automate what your install_macos.sh script does:
-- Extract the tar.gz archive
-- Copy binaries to `/opt/homebrew/bin` (or `/usr/local/bin`)
-- Copy libraries to `/opt/homebrew/lib`
-- Copy config templates to `/opt/homebrew/etc`
-- Create user config directories on first run
-
-If your .command installer works, the Homebrew formula will work too once properly tapped.
-
-## Formula Structure
-
-Each formula includes:
-- **Architecture detection** - Automatic arm64/x86_64 selection
-- **Config management** - Copies templates to user directories
-- **Post-install setup** - Creates necessary directories and files
-- **Helpful messages** - Shows config locations after install
-- **Version testing** - Verifies installation works
-
-## User Installation
-
-Users can install with:
-
-```bash
-# Add tap
-brew tap yourusername/task-messenger
-
-# Install dispatcher
-brew install tm-dispatcher
-
-# Install worker
-brew install tm-worker
-
-# Update
-brew upgrade tm-dispatcher tm-worker
-
-# Uninstall
-brew uninstall tm-dispatcher
-```
-
-## Benefits of Homebrew Distribution
-
-✅ **Automatic updates** - `brew upgrade` keeps everything current  
-✅ **Clean uninstall** - `brew uninstall` removes all files  
-✅ **Dependency management** - Homebrew handles library dependencies  
-✅ **Version pinning** - Users can install specific versions  
-✅ **Famil (replace <username> with your GitHub username)
-brew tap <username>/task-messenger
-
-# Install dispatcher
-brew install tm-dispatcher
-
-# Install worker
-brew install tm-worker
-
-# Update to latest version
-brew upgrade tm-dispatcher tm-worker
-
-# Uninstall
-brew uninstall tm-dispatcher tm-worker
-```
-
-### Configuration Locations
-
-After installation, config files are created at:
-- **Dispatcher**: `~/Library/Application Support/TaskMessenger/config/dispatcher/config-dispatcher.json`
-- **Worker**: `~/Library/Application Support/TaskMessenger/config/worker/config-worker.json`
-
-To run with config:
 ```bash
 tm-dispatcher -c "~/Library/Application Support/TaskMessenger/config/dispatcher/config-dispatcher.json"
-tm-worker -c "~/Library/Application Support/TaskMessenger/config/worker/config-worker.json"
+tm-worker     -c "~/Library/Application Support/TaskMessenger/config/worker/config-worker.json"
 ```
 
-## Alternative: .command Installers (No sudo required)
+Update with `brew upgrade tm-dispatcher tm-worker`; uninstall with
+`brew uninstall tm-dispatcher tm-worker`.
 
-**Recommended for users without admin access or who prefer GUI installation.**
+## Permissions
 
-Instead of Homebrew, use the self-extracting .command installers:
+Homebrew needs write access to its prefix
+(`/opt/homebrew` on Apple Silicon, `/usr/local` on Intel). On a
+restricted account, use the `.command` installer on the macOS release
+page instead — see
+[docs/INSTALLATION.md](../docs/INSTALLATION.md#macos).
 
-1. **Download** from [GitHub Releases](https://github.com/GITHUB_REPOSITORY/releases/latest):
-   - `tm-dispatcher-vX.Y.Z-macos-arm64.command` (Apple Silicon)
-   - `tm-worker-vX.Y.Z-macos-arm64.command` (Apple Silicon)
+To repair Homebrew permissions when you do have admin rights:
 
-2. **Install** by double-clicking the `.command` file in Finder
-   - Installs to `~/Library/Application Support/TaskMessenger`
-   - Creates `.app` bundles in `/Applications`
-   - Creates desktop uninstaller
-   - No sudo required!
+```bash
+sudo chown -R "$(whoami)" /opt/homebrew
+```
 
-3. **Run** by double-clicking the `.app` in Applications or:
+## Testing a formula locally
+
+Three options, in increasing order of fidelity to a real install:
+
+1. **Test installation without Homebrew (no sudo).** Build the
+   distribution and either double-click the `.command` installer or
+   extract the tarball manually and exercise the binary. This is the
+   recommended local-test path on restricted accounts.
+
    ```bash
-   tm-dispatcher -c "~/Library/Application Support/TaskMessenger/config/dispatcher/config-dispatcher.json"
+   ./extras/scripts/build_distribution_macos.sh worker
+   open dist/tm-worker-v*.command
    ```
 
-4. **Uninstall** by double-clicking the uninstaller on your Desktop
+2. **Local tap (requires sudo).** Symlink `Formula/` into a
+   throwaway tap inside the Homebrew repository, then
+   `brew install local/task-messenger/tm-dispatcher`.
 
-### .command vs Homebrew
+3. **Tap from GitHub.** Push the formula change, then
+   `brew tap` against the repository and install as a real user
+   would.
 
-| Feature | .command Installer | Homebrew |
-|---------|-------------------|----------|
-| **Requires sudo** | ❌ No | ✅ Yes (for setup) |
-| **Target users** | End users, restricted accounts | Developers, admins |
-| **Installation** | Double-click GUI | Command-line |
-| **Updates** | Manual download | `brew upgrade` |
-| **Uninstall** | Desktop shortcut | `brew uninstall` |
-| **App bundles** | ✅ Yes (with icons) | ❌ No |
-| **Auto-start** | ✅ Double-click .app | Command-line only |
+## What the formulas do
 
-**Use .command installers if:**
-- You don't have admin/sudo access
-- You prefer GUI installation
-- You want desktop app shortcuts
+The formulas automate what `extras/scripts/install_macos.sh` does:
+extract the tar.gz, copy binaries into the Homebrew prefix, copy
+`libzt.dylib` into `lib`, copy config templates into `etc`, and
+create user config directories on first run. Each formula:
 
-**Use Homebrew if:**
-- You have admin access
-- You prefer command-line tools
-- You want automatic updates via `brew upgrade`
+- detects the architecture (`arm64` / `x86_64`),
+- pins to a specific version and SHA-256,
+- emits post-install caveats showing where the config lives,
+- includes a `test do` block that runs `--version`.
 
-## Benefits of Homebrew Distribution
+## Comparison with the `.command` installer
 
-✅ **Automatic updates** - `brew upgrade` keeps everything current  
-✅ **Clean uninstall** - `brew uninstall` removes all files  
-✅ **Dependency management** - Homebrew handles library dependencies  
-✅ **Version pinning** - Users can install specific versions  
-✅ **Familiar workflow** - Standard for macOS developers
+| Feature | Homebrew | `.command` installer |
+| --- | --- | --- |
+| Requires admin rights | Yes (for prefix writes) | No |
+| Update flow | `brew upgrade` | Re-download from releases |
+| Uninstall | `brew uninstall` | Desktop uninstaller shortcut |
+| App bundles in `/Applications` | No | Yes |
+| Best for | CLI/dev use | End users on restricted accounts |
 
-**Note:** Requires proper Homebrew permissions. For restricted accounts, use .command installers.
-
-## Comparison with .command Installers
-
-| Feature | Homebrew | .command Installer |
-|---------|----------|-------------------|
-| Target Audience | Developers, CLI users | General users |
-| Updates | `brew upgrade` | Manual download |
-| Uninstall | `brew uninstall` | Double-click uninstaller |
-| GUI Integration | Command-line only | Desktop .app bundle |
-| Prerequisites | Homebrew installed | None |
-| Best For | Development/server use | End-user desktop use |
-
-**Recommendation:** Provide both methods:
-- Homebrew for developers and CLI-focused users
-- .command installers for end-users who want desktop apps
+See [docs/INSTALLATION.md](../docs/INSTALLATION.md) for the full
+end-user install matrix.

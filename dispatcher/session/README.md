@@ -39,8 +39,8 @@ sequenceDiagram
     SM->>Pool: (optional) requeue tasks on failure
 ```
 
-## Authoring Tips
-- `Session` encapsulates the coroutine (`Task<void>`) that owns each client lifecycle. Keep shared data (`TaskMessageQueue`, logger) as `std::shared_ptr` to extend lifespan beyond the accept thread.
-- `SessionManager` is the public façade. Extend it with diagnostic helpers or throttling logic instead of letting outside callers touch internal session containers directly.
-- when adding new state transitions, document them via `SessionState` comments and, if they affect cleanup, update the diagram and `cleanup_completed_sessions()` docs.
-- Run `meson compile -C builddir-dispatcher docs` to regenerate HTML docs; Doxygen now scans this directory thanks to the `session_module` annotations.
+## Related documentation
+
+- Parent component: [dispatcher/README.md](../README.md).
+- Acceptor that hands sockets to `SessionManager`: [dispatcher/transport/README.md](../transport/README.md).
+- Task message framing: [message/README.md](../../message/README.md).

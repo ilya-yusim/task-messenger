@@ -29,15 +29,15 @@ int DispatcherApp::start(int argc, char* argv[]) {
     // Reset shutdown flag so re-starts (e.g., in tests) don't exit immediately
     s_shutdown_requested.store(false, std::memory_order_relaxed);
 
-    // --- Stage 1: Build logging pipeline ---
+    // Build the logging pipeline.
     logger_ = std::make_shared<Logger>("DispatcherApp");
     auto stdout_sink = std::make_shared<StdoutSink>();
     stdout_sink->set_level(LogLevel::Info);
     logger_->add_sink(stdout_sink);
 
-    // --- Stage 2: Parse CLI/JSON options ---
-    // All options auto-register via static objects; no manual call needed.
-    // Parse the command line and JSON config once for the entire process.
+    // Parse CLI/JSON options. All options auto-register via static objects;
+    // no manual call is needed. The command line and JSON config are parsed
+    // once for the entire process.
     std::string opts_err;
     auto parse_res = shared_opts::Options::load_and_parse(argc, argv, opts_err);
     if (parse_res == shared_opts::Options::ParseResult::Help ||
@@ -51,7 +51,7 @@ int DispatcherApp::start(int argc, char* argv[]) {
         return 2;
     }
 
-    // --- Stage 3: Bring up transport server subsystem ---
+    // Bring up the transport server subsystem.
     logger_->info("Transport server starting...");
     start_time_ = std::chrono::steady_clock::now();
 
@@ -78,7 +78,7 @@ int DispatcherApp::start(int argc, char* argv[]) {
         logger_->info("Monitoring service disabled by configuration");
     }
 
-    // --- Stage 3b: Register with rendezvous service (optional, non-fatal) ---
+    // Register with the rendezvous service if configured (optional, non-fatal).
     if (rendezvous_opts::get_enabled().value_or(false)) {
         auto rv_host = rendezvous_opts::get_host().value_or(std::string{});
         auto rv_port = rendezvous_opts::get_port().value_or(8088);
@@ -128,7 +128,7 @@ int DispatcherApp::start(int argc, char* argv[]) {
         }
     }
 
-    // --- Stage 4: Install signal handlers ---
+    // Install signal handlers.
     install_signal_handlers();
 
     lifecycle_state_.store(LifecycleState::Running, std::memory_order_relaxed);

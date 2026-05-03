@@ -1,9 +1,9 @@
 // Package backend defines the host-abstraction layer the controller
-// uses to start, observe, and stop worker processes. Phase 2 ships a
-// single LocalBackend; Phase 3 will add a CodespaceBackend (and
-// eventually generic SshBackend / GcpIapBackend) that satisfies the
-// same interface so the rest of the controller — registry,
-// adoption, manifest persistence, HTTP/UI — stays backend-agnostic.
+// uses to start, observe, and stop worker processes. A LocalBackend
+// and a CodespaceBackend are wired up today; future implementations
+// (generic SshBackend / GcpIapBackend) satisfy the same interface so
+// the rest of the controller — registry, adoption, manifest
+// persistence, HTTP/UI — stays backend-agnostic.
 //
 // The interface is deliberately PID-flavoured: a Handle carries an
 // integer PID that uniquely identifies the worker on its host. For

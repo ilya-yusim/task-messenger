@@ -33,8 +33,14 @@ stateDiagram-v2
 3. Format byte totals using `format_bytes()` for human-readable strings.
 4. Surface structured log messages when state transitions or errors occur.
 
-## Adding New Capabilities
+## Adding new capabilities
 
-- Extend `WorkerSession::Status` if you need additional telemetry; keep types lightweight to avoid blocking UI refreshes.
+- Extend `WorkerSession::Status` for additional telemetry; keep types lightweight to avoid blocking UI refreshes.
 - Update `GetStatusSnapshot()` and `format_bytes()` together so both raw and human-friendly metrics remain consistent.
-- Avoid holding transport locks while executing arbitrary task code—delegate heavy lifting to `TaskProcessor` to preserve responsiveness.
+- Heavy task work delegates to `TaskProcessor`; transport locks are not held across user code.
+
+## Related documentation
+
+- Parent component: [worker/README.md](../README.md).
+- Runtime implementations: [worker/runtime/README.md](../runtime/README.md).
+- Optional UI consumer: [worker/ui/README.md](../ui/README.md).

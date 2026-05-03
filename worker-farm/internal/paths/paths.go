@@ -1,6 +1,6 @@
 // Package paths centralises the OS-specific directory and file paths used
 // by the worker-farm controller. Keeping every "where do we put things"
-// decision in one file makes Phase 2 persistence and cross-platform
+// decision in one file makes manifest persistence and cross-platform
 // behaviour easier to audit.
 package paths
 

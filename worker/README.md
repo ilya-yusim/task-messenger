@@ -1,71 +1,47 @@
-# Worker Module
+# Worker
 
 \ingroup task_messenger_worker
 
-Worker process that connects to the dispatcher, executes queued tasks, and reports metrics suitable for UI visualization. The worker is composed of small submodules that collectively form the `task_messenger_worker` subgroup:
+The worker is the compute side of Task Messenger. A worker process
+(`tm-worker`) connects back to a dispatcher over ZeroTier, executes
+the skills the dispatcher requests, and reports per-task metrics.
 
-- `runtime/`: pluggable execution engines (`BlockingRuntime`, `AsyncRuntime`) implementing socket ownership and I/O loops, utilizing either a blocking or coroutine-enabled asynchronous methods. (\ingroup task_messenger_worker)
-- `session/`: `WorkerSession` orchestrates lifecycle, configuration, logging, and metrics aggregation. (\ingroup task_messenger_worker)
-- `ui/`: optional FTXUI-powered terminal dashboard plus the `IWorkerService` contract. (\ingroup task_messenger_worker)
-- `processor/`: task handler shim (`TaskProcessor`) invoked from any runtime mode. (\ingroup task_messenger_worker)
+## Responsibilities
 
-## Architecture Overview
+- Open a ZeroTier connection to a configured dispatcher.
+- Receive `TaskMessage` payloads and dispatch each one to the matching
+  skill via the skill registry.
+- Track per-task counters (tasks completed, bytes sent/received,
+  latency) and surface them to the optional terminal UI.
+- Expose its lifecycle (running / paused / stopping) so the UI or the
+  dispatcher monitoring snapshot can render it.
 
-```mermaid
-flowchart LR
-  WM["workerMain.cpp"] --> WS["WorkerSession"]
-  WS --> RT["IRuntimeMode<br/>BlockingRuntime / AsyncRuntime"]
-  WS --> TP["TaskProcessor"]
-  WS --> LG["Logger sinks"]
-  RT --> TL["transport layer"]
-  WS --> UI["WorkerUI (optional)"]
-```
+## Submodules
 
-- `workerMain.cpp` parses configuration, instantiates a `WorkerSession`, and optionally launches the UI.
-- The session owns a concrete `IRuntimeMode`, selected via CLI/JSON (`blocking` or `async`).
-- Both runtimes rely on transport-layer factories to obtain sockets (ZeroTier by default).
-- Metrics (tasks, bytes sent/received) are consolidated in the session so they remain consistent regardless of the active runtime.
-- When FTXUI is present, `WorkerUI` attaches through `IWorkerService` and renders the live state.
+| Path | Scope |
+| --- | --- |
+| [runtime/](runtime/README.md) | Pluggable execution engines (`BlockingRuntime`, `AsyncRuntime`) selected via `--mode`. |
+| [session/](session/README.md) | `WorkerSession`: lifecycle, configuration parsing, metrics aggregation. |
+| [processor/](processor/) | `TaskProcessor` shim that hands incoming tasks to the skill registry. |
+| [ui/](ui/README.md) | Optional FTXUI terminal dashboard, behind a build-time check. |
 
-## Modes & Byte Counters
+Skill execution happens through the shared registry documented in
+[skills/README.md](../skills/README.md). Networking primitives live in
+[transport/README.md](../transport/README.md).
 
-Runtime mode is controlled via `--mode blocking|async` (or JSON config). Every mode emits the same counters:
+## Configuration and runtime
 
-- `tasks_completed`: incremented per work item.
-- `bytes_sent` / `bytes_received`: maintained by runtimes, formatted by `WorkerSession` for UI/CLI consumers.
+Configuration is read from `config/config-worker.json` or supplied via
+CLI flags. See [config/README.md](../config/README.md) for the file
+layout.
 
-The UI and log sinks receive string-formatted values (e.g., `1.5MB`). The raw `uint64_t` counters remain available via the runtime interface for other integrations.
+To run multiple worker processes from a single host (locally or
+through a remote backend such as a GitHub Codespace), use
+[worker-farm/README.md](../worker-farm/README.md) instead of starting
+each process by hand.
 
-## Configuration Summary
+## Related documentation
 
-| Option | Source | Description |
-| --- | --- | --- |
-| `--mode` / `worker.mode` | CLI / JSON | Selects `BlockingRuntime` or `AsyncRuntime`. |
-| `--ui` / `worker.ui` | CLI / JSON | Enables the FTXUI dashboard when available. Falling back to headless if FTXUI is missing. |
-| `--manager-host` / `worker.manager_host` | CLI / JSON | Manager host. |
-| `--manager-port` / `worker.manager_port` | CLI / JSON | Manager port. |
-
-## UI & Demo
-
-The UI is optional and compiled only when FTXUI is detected. To explore it without a dispatcher connection, build and run the demo harness:
-
-```powershell
-meson compile -C builddir-worker worker-ui-demo
-./builddir-worker/worker/worker-ui-demo.exe
-```
-
-The demo simulates task throughput and byte counters so you can validate visual workflows before connecting to a real dispatcher.
-
-## Documentation & Submodules
-
-Additional deep-dives are provided per subdirectory:
-
-- [`runtime/README.md`](runtime/README.md)
-- [`session/README.md`](session/README.md)
-- [`ui/README.md`](ui/README.md)
-
-Regenerate project-wide documentation through Meson:
-
-```powershell
-meson compile -C builddir docs
-```
+- Top-level overview: [README.md](../README.md).
+- Skill authoring and registry: [skills/README.md](../skills/README.md).
+- Networking primitives: [transport/README.md](../transport/README.md).

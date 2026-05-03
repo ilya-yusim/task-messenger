@@ -1,6 +1,4 @@
-// Package registry holds the in-memory worker table. Phase 1 keeps it
-// purely in memory; Phase 2 will persist a manifest.json snapshot on
-// every state change.
+// Package registry holds the in-memory worker table.
 package registry
 
 import (

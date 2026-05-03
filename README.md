@@ -1,222 +1,79 @@
 # Task Messenger
 
-Task Messenger is a dispatcher/worker platform for streaming computational tasks from a central coordinator to a dynamic fleet of workers. It links directly against ZeroTier (`libzt`), so all transport flows through ZeroTier sockets and workers reach the dispatcher over a secure virtual network. The platform exposes asynchronous networking, coroutine-friendly session orchestration, and an optional worker UI that lets operators monitor and pause/resume work in real time.
+Task Messenger is a distributed computational network. A **dispatcher**
+hands out tasks to a fleet of **workers** that connect from anywhere on
+the internet over a private ZeroTier virtual network. A central
+**rendezvous** service publishes a network-wide dashboard so end users
+can see what the network is doing and contribute compute. Tasks are
+described by **skills**: typed compute kernels authored as a `.skill.toml`
+schema and a small C++ implementation file.
 
-## Subsystems
+## Who is this for?
 
-- **Dispatcher** (`dispatcher/`): Accepts worker connections, runs coroutine sessions, and coordinates task fan-out via `AsyncTransportServer`, `SessionManager`, and mock `TaskGenerator` integrations.
-- **Workers** (`worker/`): Connect back to the dispatcher, execute tasks under pluggable runtimes (`BlockingRuntime`/`AsyncRuntime`), track metrics, and optionally expose a terminal UI using FTXUI.
-- **Messaging Primitives** (`message/`): Defines `TaskMessage`, `TaskMessageQueue`, and helpers that serialize payloads, enforce framing, and provide coroutine-friendly hand-off between producers and sessions.
-- **Transport Layer** (`transport/`): Shared networking stack (coroutines, ZeroTier adapters, socket factories) powering both dispatcher and worker runtimes.
+| Role | What you do | Start here |
+| --- | --- | --- |
+| Network operator | Run a `tm-rendezvous` instance and publish its address. | [services/rendezvous/](services/rendezvous/) |
+| Dispatcher operator | Run an algorithm that produces tasks and consumes results. | [dispatcher/README.md](dispatcher/README.md), [generators/](generators/) |
+| Compute contributor | Run one or more `tm-worker` processes that join the network. | [worker/README.md](worker/README.md), [worker-farm/README.md](worker-farm/README.md) |
+| Skill author | Add a new compute kernel to the platform. | [skills/README.md](skills/README.md) |
 
-## System Flow (Mermaid)
-```mermaid
-graph LR
-    App[Domain App / TaskGenerator] --> Pool[TaskMessageQueue]
-    Pool --> Dispatcher[Dispatcher Sessions]
-    Dispatcher --> Transport[Async Transport Layer]
-    Transport --> WorkerFleet[Workers]
-    WorkerFleet --> Metrics[Metrics / UI / Logs]
-    Workers[Workers] --> Results[Result Channels]
-```
+## Components
 
-## Project Structure
+| Component | Description |
+| --- | --- |
+| [dispatcher/](dispatcher/README.md) | The `tm-dispatcher` server. Accepts worker connections, runs an algorithm-supplied generator, fans tasks out to workers, and serves a per-dispatcher monitoring dashboard. |
+| [worker/](worker/README.md) | The `tm-worker` process. Connects to a dispatcher, executes skills, and reports metrics. Ships with an optional terminal UI. |
+| [services/rendezvous/](services/rendezvous/) | The `tm-rendezvous` server. Brokers dispatcher discovery on the ZeroTier network and serves the network-wide end-user dashboard. |
+| [worker-farm/](worker-farm/README.md) | `tm-worker-farm`, a Go-based controller and Web UI for running multiple workers locally or on remote backends. |
+| [generators/](generators/) | Built-in task generators that drive a dispatcher (interactive REPL, auto-refill load generator). Placeholders for user-authored algorithms. |
+| [skills/](skills/README.md) | The skill framework: public authoring API, built-in skills, and the registry/codegen backend. |
+| [transport/](transport/README.md) | Coroutine-aware ZeroTier networking shared by every component. |
+| [message/](message/README.md) | `TaskMessage` framing and queues used between generators, dispatchers, and workers. |
+| [dashboard/](dashboard/README.md) | Browser assets served by both the dispatcher and rendezvous monitoring endpoints. |
+| [config/](config/) | Sample configuration files for each component. |
+| [extras/](extras/) | Install scripts, launchers, and packaging helpers. |
+| [homebrew/](homebrew/README.md) | Homebrew tap and formulas for macOS distribution. |
+| [docs/](docs/) | Cross-cutting documentation: installation guide, Doxygen mainpage. |
 
-```
-task-messenger/
-├── config/                     # Configuration files
-│   ├── config-dispatcher.json     # Dispatcher configuration
-│   ├── config-worker.json      # Worker configuration
-│   └── vn-rendezvous-identity/    # ZeroTier identity files (shared by rendezvous & dispatcher)
-│       ├── identity.public     # Public identity key
-│       └── identity.secret     # Private identity key (secret)
-├── dispatcher/                    # Dispatcher component
-├── worker/                     # Worker component
-├── message/                    # Messaging primitives
-├── transport/                  # Transport layer
-├── subprojects/                # Dependencies
-└── extras/                     # Build and installation scripts
-```
+## Quick start
 
-## Building
+1. **Install or build.** End users install via a packaged distribution
+   (Homebrew on macOS, installer scripts on Windows and Linux). See
+   [docs/INSTALLATION.md](docs/INSTALLATION.md). Developers build from
+   source with Meson; see [Building from source](#building-from-source)
+   below.
+2. **Pick a role.** Start a rendezvous, run a dispatcher with a
+   generator, or join an existing network as a worker. The component
+   READMEs in the table above each include their own quick-start.
+3. **Open the dashboard.** The rendezvous service serves the
+   network-wide dashboard; each dispatcher additionally exposes its own
+   local monitoring page. See [dashboard/README.md](dashboard/README.md).
 
-Task Messenger uses Meson as its build system.
+## Building from source
 
-### Build All Components (Dispatcher + Worker)
+Task Messenger uses [Meson](https://mesonbuild.com/) and a set of vendored
+subprojects under [subprojects/](subprojects/README.md).
 
 ```bash
 meson setup builddir --buildtype=release
 meson compile -C builddir
 ```
 
-### Build Only Dispatcher (no FTXUI dependency)
-
-```bash
-meson setup builddir-dispatcher -Dbuild_worker=false --buildtype=release
-meson compile -C builddir-dispatcher
-```
-
-### Build Only Worker
-
-```bash
-meson setup builddir-worker -Dbuild_dispatcher=false --buildtype=release
-meson compile -C builddir-worker
-```
-
-### Build Options
-
-- `-Dbuild_dispatcher=true|false`: Build the dispatcher component (default: true)
-- `-Dbuild_worker=true|false`: Build the worker component (default: true)
-- `-Ddebug_logging=true|false`: Enable debug logging (default: false)
-- `-Dprofiling_unwind=true|false`: Enable profiling-friendly unwind flags (default: false)
-
-## Creating Distribution Packages
-
-Task Messenger provides automated scripts to build distribution packages for deployment:
-
-### Windows Distributions
-
-```powershell
-# Build dispatcher distribution (ZIP + self-extracting installer)
-.\extras\scripts\build_distribution.ps1 -Component dispatcher
-
-# Build worker distribution (ZIP + self-extracting installer)
-.\extras\scripts\build_distribution.ps1 -Component worker
-
-# Build both
-.\extras\scripts\build_distribution.ps1 -Component dispatcher
-.\extras\scripts\build_distribution.ps1 -Component worker
-```
-
-**Output Files** (in `dist/` directory):
-- `task-messenger-{component}-v{version}-windows-x64-installer.exe` - Self-extracting installer
-- `.sha256` checksum file
-
-The self-extracting installer automatically extracts and runs the installation script, providing a one-click installation experience.
-
-### Linux Distributions
-
-```bash
-# Build dispatcher distribution
-./extras/scripts/build_distribution.sh --component dispatcher
-
-# Build worker distribution
-./extras/scripts/build_distribution.sh --component worker
-
-# Build both
-./extras/scripts/build_distribution.sh --component dispatcher
-./extras/scripts/build_distribution.sh --component worker
-```
-
-**Output Files** (in `dist/` directory):
-- `task-messenger-{component}-v{version}-linux-x64.tar.gz` - Compressed tarball
-- `.sha256` checksum file
-
-## Configuration
-
-Configuration files are located in the `config/` directory:
-- `config-dispatcher.json`: Dispatcher settings including ZeroTier network ID and identity path
-- `config-worker.json`: Worker settings
-- `vn-rendezvous-identity/`: ZeroTier identity directory shared by the rendezvous server and dispatcher (only identity.public and identity.secret are version-controlled)
-
-## Installation
-
-Task Messenger provides distribution packages for both dispatcher and worker components. Installation scripts follow XDG directory standards:
-
-### Windows Installation Paths
-
-**Binaries** (in `%LOCALAPPDATA%`):
-- Dispatcher: `%LOCALAPPDATA%\TaskMessenger\tm-dispatcher\tm-dispatcher.exe`
-- Worker: `%LOCALAPPDATA%\TaskMessenger\tm-worker\tm-worker.exe`
-
-**Configuration and Identity** (in `%APPDATA%` - roaming):
-- Dispatcher config: `%APPDATA%\TaskMessenger\tm-dispatcher\config-dispatcher.json`
-- Dispatcher identity: `%APPDATA%\TaskMessenger\tm-dispatcher\vn-rendezvous-identity\`
-- Worker config: `%APPDATA%\TaskMessenger\tm-worker\config-worker.json`
-
-**Installation:**
-```powershell
-# Extract distribution archive, then run from extracted directory:
-.\extras\scripts\install_windows.ps1
-
-# Or specify archive manually:
-.\extras\scripts\install_windows.ps1 -Archive tm-dispatcher-v1.0.0-windows-x64.zip
-```
-
-**Uninstallation:**
-```powershell
-# From installation directory:
-.\uninstall_windows.ps1
-
-# Or run from extras/scripts:
-.\extras\scripts\uninstall_windows.ps1 -Component dispatcher
-```
-
-### Linux Installation Paths
-
-**Binaries** (in `~/.local/share`):
-- Dispatcher: `~/.local/share/task-messenger/tm-dispatcher/bin/tm-dispatcher`
-- Worker: `~/.local/share/task-messenger/tm-worker/bin/tm-worker`
-
-**Configuration and Identity** (in `~/.config` - XDG standard):
-- Dispatcher config: `~/.config/task-messenger/tm-dispatcher/config-dispatcher.json`
-- Dispatcher identity: `~/.config/task-messenger/tm-dispatcher/vn-rendezvous-identity/`
-- Worker config: `~/.config/task-messenger/tm-worker/config-worker.json`
-
-**Installation:**
-```bash
-# Extract distribution archive, then run from extracted directory:
-./extras/scripts/install_linux.sh
-
-# Or specify archive manually:
-./extras/scripts/install_linux.sh --archive tm-dispatcher-v1.0.0-linux-x64.tar.gz
-```
-
-**Uninstallation:**
-```bash
-./extras/scripts/uninstall_linux.sh --component dispatcher
-```
-
-## Monitoring Dashboard
-
-The dispatcher ships with a browser dashboard served by the in-process monitoring HTTP server.
-
-- URL: `http://127.0.0.1:9090/`
-- API endpoint: `http://127.0.0.1:9090/api/monitor`
-- Health endpoint: `http://127.0.0.1:9090/healthz`
-
-### Quick Start (Development)
-
-1. Build the project:
-
-```bash
-meson compile -C builddir
-```
-
-2. Run a generator (starts dispatcher + monitoring server):
-
-```bash
-builddir/generators/auto-refill/tm-generator-auto-refill -c config/config-dispatcher.json
-```
-
-3. Run a worker in another terminal:
-
-```bash
-builddir/worker/tm-worker -c config/config-worker.json --mode blocking
-```
-
-4. Open the dashboard URL in your browser.
-
-### Runtime Path Resolution
-
-MonitoringService resolves dashboard assets in this order:
-
-1. `DASHBOARD_DIR` compile-time define (set by Meson option `-Ddashboard_dir=...`)
-2. Development layout under the repository (`dispatcher/monitoring/dashboard`)
-3. Installed layout next to the executable (`<bindir>/dashboard`)
-
-If no dashboard directory is found, monitoring APIs continue to work and only static UI serving is skipped.
+Per-component Meson options (`build_dispatcher`, `build_worker`,
+`build_generators`, `enable_blas_skills`, etc.) and full toolchain
+requirements are documented in each component README and in
+[meson_options.txt](meson_options.txt).
 
 ## Documentation
-- Generated API/user docs: `meson compile -C builddir-dispatcher docs` then open `builddir-dispatcher/doxygen/html/index.html`.
-- High-level modules: see `docs/TaskMessenger.md`, `dispatcher/README.md`, `worker/README.md`, and the README files inside `message/` and `transport/`.
+
+- [docs/INSTALLATION.md](docs/INSTALLATION.md) — packaged distribution
+  install/uninstall steps for Windows, Linux, and macOS.
+- [docs/TaskMessenger.md](docs/TaskMessenger.md) — Doxygen `\mainpage`
+  entry point. Build with `meson compile -C builddir docs` and open
+  `builddir/doxygen/html/index.html`.
+- Component READMEs (linked above) — scoped reference for each
+  subsystem.
+
+## License
+
+See [LICENSE](LICENSE).

@@ -1,5 +1,5 @@
-// Package bootstrap installs tm-worker on a remote host (codespace
-// in Phase 3). Mirrors install_tm_worker_codespace.ps1: resolve
+// Package bootstrap installs tm-worker on a remote host (a GitHub
+// codespace today). Mirrors install_tm_worker_codespace.ps1: resolve
 // release tag → discover linux-x86_64 asset → download locally →
 // `gh codespace cp` it + the helper script → `gh codespace ssh -- bash`
 // to run the makeself .run via the helper.

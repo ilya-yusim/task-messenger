@@ -38,8 +38,8 @@ type File struct {
 //
 // Side effect: if the on-disk file lacks the current ID in
 // `previous_ids`, this call rewrites the file with it appended. This
-// keeps the invariant ("current is always in history") true for
-// installs that pre-date Slice 3 without making callers do the upgrade.
+// keeps the invariant ("current is always in history") true for older
+// installs without making callers do the upgrade.
 func LoadOrCreate(path string) (string, bool, error) {
 	if data, err := os.ReadFile(path); err == nil {
 		var f File

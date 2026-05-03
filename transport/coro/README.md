@@ -86,7 +86,11 @@ void accept_loop(std::shared_ptr<CoroSocketAdapter> server, std::shared_ptr<Logg
 - Which thread resumes my coroutine? An event-loop thread.
 - Can I run overlapping reads/writes on a single adapter? Not supported; serialize or use separate adapters.
 - How do I keep the loop alive while preparing work? Use `CoroIoContext::WorkGuard`.
-- Can I generate API docs? Yes—comments follow Doxygen style. You can add a `Doxyfile` and run `doxygen` to generate HTML.
+
+## Related documentation
+
+- Parent component: [transport/README.md](../README.md).
+- Backend interfaces wrapped by `CoroSocketAdapter`: [transport/socket/README.md](../socket/README.md).
 
 ## Scheduling Flow (Mermaid)
 

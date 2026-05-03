@@ -44,8 +44,8 @@ sequenceDiagram
     end
 ```
 
-## Authoring Notes
-- Prefer succinct `/** ... */` comments with `\ingroup transport_module` annotations when exposing new public APIs so Doxygen keeps this module grouped.
-- Keep connection hygiene in `cleanup_closed_connections()` even for future transport implementations; the maintenance cadence is deliberately shared with session cleanup.
-- When expanding CLI or JSON options, update `AsyncTransportOptions.cpp` and mirror defaults in `config-dispatcher.json` to prevent surprising mismatches.
-- Rebuild docs with `meson compile -C builddir-dispatcher docs` to see the updated Transport module next to Session and Message sections.
+## Related documentation
+
+- Parent component: [dispatcher/README.md](../README.md).
+- Shared coroutine networking primitives: [transport/README.md](../../transport/README.md).
+- Sessions consuming accepted sockets: [dispatcher/session/README.md](../session/README.md).

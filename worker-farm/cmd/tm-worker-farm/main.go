@@ -282,7 +282,7 @@ func run() error {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	// Phase 2 design: workers are detached and outlive the controller.
+	// Workers are detached and outlive the controller by design.
 	// We do NOT call mgr.StopAll here. Manifests + .adopt sentinels
 	// stay on disk so the next controller launch picks them up via
 	// the adoption scan. Operators who actually want to stop workers

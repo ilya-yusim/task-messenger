@@ -1,5 +1,5 @@
-// Package codespace implements the Phase 3 remote backend for
-// GitHub Codespaces. It mirrors what local.Manager does for forked
+// Package codespace implements the remote backend for GitHub
+// Codespaces. It mirrors what local.Manager does for forked
 // children, but shells every lifecycle operation through
 // `gh codespace ssh`. The remote side runs the same
 // start_workers_local.sh / stop_workers_local.sh helpers that an

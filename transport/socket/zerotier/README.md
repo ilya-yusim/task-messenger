@@ -140,18 +140,11 @@ Add the above to a common header (e.g. `ZeroTierSocket.hpp`) and tag related cla
 
 ## Extensibility
 
-To add features:
-- Additional metrics: Wrap connect/accept with counters and export via a stats interface.
-- Alternate networks: Provide APIs to acquire specific hex network IDs distinct from default.
-- TLS overlay: Wrap an accepted or connected ZeroTier fd with a TLS stream class implementing the same interfaces.
+- Additional metrics: wrap connect/accept with counters and export via a stats interface.
+- Alternate networks: provide APIs to acquire specific hex network IDs distinct from the default.
+- TLS overlay: wrap an accepted or connected ZeroTier fd with a TLS stream class implementing the same interfaces.
 
-## Build / Docs
+## Related documentation
 
-Regenerate Doxygen documentation:
-```powershell
-meson compile -C builddir docs
-```
-Output resides under `builddir/doxygen/`.
-
----
-For questions on extending the backend or integrating new protocols over ZeroTier, encapsulate logic in separate adapters while reusing `ZeroTierNodeService` for node lifecycle.
+- Parent component: [transport/socket/README.md](../README.md).
+- libzt subproject: [subprojects/libzt-wrapper/README.md](../../../subprojects/libzt-wrapper/README.md).

@@ -38,8 +38,13 @@ meson compile -C builddir-worker worker worker-ui-demo
 - The worker tool automatically falls back to headless mode if FTXUI is unavailable or if `--ui` is omitted.
 - `WorkerUI` uses the formatted byte strings supplied by `WorkerSession`, so any additional metrics should be exposed on the interface and rendered via FTXUI components.
 
-## Extension Guidelines
+## Extension guidelines
 
-1. Keep rendering logic inside `WorkerUI`; avoid embedding business rules in the UI layer.
-2. Treat `IWorkerService` as the public contract—new UI panels should first extend the interface with minimal, thread-safe accessors.
-3. Leverage FTXUI components (containers, graphs) to remain consistent with other UIs in the repository, mirroring the `transport` module's style.
+1. Rendering logic stays inside `WorkerUI`; business rules belong in the session.
+2. New UI panels extend `IWorkerService` first with minimal thread-safe accessors.
+3. Use FTXUI components (containers, graphs) for consistency.
+
+## Related documentation
+
+- Parent component: [worker/README.md](../README.md).
+- Session that implements `IWorkerService`: [worker/session/README.md](../session/README.md).

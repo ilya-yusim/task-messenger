@@ -1,8 +1,17 @@
-# Transport Layer
+# Transport
 
-Coroutine-aware I/O infrastructure and role-based socket interfaces. This layer contains:
-- `coro/`: a cooperative event loop (`CoroIoContext`), coroutine `Task` types, and a `CoroSocketAdapter` that integrates non-blocking I/O into coroutines.
-- `socket/`: small interfaces for non-blocking/blocking sockets and concrete backends (e.g., ZeroTier/libzt) selected via a factory.
+\defgroup coro_module Coroutine I/O
+\defgroup socket_backend Sockets
+
+Coroutine-aware networking shared by every Task Messenger component.
+
+## Submodules
+
+| Path | Scope |
+| --- | --- |
+| [coro/](coro/README.md) | `CoroIoContext`, `CoroTask`, and `CoroSocketAdapter`: the cooperative event loop and coroutine glue. |
+| [socket/](socket/README.md) | Role-based socket interfaces (`IAsyncStream`, `IServerSocket`, etc.) and `SocketFactory`. |
+| [socket/zerotier/](socket/zerotier/README.md) | The ZeroTier (`libzt`) socket backend. |
 
 ## Architecture
 
@@ -12,7 +21,7 @@ flowchart LR
   Task[CoroTask&lt;T&gt;]
   Ctx[CoroIoContext]
   CSA[CoroSocketAdapter]
-  IF[Socket Interfaces<br/>IAsyncStream, IServerSocket, etc.]
+  IF[Socket Interfaces<br/>IAsyncStream, IServerSocket, ...]
   BE[Socket Backend]
 
   App --> Task --> Ctx
@@ -20,36 +29,29 @@ flowchart LR
   CSA --> IF --> BE
 ```
 
-- Coroutines register non-blocking operations with `CoroIoContext`, which polls pending operations and resumes awaiters on completion.
-- The `CoroSocketAdapter` provides awaitables (`co_await`) over the role-based socket interfaces.
-- Concrete backends live under `socket/<backend>/` and are selected via `SocketFactory` based on configuration.
+Coroutines register non-blocking operations with `CoroIoContext`,
+which polls them and resumes awaiters on completion.
+`CoroSocketAdapter` exposes role-based socket interfaces as
+awaitables. Concrete backends live under `socket/<backend>/` and are
+selected via `SocketFactory`.
 
-## Submodules
+## Typical usage
 
-- `coro/`: design, lifecycle, metrics, and sequence/topology diagrams.
-  - See `coro/README.md` for details and examples.
-- `socket/`: role interfaces, factory/options, and backends.
-  - See `socket/README.md` and `socket/zerotier/README.md`.
+- Use `SocketFactory` to obtain a role object (`IServerSocket`,
+  `IAsyncStream`, ...).
+- Wrap it with `CoroSocketAdapter` for `co_await`-friendly
+  connect/read/write/accept.
+- Keep one in-flight operation per adapter instance to satisfy the
+  event loop's pending-op invariant.
 
-## Typical Usage
+## Adding a backend
 
-- Use `SocketFactory` to obtain role objects (`IServerSocket`, `IAsyncStream`, etc.).
-- Wrap those with `CoroSocketAdapter` to get coroutine-friendly awaitables for connect, read, write, and accept.
-- Keep exactly one in-flight operation per adapter instance to satisfy the event loop’s pending-op invariant.
+Implement the role interfaces under `socket/<backend>/`, register
+the backend in `SocketTypeOptions` and `SocketFactory`, and tag
+public entry points with `\ingroup socket_backend` so Doxygen
+groups them.
 
 ## Doxygen
 
-Documentation is generated via Meson’s optional `docs` target and includes both submodules.
-- Groups: `\defgroup coro_module` (subgroups for task, context, adapter, stats) and `\defgroup socket_backend` for the socket layer and backends.
-
-Regenerate docs:
-```powershell
-meson compile -C builddir docs
-```
-Output: `builddir/doxygen/`.
-
-## Extensibility
-
-- Add new backends under `socket/<backend>/` implementing the role interfaces; register them in `SocketTypeOptions` and `SocketFactory`.
-- Introduce new awaitables in `CoroSocketAdapter` to cover additional operations while preserving the single in-flight op invariant.
-- Keep Doxygen `\file` headers and `\ingroup` tags consistent for navigable API docs.
+Build with `meson compile -C builddir docs`. Output:
+`builddir/doxygen/`.

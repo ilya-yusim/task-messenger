@@ -93,8 +93,8 @@ func (s *Server) handleHealthz(w http.ResponseWriter, _ *http.Request) {
 	_, _ = w.Write([]byte("ok\n"))
 }
 
-// /hosts — list hosts from the inventory. Read-only in Phase 3;
-// editing is via hosts.json + restart, per the plan.
+// /hosts — list hosts from the inventory. Read-only; editing is via
+// hosts.json + restart.
 func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", "GET")
@@ -638,8 +638,8 @@ func (s *Server) handleWorkerLogStream(w http.ResponseWriter, r *http.Request, i
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	// SSE log streaming for remote workers is deferred to Phase 4
-	// (plan, slice 3.5). The UI falls back to /log?tail=N polling.
+	// SSE log streaming is not supported for codespace workers.
+	// The UI falls back to /log?tail=N polling.
 	if s.csmgr != nil && s.csmgr.IsCodespaceWorker(id) {
 		http.Error(w, "log streaming not supported for codespace workers; use /log?tail=N", http.StatusNotImplemented)
 		return

@@ -18,7 +18,7 @@ import (
 // therefore TerminateProcess on Windows for both forked and adopted
 // workers — same path either way. Graceful in-process shutdown on
 // Windows would require a Job Object + a side-channel signal (named
-// pipe or shared event), which is Phase 4 territory.
+// pipe or shared event), which is a future enhancement.
 //
 //	DETACHED_PROCESS         = 0x00000008
 //	CREATE_NEW_PROCESS_GROUP = 0x00000200 (kept defensively; harmless
@@ -39,8 +39,9 @@ func terminateProc(cmd *exec.Cmd) error {
 
 // killProc terminates the child. exec.Cmd.Process.Kill maps to
 // TerminateProcess on Windows, which is the right SIGKILL fallback.
-// Does not kill descendants — Phase 4 will swap this for a Job Object
-// that auto-terminates the whole tree alongside resource limits.
+// Does not kill descendants — a future enhancement could swap this
+// for a Job Object that auto-terminates the whole tree alongside
+// resource limits.
 func killProc(cmd *exec.Cmd) error {
 	if cmd.Process == nil {
 		return nil

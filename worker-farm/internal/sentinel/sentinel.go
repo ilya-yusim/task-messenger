@@ -1,7 +1,6 @@
 // Package sentinel writes the per-worker `worker-NN.adopt` JSON file
-// next to each spawned worker's log. Slice 3 of Phase 2 will read these
-// at controller startup to classify orphans into auto-adopt vs
-// quarantine; Slice 2 just emits them.
+// next to each spawned worker's log. The controller reads these at
+// startup to classify orphans into auto-adopt vs quarantine.
 package sentinel
 
 import (
@@ -42,7 +41,7 @@ func Write(path string, s *Sentinel) error {
 }
 
 // Read parses the sentinel JSON at path. Errors are non-fatal at the
-// call site (Slice 3 startup adoption logs and skips bad files).
+// call site (startup adoption logs and skips bad files).
 func Read(path string) (*Sentinel, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {

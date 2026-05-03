@@ -2,13 +2,11 @@
 // inventory file (`hosts.json`).
 //
 // The inventory describes every host the controller can talk to.
-// Today only the `local` backend is wired up; `codespace`, `ssh`, and
-// `gcp-iap` are accepted by the parser so future slices (3.3+) can
+// Today only the `local` and `codespace` backends are wired up; `ssh`
+// and `gcp-iap` are accepted by the parser so future backends can
 // activate them without a config-file format break.
 //
 // The schema is JSON, not YAML, to keep `worker-farm` stdlib-only.
-// See worker-farm-controller-plan.md ("Phase 3 decisions locked in")
-// for the rationale.
 package inventory
 
 import (

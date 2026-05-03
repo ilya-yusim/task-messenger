@@ -151,3 +151,9 @@ meson compile -C builddir docs
 2. Implement the relevant roles (`IAsyncStream`, `IBlockingStream`, `IServerSocket`, etc.).
 3. Register the backend in `SocketTypeOptions` and plug it into `SocketFactory`.
 4. Add Doxygen `\file` headers and tag the new code with the socket group.
+
+## Related documentation
+
+- Parent component: [transport/README.md](../README.md).
+- Coroutine adapter wrapping these interfaces: [transport/coro/README.md](../coro/README.md).
+- ZeroTier backend: [transport/socket/zerotier/README.md](zerotier/README.md).

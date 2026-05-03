@@ -1,4 +1,4 @@
-// Package local implements the Phase 1 backend: spawning tm-worker as a
+// Package local implements the local backend: spawning tm-worker as a
 // direct child of the controller, watching it, and stopping it
 // gracefully (SIGTERM/taskkill, then SIGKILL after a grace window).
 package local
@@ -35,7 +35,7 @@ type Manager struct {
 	configPath   string
 	controllerID string // exported as TM_WORKER_FARM_ID
 	gracePeriod  time.Duration
-	backend      backend.Backend // process-control abstraction; LocalBackend in Phase 2
+	backend      backend.Backend // process-control abstraction
 
 	mu      sync.Mutex
 	running map[string]*procEntry // workers actively supervised by this controller
@@ -80,7 +80,7 @@ type Options struct {
 	// Defaults to 10 s if zero.
 	GracePeriod time.Duration
 	// Backend is the process-control implementation. Nil ⇒
-	// backend.NewLocal() (Phase 2 default).
+	// backend.NewLocal() (default).
 	Backend backend.Backend
 }
 
@@ -126,8 +126,8 @@ type SpawnResult struct {
 // reported a start error.
 //
 // One Spawn call corresponds to one *run*: a single `runs/<run-id>/`
-// directory holding all the spawned workers' logs (and, in Slice 2, a
-// shared `manifest.json`). Workers within a run are numbered 1..count
+// directory holding all the spawned workers' logs and a shared
+// `manifest.json`. Workers within a run are numbered 1..count
 // (the `slot`) and their logs land at `worker-NN.log`. Slot ordering is
 // stable in the result slice.
 func (m *Manager) Spawn(ctx context.Context, count int, extraArgs []string) []SpawnResult {

@@ -1,55 +1,67 @@
-# Task Message Module
+# Task message
 
-Utilities in `message/` format task payloads and distribute them to dispatcher sessions without blocking. 
+\defgroup message_module Task message
+
+Framing and queuing primitives shared by generators, dispatchers, and
+workers.
 
 ## Responsibilities
-- Serialize dispatcher<->worker traffic into a contiguous `{TaskHeader + payload}` buffer (`TaskMessage`).
-- Provide a coroutine-friendly queue (`TaskMessageQueue`) so acceptor sessions can `co_await` new work.
-- Track timing metadata to help latency tooling (`TaskMessage::get_age`).
 
-## Key Types
-- `TaskHeader`: fixed-width framing that travels on the wire ahead of every payload.
-- `TaskMessage`: owns the contiguous storage, validates payload sizes, and exposes header/payload views.
-- `TaskMessageQueue` + `TaskQueueAwaitable`: awaitable bridge between producers (task generators, RPC handlers) and consumers (session coroutines).
+- Frame dispatcher↔worker traffic as a contiguous
+  `{TaskHeader + payload}` buffer (`TaskMessage`).
+- Provide a coroutine-friendly queue (`TaskMessageQueue`) so session
+  coroutines can `co_await` new work.
+- Track timing metadata for latency tooling
+  (`TaskMessage::get_age`).
 
-> All public entry points are tagged with `\ingroup message_module` so Doxygen groups them under *Task Message Module*.
+## Key types
 
-## Data Flow (Mermaid)
+| Type | Role |
+| --- | --- |
+| `TaskHeader` | Fixed-width framing on the wire. |
+| `TaskMessage` | Owns contiguous storage; validates payload sizes; exposes header/payload views. |
+| `TaskMessageQueue` + `TaskQueueAwaitable` | Awaitable bridge between producers (generators, RPC handlers) and consumers (session coroutines). |
+
+All public entry points are tagged `\ingroup message_module`.
+
+## Data flow
+
 ```mermaid
 graph TD
-    TG[TaskGenerator / Dispatcher API] -->|enqueue| Pool(TaskMessageQueue)
-    Pool -->|co_await get_next_task| Session[Session coroutine]
-    Session -->|serialize header+payload| Transport[transport::CoroSocketAdapter]
-    Transport --> Worker[workerMain]
+    TG[Generator / Dispatcher API] -->|enqueue| Queue(TaskMessageQueue)
+    Queue -->|co_await get_next_task| Session[Session coroutine]
+    Session -->|serialize header+payload| Transport[CoroSocketAdapter]
+    Transport --> Worker[tm-worker]
     Worker -->|results| Session
 ```
 
-## Awaitable Lifecycle (Mermaid)
+## Awaitable lifecycle
+
 ```mermaid
 sequenceDiagram
     participant Prod as Producer thread
-    participant Pool as TaskMessageQueue
-    participant Await as TaskQueueAwaitable
-    participant Sess as Session coroutine
+    participant Q as TaskMessageQueue
+    participant Aw as TaskQueueAwaitable
+    participant S as Session coroutine
 
-    Sess->>Pool: co_await get_next_task()
-    Pool->>Await: construct awaitable
-    Await->>Pool: await_ready()
+    S->>Q: co_await get_next_task()
+    Q->>Aw: construct awaitable
+    Aw->>Q: await_ready()
     alt task available
-        Pool-->>Await: result filled
-        Await-->>Sess: resume inline
+        Q-->>Aw: result filled
+        Aw-->>S: resume inline
     else empty
-        Await->>Pool: await_suspend(handle)
-        Pool->>Queue: push waiter
-        Sess-->>Sess: suspended
-        Prod->>Pool: add_task(TaskMessage)
-        Pool->>Queue: pop waiter
-        Pool->>Await: store TaskMessage
-        Pool-->>Sess: resume(handle)
+        Aw->>Q: await_suspend(handle)
+        Q->>Q: push waiter
+        S-->>S: suspended
+        Prod->>Q: add_task(TaskMessage)
+        Q->>Q: pop waiter
+        Q->>Aw: store TaskMessage
+        Q-->>S: resume(handle)
     end
 ```
 
-## Authoring Notes
-- Prefer succinct `/** \brief ... */` comments over `//` for public APIs to keep Doxygen output readable.
-- When adding new pool helpers, update the diagrams above if control flow changes.
-- Build docs alongside existing modules: `meson compile -C builddir docs`. The generated HTML now surfaces the `message_module` group next to transport and worker sections.
+## Related documentation
+
+- Networking: [transport/README.md](../transport/README.md).
+- Dispatcher session that consumes the queue: [dispatcher/session/README.md](../dispatcher/session/README.md).

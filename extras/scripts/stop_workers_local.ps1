@@ -39,7 +39,7 @@ if (-not (Test-Path -LiteralPath $manifestPath)) {
 
 $manifest = Get-Content -LiteralPath $manifestPath -Raw | ConvertFrom-Json
 
-# Phase 1: graceful CloseMainWindow / Stop-Process (Windows has no SIGTERM).
+# Graceful stop pass: CloseMainWindow / Stop-Process (Windows has no SIGTERM).
 foreach ($w in $manifest.workers) {
     $procId = [int]$w.pid
     $proc = Get-Process -Id $procId -ErrorAction SilentlyContinue
@@ -59,7 +59,7 @@ foreach ($w in $manifest.workers) {
     }
 }
 
-# Phase 2: wait, then -Force any survivors.
+# Wait for graceful exit, then -Force any survivors.
 $deadline = (Get-Date).AddSeconds($GraceSeconds)
 while ((Get-Date) -lt $deadline) {
     $alive = $manifest.workers | Where-Object { Get-Process -Id ([int]$_.pid) -ErrorAction SilentlyContinue }

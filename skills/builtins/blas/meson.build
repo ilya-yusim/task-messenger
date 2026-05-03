@@ -25,7 +25,7 @@ skill_gen_env.set('PYTHONDONTWRITEBYTECODE', '1')
 # DgemmSkill — Generated from .skill.toml
 # =============================================================================
 
-# Step 1: Python generator → .fbs + _gen.hpp + .cpp
+# Python generator → .fbs + _gen.hpp + .cpp
 dgemm_skill_gen = custom_target(
   'DgemmSkill_codegen',
   input: 'DgemmSkill.skill.toml',
@@ -39,7 +39,7 @@ dgemm_skill_gen = custom_target(
   env: skill_gen_env,
 )
 
-# Step 2: flatc → _generated.h (from the generated .fbs)
+# flatc → _generated.h (from the generated .fbs)
 dgemm_schema_gen = custom_target(
   'DgemmSkill_generated',
   input: dgemm_skill_gen[0],  # DgemmSkill.fbs

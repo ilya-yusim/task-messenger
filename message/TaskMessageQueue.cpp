@@ -13,11 +13,11 @@
 // - await_ready tries to opportunistically grab a task without locking callers.
 //   It also short-circuits if the associated CancellationToken is already set.
 // - await_suspend records the awaiting coroutine and stores a pointer so the queue
-//   can populate the result prior to resumption.  The CancellationToken is stored
-//   alongside the handle so that add_task() can skip dead waiters (Option A) and
-//   cancel_and_resume_waiter() can explicitly tear them down (Option B).
+//   can populate the result prior to resumption. The CancellationToken is stored
+//   alongside the handle so add_task() can lazily skip dead waiters and
+//   cancel_and_resume_waiter() can explicitly tear them down.
 // - add_task/add_tasks prefer waking suspended sessions before growing the deque,
-//   preserving FIFO order for both tasks and waiters.  Cancelled waiters are
+//   preserving FIFO order for both tasks and waiters. Cancelled waiters are
 //   silently discarded.
 // - shutdown() drains waiters and resumes them with empty TaskMessage instances,
 //   skipping any whose token is already cancelled.
@@ -71,7 +71,7 @@ void TaskMessageQueue::add_task(TaskMessage task) {
 
     std::unique_lock lock(mutex_);
 
-    // Skip cancelled waiters (Option A: lazy discard)
+    // Lazily skip cancelled waiters.
     while (!waiting_workers_.empty()) {
         auto& front = waiting_workers_.front();
         if (front.token && front.token->is_cancelled()) {
