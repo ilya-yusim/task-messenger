@@ -67,6 +67,27 @@ git push origin --delete vtest
 Then recreate it as needed. For `vtest` you can usually skip the delete and
 just use `git tag -f` / `git push -f` as shown above.
 
+
+### Bumping a version tag to the latest commit
+
+If you need to move an existing version tag (e.g., `v1.2.3`) to a new commit (for example, after a mistake or interruption), follow these steps:
+
+```powershell
+# Delete the tag on the remote
+git push --delete origin v1.2.3
+
+# Delete the tag locally
+git tag -d v1.2.3
+
+# Recreate the tag at the latest commit (usually HEAD)
+git tag v1.2.3
+
+# Push the tag to the remote
+git push origin v1.2.3
+```
+
+This will update the remote tag to point to your latest commit. The release workflow will be triggered as if the tag was newly created.
+
 ## Local smoke test (before tagging)
 
 Run the platform-specific distribution script to reproduce the CI build locally.
