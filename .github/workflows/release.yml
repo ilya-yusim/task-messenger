@@ -502,6 +502,7 @@ jobs:
           **Artifacts are available in the Assets section below.**
           
           ### Worker Component
+          _Includes both `tm-worker` and `tm-worker-farm` in the same installer bundle._
           - **Windows**
             - `tm-worker-v*-windows-x64-installer.exe` - Worker self-extracting installer
           - **Linux**
@@ -547,6 +548,7 @@ jobs:
           ## 📦 Downloads & Installation
           
           ### Worker Component
+          _Includes both `tm-worker` and `tm-worker-farm` in the same installer bundle._
           - **Windows**
             - [\`tm-worker-v${VERSION}-windows-x64-installer.exe\`](https://github.com/${{ github.repository }}/releases/download/${RELEASE_TAG}/tm-worker-v${VERSION}-windows-x64-installer.exe) - Self-extracting installer (double-click to install)
           - **Linux**

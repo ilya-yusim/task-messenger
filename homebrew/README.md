@@ -23,7 +23,11 @@ After install, configuration files are created under
 ```bash
 tm-dispatcher -c "~/Library/Application Support/TaskMessenger/config/dispatcher/config-dispatcher.json"
 tm-worker     -c "~/Library/Application Support/TaskMessenger/config/worker/config-worker.json"
+tm-worker-farm
 ```
+
+`tm-worker` formula installs both `tm-worker` and `tm-worker-farm` so
+users can choose direct worker execution or worker-farm orchestration.
 
 Update with `brew upgrade tm-dispatcher tm-worker`; uninstall with
 `brew uninstall tm-dispatcher tm-worker`.

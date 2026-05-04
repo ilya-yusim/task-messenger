@@ -15,8 +15,9 @@ class TmWorker < Formula
   depends_on arch: :arm64
 
   def install
-    # Install binary
+    # Install binaries (worker runtime + worker farm controller)
     bin.install "bin/tm-worker"
+    bin.install "bin/tm-worker-farm"
 
     # Install shared library
     lib.install "lib/libzt.dylib"
@@ -46,11 +47,18 @@ class TmWorker < Formula
     <<~EOS
       TaskMessenger Worker has been installed!
 
+      This formula installs:
+        - tm-worker (single worker runtime)
+        - tm-worker-farm (multi-worker local controller/UI)
+
       Configuration file:
         ~/Library/Application Support/TaskMessenger/config/worker/config-worker.json
 
       To start the worker:
         tm-worker -c "~/Library/Application Support/TaskMessenger/config/worker/config-worker.json"
+
+      To start worker-farm:
+        tm-worker-farm
 
       Or use the full path to the config file.
     EOS
