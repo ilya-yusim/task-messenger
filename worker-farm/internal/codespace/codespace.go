@@ -207,9 +207,17 @@ func (m *Manager) Spawn(ctx context.Context, host inventory.Host, count int, ext
 		return failAll(fmt.Sprintf("host %q is not a codespace backend", host.ID))
 	}
 
-	// Resolve the codespace name. Empty name ⇒ pick first available.
+	// Resolve the codespace target. Label takes precedence when set;
+	// otherwise name (or first available when empty) keeps the
+	// existing behavior.
 	resolveCtx, cancelResolve := context.WithTimeout(ctx, 30*time.Second)
-	cs, err := gh.Resolve(resolveCtx, host.Codespace.Name)
+	var cs *gh.Codespace
+	var err error
+	if strings.TrimSpace(host.Codespace.Label) != "" {
+		cs, err = gh.ResolveByLabel(resolveCtx, host.Codespace.Label)
+	} else {
+		cs, err = gh.Resolve(resolveCtx, host.Codespace.Name)
+	}
 	cancelResolve()
 	if err != nil {
 		return failAll(fmt.Sprintf("resolve codespace: %v", err))

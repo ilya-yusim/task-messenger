@@ -50,6 +50,14 @@ type CodespaceCfg struct {
 	// Empty string means "auto-pick first running codespace" — useful
 	// for the common single-codespace case.
 	Name string `json:"name"`
+	// Label is an operator-defined display label used to find (or create)
+	// a codespace deterministically. When set, bootstrap prefers label-
+	// based ensure semantics over raw name matching.
+	Label string `json:"label,omitempty"`
+	// Repo is the OWNER/REPO used when the controller needs to create a
+	// new codespace for this host (for example when Label is set but no
+	// matching codespace exists).
+	Repo string `json:"repo,omitempty"`
 	// WorkerBin is the path to tm-worker on the remote host. Empty ⇒
 	// resolve via $PATH on the remote.
 	WorkerBin string `json:"worker_bin,omitempty"`

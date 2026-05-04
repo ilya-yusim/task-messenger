@@ -21,6 +21,7 @@ import (
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/adopt"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/api"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/codespace"
+	"github.com/ilya-yusim/task-messenger/worker-farm/internal/gh"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/identity"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/inventory"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/local"
@@ -231,6 +232,11 @@ func run() error {
 	log.Printf("  worker bin:   %s", resolvedWorker)
 	log.Printf("  worker conf:  %s", configArg)
 	log.Printf("  pidfile:      %s", paths.PidfilePath(cacheDir))
+	if gh.HasProcessToken() {
+		log.Print("  gh auth:      process GH_TOKEN")
+	} else {
+		log.Print("  gh auth:      local gh auth session (GH_TOKEN unset)")
+	}
 	if logFilePath != "-" {
 		log.Printf("  log file:     %s", logFilePath)
 	} else {

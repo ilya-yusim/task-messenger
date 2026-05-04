@@ -8,7 +8,11 @@ needs maintenance.
 
 ## Inputs
 
-- The codespace's name (as listed by `gh codespace list`).
+- The host entry in `.config/tm-worker-farm/hosts.json` (use
+  `codespace.label` + `codespace.repo` for ensure/create, or
+  `codespace.name` for exact-name binding).
+- Auth context for `gh` (`GH_TOKEN` in process env, or local
+  `gh auth login` session when `GH_TOKEN` is unset).
 - The release tag whose `tm-worker-*-linux-x86_64*.run` asset should be
   installed on the codespace.
 - A worker config (`config-worker.json`) that points at the rendezvous
@@ -32,22 +36,29 @@ needs maintenance.
 
 ## Steps the agent performs
 
-1. Ensure `gh` is on `$PATH` and authenticated for the target
-   codespace's repo.
-2. Resolve the requested release tag and confirm the
+1. Ensure `gh` is on `$PATH` and authentication is valid for the
+  target repo/codespace (process `GH_TOKEN` or local `gh auth`
+  session).
+2. Ensure the target codespace from host config:
+  by `codespace.name` when set, otherwise by `codespace.label`.
+  When label is configured and no match exists, create a codespace
+  from `codespace.repo` and set its label.
+3. Resolve the requested release tag and confirm the
    `tm-worker-*-linux-x86_64*.run` asset exists.
-3. Use `bootstrap` to copy the `.run` plus the helper script onto the
+4. Use `bootstrap` to copy the `.run` plus the helper script onto the
    codespace and run the installer with `--accept`.
-4. Use `codespace.Manager.Spawn` to start one or more workers on the
+5. Use `codespace.Manager.Spawn` to start one or more workers on the
    codespace. The remote side runs `start_workers_local.sh` exactly
    like a local host would.
-5. Confirm the workers register with the rendezvous service and pick
+6. Confirm the workers register with the rendezvous service and pick
    up tasks.
 
 ## Verification
 
 - `tm-worker-farm`'s UI lists the codespace host and shows live
   worker rows.
+- `GET /hosts/{id}/status` is `ok` (not `codespace-not-found` or
+  `needs-codespace-scope`).
 - The rendezvous dashboard
   ([services/rendezvous/README.md](../../services/rendezvous/README.md))
   shows the new workers connecting to the dispatcher.

@@ -244,14 +244,21 @@ func (s *Server) handleHostStatus(w http.ResponseWriter, r *http.Request, host i
 			}
 		}
 
-		var name string
+		var name, label string
 		if host.Codespace != nil {
 			name = host.Codespace.Name
+			label = host.Codespace.Label
 		}
-		cs, err := gh.Resolve(ctx, name)
+		var cs *gh.Codespace
+		if label != "" {
+			cs, err = gh.ResolveByLabel(ctx, label)
+		} else {
+			cs, err = gh.Resolve(ctx, name)
+		}
 		if err != nil {
 			var nf *gh.NotFoundError
-			if errors.As(err, &nf) {
+			var lnf *gh.LabelNotFoundError
+			if errors.As(err, &nf) || errors.As(err, &lnf) {
 				resp.Status = "codespace-not-found"
 				resp.Detail = err.Error()
 				writeJSON(w, http.StatusOK, resp)
@@ -290,8 +297,12 @@ func (s *Server) handleHostBootstrap(w http.ResponseWriter, r *http.Request, hos
 		http.Error(w, fmt.Sprintf("bootstrap is only supported for backend=codespace (host %q is %s)", host.ID, host.Backend), http.StatusBadRequest)
 		return
 	}
-	if host.Codespace == nil || host.Codespace.Name == "" {
-		http.Error(w, fmt.Sprintf("host %q: codespace.name is required for bootstrap", host.ID), http.StatusBadRequest)
+	if host.Codespace == nil {
+		http.Error(w, fmt.Sprintf("host %q: codespace config is required for bootstrap", host.ID), http.StatusBadRequest)
+		return
+	}
+	if host.Codespace.Name == "" && host.Codespace.Label == "" {
+		http.Error(w, fmt.Sprintf("host %q: either codespace.name or codespace.label is required for bootstrap", host.ID), http.StatusBadRequest)
 		return
 	}
 
@@ -313,11 +324,13 @@ func (s *Server) handleHostBootstrap(w http.ResponseWriter, r *http.Request, hos
 	defer cancel()
 
 	res, err := bootstrap.Bootstrap(ctx, bootstrap.Request{
-		HostID:    host.ID,
-		Codespace: host.Codespace.Name,
-		Repo:      body.Repo,
-		Tag:       body.Tag,
-		CacheDir:  s.cacheDir,
+		HostID:         host.ID,
+		CodespaceName:  host.Codespace.Name,
+		CodespaceLabel: host.Codespace.Label,
+		CodespaceRepo:  host.Codespace.Repo,
+		Repo:           body.Repo,
+		Tag:            body.Tag,
+		CacheDir:       s.cacheDir,
 	})
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

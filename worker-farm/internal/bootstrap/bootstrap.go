@@ -120,13 +120,24 @@ func saveState(cacheDir string, s *State) error {
 	return os.Rename(tmp, p)
 }
 
+func remoteFileExists(ctx context.Context, codespaceName, path string) (bool, error) {
+	probe := fmt.Sprintf(`if [ -f %s ]; then echo "__TM_EXISTS=1"; else echo "__TM_EXISTS=0"; fi`, path)
+	out, err := gh.SSH(ctx, codespaceName, probe)
+	if err != nil {
+		return false, err
+	}
+	return strings.Contains(string(out), "__TM_EXISTS=1"), nil
+}
+
 // Request describes one bootstrap operation.
 type Request struct {
-	HostID    string // inventory host id (used as the state-file key)
-	Codespace string // codespace name; required for backend=codespace
-	Repo      string // OWNER/REPO; empty ⇒ DefaultRepo
-	Tag       string // release tag; empty or "latest" ⇒ latest
-	CacheDir  string // controller cache dir for the state file
+	HostID         string // inventory host id (used as the state-file key)
+	CodespaceName  string // explicit codespace name (backward-compatible path)
+	CodespaceLabel string // label/display-name selector for ensure/create flow
+	CodespaceRepo  string // OWNER/REPO used when ensure-by-label needs create
+	Repo           string // OWNER/REPO for tm-worker release lookup; empty ⇒ DefaultRepo
+	Tag            string // release tag; empty or "latest" ⇒ latest
+	CacheDir       string // controller cache dir for the state file
 }
 
 // Result is the structured outcome of a bootstrap. Sent to the UI
@@ -134,6 +145,9 @@ type Request struct {
 type Result struct {
 	HostID         string `json:"host_id"`
 	Codespace      string `json:"codespace"`
+	CodespaceLabel string `json:"codespace_label,omitempty"`
+	CodespaceRepo  string `json:"codespace_repo,omitempty"`
+	CodespaceNew   bool   `json:"codespace_created"`
 	Repo           string `json:"repo"`
 	Tag            string `json:"tag"`
 	AssetName      string `json:"asset_name"`
@@ -145,13 +159,22 @@ type Result struct {
 // Bootstrap runs the full install flow. Errors carry enough context
 // for the operator to fix things without re-reading source.
 func Bootstrap(ctx context.Context, req Request) (*Result, error) {
-	if req.Codespace == "" {
-		return nil, errors.New("bootstrap: codespace name is required (set inventory.codespace.name)")
+	if req.CodespaceName == "" && req.CodespaceLabel == "" {
+		return nil, errors.New("bootstrap: either codespace.name or codespace.label is required")
 	}
 	repo := req.Repo
 	if repo == "" {
 		repo = DefaultRepo
 	}
+
+	ensure, err := gh.EnsureByNameOrLabel(ctx, req.CodespaceName, req.CodespaceLabel, req.CodespaceRepo)
+	if err != nil {
+		return nil, fmt.Errorf("ensure codespace: %w", err)
+	}
+	if ensure == nil || ensure.Codespace == nil || strings.TrimSpace(ensure.Codespace.Name) == "" {
+		return nil, errors.New("ensure codespace: resolved codespace name is empty")
+	}
+	resolvedCodespace := ensure.Codespace.Name
 
 	// 1) Resolve the release + pick the linux-x86_64 asset.
 	info, err := gh.ReleaseView(ctx, repo, req.Tag)
@@ -197,15 +220,23 @@ func Bootstrap(ctx context.Context, req Request) (*Result, error) {
 	// 4) Upload to the codespace. The mkdir runs every time —
 	// codespaces wipe /tmp on rebuild but ~/.local survives, so the
 	// directory may already exist; mkdir -p is idempotent.
-	if _, err := gh.SSH(ctx, req.Codespace, "mkdir -p "+remoteDir); err != nil {
+	if _, err := gh.SSH(ctx, resolvedCodespace, "mkdir -p "+remoteDir); err != nil {
 		return nil, fmt.Errorf("ssh mkdir: %w", err)
 	}
 
 	state := loadState(req.CacheDir)
 	prev := state.Hosts[req.HostID]
 	helperUploaded := false
-	if prev.HelperHash != installerScriptHash {
-		if err := gh.CP(ctx, req.Codespace, helperPath, remoteDir+"/install_tm_worker_release.sh"); err != nil {
+	helperRemotePath := remoteDir + "/install_tm_worker_release.sh"
+	helperPresent := false
+	if prev.HelperHash == installerScriptHash {
+		helperPresent, err = remoteFileExists(ctx, resolvedCodespace, helperRemotePath)
+		if err != nil {
+			return nil, fmt.Errorf("probe helper presence: %w", err)
+		}
+	}
+	if prev.HelperHash != installerScriptHash || !helperPresent {
+		if err := gh.CP(ctx, resolvedCodespace, helperPath, remoteDir+"/install_tm_worker_release.sh"); err != nil {
 			return nil, fmt.Errorf("cp helper: %w", err)
 		}
 		helperUploaded = true
@@ -214,19 +245,19 @@ func Bootstrap(ctx context.Context, req Request) (*Result, error) {
 	// Always re-upload the .run asset: its hash isn't tracked
 	// remotely, and a partial upload from a previous failure could
 	// otherwise be silently reused.
-	if err := gh.CP(ctx, req.Codespace, localAsset, remoteDir+"/"+asset.Name); err != nil {
+	if err := gh.CP(ctx, resolvedCodespace, localAsset, remoteDir+"/"+asset.Name); err != nil {
 		return nil, fmt.Errorf("cp asset: %w", err)
 	}
 
 	// 5) chmod + run the installer remotely.
 	chmod := fmt.Sprintf("chmod +x %s/install_tm_worker_release.sh %s/%s",
 		remoteDir, remoteDir, asset.Name)
-	if _, err := gh.SSH(ctx, req.Codespace, chmod); err != nil {
+	if _, err := gh.SSH(ctx, resolvedCodespace, chmod); err != nil {
 		return nil, fmt.Errorf("ssh chmod: %w", err)
 	}
 	runCmd := fmt.Sprintf("%s/install_tm_worker_release.sh -f %s/%s",
 		remoteDir, remoteDir, asset.Name)
-	logBytes, err := gh.SSH(ctx, req.Codespace, runCmd)
+	logBytes, err := gh.SSH(ctx, resolvedCodespace, runCmd)
 	installerLog := string(logBytes)
 	if err != nil {
 		// Surface the installer's stdout/stderr; that's where the
@@ -248,7 +279,10 @@ func Bootstrap(ctx context.Context, req Request) (*Result, error) {
 
 	return &Result{
 		HostID:         req.HostID,
-		Codespace:      req.Codespace,
+		Codespace:      resolvedCodespace,
+		CodespaceLabel: req.CodespaceLabel,
+		CodespaceRepo:  req.CodespaceRepo,
+		CodespaceNew:   ensure.Created,
 		Repo:           repo,
 		Tag:            info.TagName,
 		AssetName:      asset.Name,

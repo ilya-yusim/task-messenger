@@ -17,8 +17,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
+	"sort"
 	"strings"
 )
 
@@ -44,6 +46,70 @@ type MissingBinaryError struct{}
 
 func (e *MissingBinaryError) Error() string {
 	return "gh CLI not found on PATH; install it from https://cli.github.com/ and run `gh auth login`"
+}
+
+// MissingTokenError is returned for operations that require GH_TOKEN
+// from the controller process environment.
+type MissingTokenError struct{}
+
+func (e *MissingTokenError) Error() string {
+	return "GH_TOKEN is required in the controller process environment"
+}
+
+// LabelNotFoundError is returned when no codespace has the requested
+// display label.
+type LabelNotFoundError struct{ Label string }
+
+func (e *LabelNotFoundError) Error() string {
+	return fmt.Sprintf("no codespace found with label %q", e.Label)
+}
+
+// MissingRepoError is returned when creation is requested without an
+// OWNER/REPO target.
+type MissingRepoError struct{}
+
+func (e *MissingRepoError) Error() string {
+	return "codespace repo is required to create by label (set inventory.codespace.repo)"
+}
+
+// LabelUnsupportedError indicates the local gh build cannot set
+// codespace labels/display names and needs an upgrade.
+type LabelUnsupportedError struct{ Detail string }
+
+func (e *LabelUnsupportedError) Error() string {
+	base := "this gh version does not support codespace labels/display names; upgrade gh and retry"
+	if strings.TrimSpace(e.Detail) == "" {
+		return base
+	}
+	return base + ": " + strings.TrimSpace(e.Detail)
+}
+
+// EnsureResult is returned by EnsureByNameOrLabel.
+type EnsureResult struct {
+	Codespace *Codespace
+	Created   bool
+}
+
+func ghCommandContext(ctx context.Context, args ...string) (*exec.Cmd, error) {
+	bin, err := Binary()
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.CommandContext(ctx, bin, args...)
+	token := strings.TrimSpace(os.Getenv("GH_TOKEN"))
+	if token != "" {
+		cmd.Env = append(os.Environ(),
+			"GH_TOKEN="+token,
+			"GITHUB_TOKEN="+token,
+		)
+	}
+	return cmd, nil
+}
+
+// HasProcessToken reports whether GH_TOKEN is set on the controller
+// process environment.
+func HasProcessToken() bool {
+	return strings.TrimSpace(os.Getenv("GH_TOKEN")) != ""
 }
 
 // NeedsCodespaceScopeError is returned by AuthStatus when the user
@@ -106,14 +172,13 @@ var (
 //   - (nil, otherErr)                               — anything else
 //     (network, gh internal error). Caller should display verbatim.
 func AuthStatus(ctx context.Context) (*AuthStatusInfo, error) {
-	bin, err := Binary()
+	cmd, err := ghCommandContext(ctx, "auth", "status", "-h", "github.com")
 	if err != nil {
 		return nil, err
 	}
 	// `gh auth status` writes its human-readable output to stderr
 	// (success path) and exits non-zero when not logged in. We
 	// capture both streams and parse merged text.
-	cmd := exec.CommandContext(ctx, bin, "auth", "status", "-h", "github.com")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -169,12 +234,11 @@ type Codespace struct {
 
 // List returns every codespace visible to the authenticated user.
 func List(ctx context.Context) ([]Codespace, error) {
-	bin, err := Binary()
+	cmd, err := ghCommandContext(ctx, "codespace", "list",
+		"--json", "name,displayName,state,repository")
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, bin, "codespace", "list",
-		"--json", "name,displayName,state,repository")
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -212,6 +276,132 @@ func Resolve(ctx context.Context, name string) (*Codespace, error) {
 	return nil, &NotFoundError{Name: ""}
 }
 
+// ResolveByLabel finds a codespace whose displayName equals label.
+// If multiple match, prefer Available then sort by name.
+func ResolveByLabel(ctx context.Context, label string) (*Codespace, error) {
+	if strings.TrimSpace(label) == "" {
+		return nil, &LabelNotFoundError{Label: label}
+	}
+	all, err := List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	matches := make([]Codespace, 0, 1)
+	for _, cs := range all {
+		if cs.DisplayName == label {
+			matches = append(matches, cs)
+		}
+	}
+	if len(matches) == 0 {
+		return nil, &LabelNotFoundError{Label: label}
+	}
+	sort.Slice(matches, func(i, j int) bool {
+		iAvail := strings.EqualFold(matches[i].State, "Available")
+		jAvail := strings.EqualFold(matches[j].State, "Available")
+		if iAvail != jAvail {
+			return iAvail
+		}
+		return matches[i].Name < matches[j].Name
+	})
+	return &matches[0], nil
+}
+
+func createCodespace(ctx context.Context, repo string) error {
+	if strings.TrimSpace(repo) == "" {
+		return &MissingRepoError{}
+	}
+	cmd, err := ghCommandContext(ctx, "codespace", "create", "-R", repo)
+	if err != nil {
+		return err
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("gh codespace create -R %s: %w: %s", repo, err, strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
+
+func editDisplayName(ctx context.Context, name, label string) error {
+	cmd, err := ghCommandContext(ctx, "codespace", "edit", "-c", name, "-d", label)
+	if err != nil {
+		return err
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		lower := strings.ToLower(detail)
+		if strings.Contains(lower, "unknown flag") ||
+			strings.Contains(lower, "unknown command") ||
+			strings.Contains(lower, "accepts") {
+			return &LabelUnsupportedError{Detail: detail}
+		}
+		return fmt.Errorf("gh codespace edit -c %s -d %s: %w: %s", name, label, err, detail)
+	}
+	return nil
+}
+
+// EnsureByNameOrLabel resolves an existing codespace by name/label.
+// If label is set and no match exists, it creates a new codespace for
+// repo and sets the display label.
+func EnsureByNameOrLabel(ctx context.Context, name, label, repo string) (*EnsureResult, error) {
+	if strings.TrimSpace(name) != "" {
+		cs, err := Resolve(ctx, name)
+		if err != nil {
+			return nil, err
+		}
+		return &EnsureResult{Codespace: cs, Created: false}, nil
+	}
+	if strings.TrimSpace(label) == "" {
+		cs, err := Resolve(ctx, "")
+		if err != nil {
+			return nil, err
+		}
+		return &EnsureResult{Codespace: cs, Created: false}, nil
+	}
+	cs, err := ResolveByLabel(ctx, label)
+	if err == nil {
+		return &EnsureResult{Codespace: cs, Created: false}, nil
+	}
+	var byLabelMissing *LabelNotFoundError
+	if !errors.As(err, &byLabelMissing) {
+		return nil, err
+	}
+
+	before, err := List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	beforeNames := make(map[string]struct{}, len(before))
+	for _, c := range before {
+		beforeNames[c.Name] = struct{}{}
+	}
+	if err := createCodespace(ctx, repo); err != nil {
+		return nil, err
+	}
+	after, err := List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var created *Codespace
+	for i := range after {
+		if _, seen := beforeNames[after[i].Name]; !seen {
+			c := after[i]
+			created = &c
+			break
+		}
+	}
+	if created == nil {
+		return nil, errors.New("codespace create succeeded but the new codespace could not be identified")
+	}
+	if err := editDisplayName(ctx, created.Name, label); err != nil {
+		return nil, err
+	}
+	created.DisplayName = label
+	return &EnsureResult{Codespace: created, Created: true}, nil
+}
+
 // NotFoundError is returned by Resolve when no codespace matches.
 type NotFoundError struct{ Name string }
 
@@ -234,10 +424,6 @@ func (e *NotFoundError) Error() string {
 // invoke embedded helpers (start_workers_local.sh, etc.) with their
 // own flag set without quoting nightmares.
 func SSH(ctx context.Context, name, script string, scriptArgs ...string) ([]byte, error) {
-	bin, err := Binary()
-	if err != nil {
-		return nil, err
-	}
 	if name == "" {
 		return nil, errors.New("gh.SSH: codespace name is required")
 	}
@@ -248,7 +434,10 @@ func SSH(ctx context.Context, name, script string, scriptArgs ...string) ([]byte
 		cmdArgs = append(cmdArgs, "--")
 		cmdArgs = append(cmdArgs, scriptArgs...)
 	}
-	cmd := exec.CommandContext(ctx, bin, cmdArgs...)
+	cmd, err := ghCommandContext(ctx, cmdArgs...)
+	if err != nil {
+		return nil, err
+	}
 	cmd.Stdin = strings.NewReader(script)
 	var out bytes.Buffer
 	cmd.Stdout = &out
@@ -262,17 +451,16 @@ func SSH(ctx context.Context, name, script string, scriptArgs ...string) ([]byte
 // CP copies a single local file to the named codespace using `gh
 // codespace cp`. `dst` is a path on the remote (e.g. "~/foo.run").
 func CP(ctx context.Context, name, src, dst string) error {
-	bin, err := Binary()
-	if err != nil {
-		return err
-	}
 	if name == "" {
 		return errors.New("gh.CP: codespace name is required")
 	}
 	// `gh codespace cp -e` interprets `remote:` syntax; we always
 	// upload, so the remote path goes second.
-	cmd := exec.CommandContext(ctx, bin, "codespace", "cp", "-e",
+	cmd, err := ghCommandContext(ctx, "codespace", "cp", "-e",
 		"-c", name, src, "remote:"+dst)
+	if err != nil {
+		return err
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
@@ -298,10 +486,6 @@ type ReleaseInfo struct {
 // "latest" or empty, gh resolves the latest release for the repo.
 // repo is "OWNER/REPO".
 func ReleaseView(ctx context.Context, repo, tag string) (*ReleaseInfo, error) {
-	bin, err := Binary()
-	if err != nil {
-		return nil, err
-	}
 	if repo == "" {
 		return nil, errors.New("gh.ReleaseView: repo is required")
 	}
@@ -310,7 +494,10 @@ func ReleaseView(ctx context.Context, repo, tag string) (*ReleaseInfo, error) {
 		args = append(args, tag)
 	}
 	args = append(args, "--json", "tagName,assets")
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd, err := ghCommandContext(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -327,16 +514,15 @@ func ReleaseView(ctx context.Context, repo, tag string) (*ReleaseInfo, error) {
 // ReleaseDownload downloads a single asset from a release into
 // destDir. Pattern is matched by `gh release download --pattern`.
 func ReleaseDownload(ctx context.Context, repo, tag, pattern, destDir string) error {
-	bin, err := Binary()
-	if err != nil {
-		return err
-	}
 	args := []string{"release", "download", "-R", repo}
 	if tag != "" && tag != "latest" {
 		args = append(args, tag)
 	}
 	args = append(args, "--pattern", pattern, "--dir", destDir, "--clobber")
-	cmd := exec.CommandContext(ctx, bin, args...)
+	cmd, err := ghCommandContext(ctx, args...)
+	if err != nil {
+		return err
+	}
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

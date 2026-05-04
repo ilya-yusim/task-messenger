@@ -50,7 +50,8 @@ default flow keeps working.
       "id": "cs1",
       "backend": "codespace",
       "codespace": {
-        "name": "glorious-space-acorn-97q979gjr9wr3pv5j",
+        "label": "CODESPACE_WORKER_1",
+        "repo": "OWNER/REPO",
         "worker_bin": "tm-worker",
         "config": "~/.config/task-messenger/tm-worker/config-worker.json"
       }
@@ -58,6 +59,29 @@ default flow keeps working.
   ]
 }
 ```
+
+Codespace host selection supports three patterns:
+
+- `codespace.name` set: use that exact codespace.
+- `codespace.label` set: resolve by label (`displayName`); if missing,
+  bootstrap creates a codespace for `codespace.repo` and applies the
+  label.
+- both empty: use the first available codespace (status/spawn path);
+  bootstrap requires at least one of `name` or `label`.
+
+When `codespace.label` is used for bootstrap create/reuse, set
+`codespace.repo` to the target `OWNER/REPO` so `gh codespace create`
+has a deterministic source repo.
+
+Codespace operations work with either auth mode:
+
+- `GH_TOKEN` set in the controller process environment: the
+  controller injects that token into every `gh` invocation.
+- `GH_TOKEN` unset: `gh` uses its normal local auth/session context
+  (for example `gh auth login` credentials).
+
+If draft-release access differs between these modes, unset `GH_TOKEN`
+to use your local `gh` session for bootstrap.
 
 `backend` is the discriminator; `local` and `codespace` are wired up
 today. Write the file as **UTF-8 without BOM** — PowerShell's
@@ -73,6 +97,15 @@ non-draft release, or set to a specific tag (e.g. `vtest`).
 SSH and other remote backends are roadmap items.
 
 ### Codespace troubleshooting
+
+- **Bootstrap fails with "either codespace.name or codespace.label is required".**
+  Set at least one of those fields under the host's `codespace`
+  object.
+- **Bootstrap fails with "codespace repo is required to create by label".**
+  Set `codespace.repo` when using label-based ensure/create.
+- **Bootstrap fails with a gh upgrade hint about label support.**
+  Upgrade `gh`; the controller requires label-capable `gh codespace`
+  commands for label-driven ensure/create.
 
 - **`gh codespace list` returns 403 / "admin rights".** The local
   `gh` is missing the `codespace` scope. Run
@@ -187,14 +220,18 @@ Adopted-worker termination uses SIGTERM-then-SIGKILL on POSIX and
 ### Codespace backend internals
 
 - `internal/gh` shells out to `gh codespace ssh` and `gh codespace
-  cp` only — never `bash -lc`. Typed errors (`MissingBinaryError`,
-  `NotLoggedInError`, `NeedsCodespaceScopeError`, `NotFoundError`)
-  carry remediation hints.
+  cp` only — never `bash -lc`. When `GH_TOKEN` is set, it is injected
+  into every `gh` call; otherwise `gh` uses its normal local auth
+  context. Typed errors (`MissingBinaryError`, `NotLoggedInError`,
+  `NeedsCodespaceScopeError`, `NotFoundError`, `LabelNotFoundError`,
+  `LabelUnsupportedError`) carry remediation hints.
 - `POST /hosts/{id}/bootstrap` runs `gh release download` locally,
   uploads the `.run` and an embedded helper script via
   `gh codespace cp`, then runs `<asset>.run --accept -- --yes` over
-  a single piped `gh codespace ssh -- bash`. Helper-script hash is
-  cached per host so repeat bootstraps skip the helper upload.
+  a single piped `gh codespace ssh -- bash`. Before install, bootstrap
+  ensures a codespace by `codespace.name` or `codespace.label`
+  (create+label when needed). Helper-script hash is cached per host so
+  repeat bootstraps skip the helper upload.
 - The controller — not the codespace — runs `gh release download`,
   because the user's local `gh` is typically authed for foreign-owner
   repos and draft releases while the codespace's is not. Asset names
