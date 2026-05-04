@@ -193,6 +193,15 @@ install_component() {
         print_error "Binary not found: $extracted_dir/bin/tm-${component}"
         exit 1
     fi
+    if [ "$component" = "worker" ]; then
+        if [ ! -f "$extracted_dir/bin/tm-worker-farm" ]; then
+            print_error "Worker package is missing required binary: $extracted_dir/bin/tm-worker-farm"
+            print_error "Please use a worker artifact built with worker-farm bundling enabled."
+            exit 1
+        fi
+        cp "$extracted_dir/bin/tm-worker-farm" "$install_dir/bin/"
+        chmod +x "$install_dir/bin/tm-worker-farm"
+    fi
     
     # Copy shared library
     if [ -d "$extracted_dir/lib" ]; then
@@ -279,6 +288,16 @@ create_symlink() {
     ln -s "$target_path" "$symlink_path"
     
     print_success "Created symlink: $symlink_path"
+
+    if [ "$component" = "worker" ] && [ -f "$install_dir/bin/tm-worker-farm" ]; then
+        local farm_symlink_path="$BIN_SYMLINK_DIR/tm-worker-farm"
+        local farm_target_path="$install_dir/bin/tm-worker-farm"
+        if [ -L "$farm_symlink_path" ]; then
+            rm "$farm_symlink_path"
+        fi
+        ln -s "$farm_target_path" "$farm_symlink_path"
+        print_success "Created symlink: $farm_symlink_path"
+    fi
 }
 
 create_placeholder_icon() {

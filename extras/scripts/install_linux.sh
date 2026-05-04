@@ -169,6 +169,15 @@ install_component() {
         print_error "Binary not found: $extracted_dir/bin/tm-${component}"
         exit 1
     fi
+    if [ "$component" = "worker" ]; then
+        if [ ! -f "$extracted_dir/bin/tm-worker-farm" ]; then
+            print_error "Worker package is missing required binary: $extracted_dir/bin/tm-worker-farm"
+            print_error "Please use a worker artifact built with worker-farm bundling enabled."
+            exit 1
+        fi
+        cp "$extracted_dir/bin/tm-worker-farm" "$install_dir/bin/"
+        chmod +x "$install_dir/bin/tm-worker-farm"
+    fi
     
     # Copy shared library
     if [ -d "$extracted_dir/lib" ]; then
@@ -252,6 +261,16 @@ EOF
     
     chmod +x "$wrapper_path"
     print_success "Created wrapper script: $wrapper_path"
+
+    if [ "$component" = "worker" ] && [ -f "$install_dir/bin/tm-worker-farm" ]; then
+        local farm_wrapper_path="$BIN_SYMLINK_DIR/tm-worker-farm"
+        cat > "$farm_wrapper_path" << EOF
+#!/bin/bash
+exec "$install_dir/bin/tm-worker-farm" "\$@"
+EOF
+        chmod +x "$farm_wrapper_path"
+        print_success "Created wrapper script: $farm_wrapper_path"
+    fi
 }
 
 install_desktop_entry() {
@@ -264,26 +283,35 @@ install_desktop_entry() {
     
     if [ ! -f "$desktop_file" ]; then
         print_warning "Desktop entry file not found: $desktop_file"
-        return
+    else
+        mkdir -p "$DESKTOP_DIR"
+
+        # Build Exec command with library path and config argument
+        local config_dir="$CONFIG_BASE/task-messenger/tm-$component"
+        local config_path="$config_dir/config-$component.json"
+        local lib_path="$install_dir/lib"
+        local exec_cmd="env LD_LIBRARY_PATH=\\\"$lib_path\\\" $install_dir/bin/tm-$component -c \\\"$config_path\\\""
+        # Worker defaults to UI enabled
+        if [ "$component" = "worker" ]; then
+            exec_cmd="$exec_cmd"
+        fi
+        # Copy and update Exec path in desktop entry
+        local installed_desktop="$DESKTOP_DIR/tm-${component}.desktop"
+        sed "s|Exec=.*|Exec=$exec_cmd|" "$desktop_file" > "$installed_desktop"
+        chmod +x "$installed_desktop"
+
+        print_success "Installed desktop entry: $installed_desktop"
     fi
-    
-    mkdir -p "$DESKTOP_DIR"
-    
-    # Build Exec command with library path and config argument
-    local config_dir="$CONFIG_BASE/task-messenger/tm-$component"
-    local config_path="$config_dir/config-$component.json"
-    local lib_path="$install_dir/lib"
-    local exec_cmd="env LD_LIBRARY_PATH=\\\"$lib_path\\\" $install_dir/bin/tm-$component -c \\\"$config_path\\\""
-    # Worker defaults to UI enabled
+
     if [ "$component" = "worker" ]; then
-        exec_cmd="$exec_cmd"
+        local farm_desktop_file="$script_dir/../desktop/tm-worker-farm.desktop"
+        if [ -f "$farm_desktop_file" ] && [ -f "$install_dir/bin/tm-worker-farm" ]; then
+            local installed_farm_desktop="$DESKTOP_DIR/tm-worker-farm.desktop"
+            sed "s|Exec=.*|Exec=$install_dir/bin/tm-worker-farm|" "$farm_desktop_file" > "$installed_farm_desktop"
+            chmod +x "$installed_farm_desktop"
+            print_success "Installed desktop entry: $installed_farm_desktop"
+        fi
     fi
-    # Copy and update Exec path in desktop entry
-    local installed_desktop="$DESKTOP_DIR/tm-${component}.desktop"
-    sed "s|Exec=.*|Exec=$exec_cmd|" "$desktop_file" > "$installed_desktop"
-    chmod +x "$installed_desktop"
-    
-    print_success "Installed desktop entry: $installed_desktop"
     
     # Update desktop database if available
     if command -v update-desktop-database &> /dev/null; then

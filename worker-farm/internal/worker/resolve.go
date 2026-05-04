@@ -5,7 +5,9 @@ package worker
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -16,11 +18,12 @@ import (
 var ErrNotFound = errors.New("tm-worker binary not found")
 
 // Resolve returns the absolute path to a tm-worker executable using the
-// precedence documented in the plan (Tactical Decision #6):
+// precedence documented in the distribution roadmap:
 //
 //  1. explicit override (-worker-bin)
-//  2. $PATH lookup
-//  3. platform fallback(s) under the user's home
+//  2. sibling binary next to the tm-worker-farm executable
+//  3. $PATH lookup
+//  4. platform fallback(s) under the user's home
 //
 // The returned error wraps ErrNotFound and includes every candidate that
 // was checked, so the operator gets an actionable failure message.
@@ -33,6 +36,20 @@ func Resolve(override string) (string, error) {
 			return path, nil
 		}
 		checked = append(checked, fmt.Sprintf("--worker-bin %s (%v)", override, err))
+	}
+
+	if exePath, err := os.Executable(); err == nil {
+		name := "tm-worker"
+		if runtime.GOOS == "windows" {
+			name = "tm-worker.exe"
+		}
+		sibling := filepath.Join(filepath.Dir(exePath), name)
+		if fi, statErr := os.Stat(sibling); statErr == nil && !fi.IsDir() {
+			return sibling, nil
+		}
+		checked = append(checked, fmt.Sprintf("sibling lookup %s", sibling))
+	} else {
+		checked = append(checked, fmt.Sprintf("os.Executable() (%v)", err))
 	}
 
 	name := "tm-worker"

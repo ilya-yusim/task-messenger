@@ -70,8 +70,8 @@ build_component() {
         build_opts+=("-Dbuild_worker=false" "-Dbuild_rendezvous=false")
         echo "   Build mode: Dispatcher only"
     elif [[ "$comp" == "worker" ]]; then
-        build_opts+=("-Dbuild_dispatcher=false" "-Dbuild_rendezvous=false" "-Dbuild_generators=false")
-        echo "   Build mode: Worker only"
+        build_opts+=("-Dbuild_dispatcher=false" "-Dbuild_rendezvous=false" "-Dbuild_generators=false" "-Dbuild_worker_farm=true")
+        echo "   Build mode: Worker + worker-farm"
     elif [[ "$comp" == "rendezvous" ]]; then
         build_opts+=("-Dbuild_dispatcher=false" "-Dbuild_worker=false" "-Dbuild_generators=false")
         echo "   Build mode: Rendezvous service only"
@@ -147,6 +147,15 @@ create_archive() {
     else
         echo "❌ Error: Binary not found: $src_bin"
         return 1
+    fi
+    if [[ "$comp" == "worker" ]]; then
+        if [ ! -f "$staging_prefix/bin/tm-worker-farm" ]; then
+            echo "❌ Error: worker bundle requires tm-worker-farm, but it was not found at $staging_prefix/bin/tm-worker-farm"
+            echo "   Ensure worker builds run with -Dbuild_worker_farm=true and Go 1.22+ is available."
+            return 1
+        fi
+        cp "$staging_prefix/bin/tm-worker-farm" "$archive_root/bin/tm-worker-farm"
+        chmod +x "$archive_root/bin/tm-worker-farm"
     fi
     
     # Copy shared library (libzt.dylib)
@@ -226,6 +235,10 @@ create_archive() {
             if [ -f "$PROJECT_ROOT/extras/launchers/start-tm-worker.sh" ]; then
                 cp "$PROJECT_ROOT/extras/launchers/start-tm-worker.sh" "$archive_root/launchers/"
                 chmod +x "$archive_root/launchers/start-tm-worker.sh"
+            fi
+            if [ -f "$PROJECT_ROOT/extras/launchers/start-tm-worker-farm.sh" ]; then
+                cp "$PROJECT_ROOT/extras/launchers/start-tm-worker-farm.sh" "$archive_root/launchers/"
+                chmod +x "$archive_root/launchers/start-tm-worker-farm.sh"
             fi
         elif [[ "$comp" == "rendezvous" ]]; then
             if [ -f "$PROJECT_ROOT/extras/launchers/start-tm-rendezvous.sh" ]; then

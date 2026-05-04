@@ -125,6 +125,13 @@ remove_component() {
         rm -f "$symlink_path"
         print_success "Removed symlink: $symlink_path"
     fi
+    if [ "$component" = "worker" ]; then
+        local farm_symlink_path="$BIN_SYMLINK_DIR/tm-worker-farm"
+        if [ -L "$farm_symlink_path" ]; then
+            rm -f "$farm_symlink_path"
+            print_success "Removed symlink: $farm_symlink_path"
+        fi
+    fi
     
     # Remove application bundle (capitalize first letter - bash 3.2 compatible)
     local component_cap="$(echo "${component:0:1}" | tr '[:lower:]' '[:upper:]')${component:1}"

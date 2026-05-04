@@ -26,6 +26,17 @@ The workflow will:
    (URL, version, sha256) and push the commit to the default branch via
    `stefanzweifel/git-auto-commit-action`.
 
+### Worker bundle contents
+
+`tm-worker` release artifacts now include both executables:
+
+- `tm-worker` — single-worker runtime.
+- `tm-worker-farm` — local controller/UI that starts and manages
+  multiple workers.
+
+This keeps a single install story for worker users: install `tm-worker`
+once, then choose direct worker execution or worker-farm orchestration.
+
 ## Manual / test release
 
 Use `workflow_dispatch` on the Actions tab: **Actions → Release → Run workflow**.

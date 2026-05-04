@@ -219,6 +219,13 @@ function Install-Component {
     } else {
         Exit-WithError "Binary not found: $binaryPath"
     }
+    if ($Component -eq "worker") {
+        $workerFarmPath = Join-Path $extractedDir "bin\tm-worker-farm.exe"
+        if (-not (Test-Path $workerFarmPath)) {
+            Exit-WithError "Worker package is missing required binary: $workerFarmPath"
+        }
+        Copy-Item $workerFarmPath $InstallDir -Force
+    }
     
     # Copy shared libraries (zt-shared.dll, libopenblas.dll, and any other DLLs
     # the bundle ships alongside the executable).
@@ -382,6 +389,8 @@ function New-StartMenuShortcut {
     # Set description
     if ($Component -eq "dispatcher") {
         $shortcut.Description = "TaskMessenger task distribution dispatcher"
+    } elseif ($Component -eq "rendezvous") {
+        $shortcut.Description = "TaskMessenger rendezvous service"
     } else {
         $shortcut.Description = "TaskMessenger task processing worker"
     }
@@ -389,6 +398,19 @@ function New-StartMenuShortcut {
     $shortcut.Save()
     
     Write-Success "Created Start Menu shortcut: $shortcutPath"
+
+    if ($Component -eq "worker") {
+        $farmExePath = Join-Path $InstallDir "tm-worker-farm.exe"
+        if (Test-Path $farmExePath) {
+            $farmShortcutPath = Join-Path $startMenuDir "TMWorkerFarm.lnk"
+            $farmShortcut = $WScriptShell.CreateShortcut($farmShortcutPath)
+            $farmShortcut.TargetPath = $farmExePath
+            $farmShortcut.WorkingDirectory = $InstallDir
+            $farmShortcut.Description = "TaskMessenger worker farm controller"
+            $farmShortcut.Save()
+            Write-Success "Created Start Menu shortcut: $farmShortcutPath"
+        }
+    }
 }
 
 function Register-InWindowsUninstall {

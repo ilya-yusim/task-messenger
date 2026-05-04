@@ -65,7 +65,8 @@ function Build-Component {
         $BuildOptions += "-Dbuild_dispatcher=false"
         $BuildOptions += "-Dbuild_rendezvous=false"
         $BuildOptions += "-Dbuild_generators=false"
-        Write-Host "Building worker only"
+        $BuildOptions += "-Dbuild_worker_farm=true"
+        Write-Host "Building worker + worker-farm"
     } elseif ($Comp -eq "rendezvous") {
         $BuildOptions += "-Dbuild_dispatcher=false"
         $BuildOptions += "-Dbuild_worker=false"
@@ -147,6 +148,11 @@ function Create-Archive {
         if (Test-Path $OpenBlasDll) { Copy-Item $OpenBlasDll $BinDir }
     } elseif ($Comp -eq "worker") {
         Copy-Item (Join-Path $CompStagingPrefix "bin\tm-worker.exe") $BinDir
+        $WorkerFarmExe = Join-Path $CompStagingPrefix "bin\tm-worker-farm.exe"
+        if (-not (Test-Path $WorkerFarmExe)) {
+            throw "worker bundle requires tm-worker-farm.exe, but it was not found at $WorkerFarmExe"
+        }
+        Copy-Item $WorkerFarmExe $BinDir
         Copy-Item (Join-Path $CompStagingPrefix "bin\zt-shared.dll") $BinDir
         $OpenBlasDll = Join-Path $CompStagingPrefix "bin\libopenblas.dll"
         if (Test-Path $OpenBlasDll) { Copy-Item $OpenBlasDll $BinDir }
@@ -191,6 +197,8 @@ function Create-Archive {
         Copy-Item (Join-Path $ProjectRoot "extras\launchers\start-tm-dispatcher.bat") $LaunchersDir
     } elseif ($Comp -eq "worker") {
         Copy-Item (Join-Path $ProjectRoot "extras\launchers\start-tm-worker.bat") $LaunchersDir
+        $WorkerFarmLauncher = Join-Path $ProjectRoot "extras\launchers\start-tm-worker-farm.bat"
+        if (Test-Path $WorkerFarmLauncher) { Copy-Item $WorkerFarmLauncher $LaunchersDir }
     } elseif ($Comp -eq "rendezvous") {
         Copy-Item (Join-Path $ProjectRoot "extras\launchers\start-tm-rendezvous.bat") $LaunchersDir
     }

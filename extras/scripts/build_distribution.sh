@@ -129,8 +129,8 @@ build_component() {
         build_opts+=("-Dbuild_worker=false" "-Dbuild_rendezvous=false")
         echo "Building dispatcher only (FTXUI disabled for faster build)"
     elif [[ "$comp" == "worker" ]]; then
-        build_opts+=("-Dbuild_dispatcher=false" "-Dbuild_rendezvous=false" "-Dbuild_generators=false")
-        echo "Building worker only"
+        build_opts+=("-Dbuild_dispatcher=false" "-Dbuild_rendezvous=false" "-Dbuild_generators=false" "-Dbuild_worker_farm=true")
+        echo "Building worker + worker-farm"
     elif [[ "$comp" == "rendezvous" ]]; then
         build_opts+=("-Dbuild_dispatcher=false" "-Dbuild_worker=false" "-Dbuild_generators=false")
         echo "Building rendezvous service only"
@@ -287,6 +287,12 @@ create_archive() {
         # Worker: executable, libzt, configs, docs
         mkdir -p "$archive_root/bin"
         cp "$staging_prefix/bin/tm-worker" "$archive_root/bin/"
+        if [[ ! -f "$staging_prefix/bin/tm-worker-farm" ]]; then
+            echo "ERROR: worker bundle requires tm-worker-farm, but it was not found at $staging_prefix/bin/tm-worker-farm" >&2
+            echo "Ensure worker builds run with -Dbuild_worker_farm=true and Go 1.22+ is available." >&2
+            exit 1
+        fi
+        cp "$staging_prefix/bin/tm-worker-farm" "$archive_root/bin/"
 
         mkdir -p "$archive_root/lib"
         cp "$staging_prefix/lib/libzt.so" "$archive_root/lib/libzt.so"
@@ -340,6 +346,9 @@ create_archive() {
         cp "$PROJECT_ROOT/extras/launchers/start-tm-dispatcher.sh" "$archive_root/launchers/"
     elif [[ "$comp" == "worker" ]]; then
         cp "$PROJECT_ROOT/extras/launchers/start-tm-worker.sh" "$archive_root/launchers/"
+        if [[ -f "$PROJECT_ROOT/extras/launchers/start-tm-worker-farm.sh" ]]; then
+            cp "$PROJECT_ROOT/extras/launchers/start-tm-worker-farm.sh" "$archive_root/launchers/"
+        fi
     elif [[ "$comp" == "rendezvous" ]]; then
         cp "$PROJECT_ROOT/extras/launchers/start-tm-rendezvous.sh" "$archive_root/launchers/"
     fi
@@ -351,6 +360,9 @@ create_archive() {
         cp "$PROJECT_ROOT/extras/desktop/tm-dispatcher.desktop" "$archive_root/desktop/"
     elif [[ "$comp" == "worker" ]]; then
         cp "$PROJECT_ROOT/extras/desktop/tm-worker.desktop" "$archive_root/desktop/"
+        if [[ -f "$PROJECT_ROOT/extras/desktop/tm-worker-farm.desktop" ]]; then
+            cp "$PROJECT_ROOT/extras/desktop/tm-worker-farm.desktop" "$archive_root/desktop/"
+        fi
     elif [[ "$comp" == "rendezvous" ]]; then
         cp "$PROJECT_ROOT/extras/desktop/tm-rendezvous.desktop" "$archive_root/desktop/"
     fi

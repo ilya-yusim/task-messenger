@@ -126,6 +126,13 @@ remove_component() {
         rm -f "$wrapper_path"
         print_success "Removed wrapper script: $wrapper_path"
     fi
+    if [ "$component" = "worker" ]; then
+        local farm_wrapper_path="$BIN_SYMLINK_DIR/tm-worker-farm"
+        if [ -f "$farm_wrapper_path" ]; then
+            rm -f "$farm_wrapper_path"
+            print_success "Removed wrapper script: $farm_wrapper_path"
+        fi
+    fi
     
     # Remove desktop entry
     local desktop_file="$DESKTOP_DIR/task-messenger-$component.desktop"
@@ -136,6 +143,13 @@ remove_component() {
         # Update desktop database if available
         if command -v update-desktop-database &> /dev/null; then
             update-desktop-database "$DESKTOP_DIR" 2>/dev/null || true
+        fi
+    fi
+    if [ "$component" = "worker" ]; then
+        local farm_desktop_file="$DESKTOP_DIR/tm-worker-farm.desktop"
+        if [ -f "$farm_desktop_file" ]; then
+            rm -f "$farm_desktop_file"
+            print_success "Removed desktop entry: $farm_desktop_file"
         fi
     fi
 }

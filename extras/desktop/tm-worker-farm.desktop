@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=TaskMessenger Worker Farm
+Comment=TaskMessenger controller for running and managing multiple workers
+Exec=tm-worker-farm
+Icon=applications-system
+Terminal=false
+Categories=Network;System;
+Keywords=TaskMessenger;Worker;Farm;
+StartupNotify=true
