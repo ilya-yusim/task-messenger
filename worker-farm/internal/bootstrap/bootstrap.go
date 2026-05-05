@@ -44,9 +44,11 @@ var installerScriptHash = func() string {
 // the install_tm_worker_codespace.ps1 fallback.
 const DefaultRepo = "ilya-yusim/task-messenger"
 
-// remoteDir on the codespace where the asset + helper land. Lives
-// under ~/.local/share so it survives codespace restarts.
-const remoteDir = "~/.local/share/tm-worker-farm"
+// remoteDirSuffix is the path suffix appended to the resolved $HOME
+// to form the absolute remote directory. Using an absolute path is
+// required because gh codespace cp does NOT expand ~ on the remote
+// side; the full path is built at runtime by ResolveHome + this suffix.
+const remoteDirSuffix = "/.local/share/tm-worker-farm"
 
 // assetPattern matches the linux-x86_64 makeself asset name shape we
 // publish. Same regex install_tm_worker_codespace.ps1 uses.
@@ -176,6 +178,16 @@ func Bootstrap(ctx context.Context, req Request) (*Result, error) {
 	}
 	resolvedCodespace := ensure.Codespace.Name
 
+	// 1a) Resolve the absolute remote dir. gh codespace cp does NOT
+	// expand ~ on the remote, so we get the real $HOME first and build
+	// an absolute path. All subsequent cp destinations and ssh commands
+	// use this resolved path exclusively.
+	remoteHome, err := gh.ResolveHome(ctx, resolvedCodespace)
+	if err != nil {
+		return nil, fmt.Errorf("resolve remote home: %w", err)
+	}
+	resolvedRemoteDir := remoteHome + remoteDirSuffix
+
 	// 1) Resolve the release + pick the linux-x86_64 asset.
 	info, err := gh.ReleaseView(ctx, repo, req.Tag)
 	if err != nil {
@@ -220,14 +232,14 @@ func Bootstrap(ctx context.Context, req Request) (*Result, error) {
 	// 4) Upload to the codespace. The mkdir runs every time —
 	// codespaces wipe /tmp on rebuild but ~/.local survives, so the
 	// directory may already exist; mkdir -p is idempotent.
-	if _, err := gh.SSH(ctx, resolvedCodespace, "mkdir -p "+remoteDir); err != nil {
+	if _, err := gh.SSH(ctx, resolvedCodespace, "mkdir -p "+resolvedRemoteDir); err != nil {
 		return nil, fmt.Errorf("ssh mkdir: %w", err)
 	}
 
 	state := loadState(req.CacheDir)
 	prev := state.Hosts[req.HostID]
 	helperUploaded := false
-	helperRemotePath := remoteDir + "/install_tm_worker_release.sh"
+	helperRemotePath := resolvedRemoteDir + "/install_tm_worker_release.sh"
 	helperPresent := false
 	if prev.HelperHash == installerScriptHash {
 		helperPresent, err = remoteFileExists(ctx, resolvedCodespace, helperRemotePath)
@@ -236,7 +248,7 @@ func Bootstrap(ctx context.Context, req Request) (*Result, error) {
 		}
 	}
 	if prev.HelperHash != installerScriptHash || !helperPresent {
-		if err := gh.CP(ctx, resolvedCodespace, helperPath, remoteDir+"/install_tm_worker_release.sh"); err != nil {
+		if err := gh.CP(ctx, resolvedCodespace, helperPath, resolvedRemoteDir+"/install_tm_worker_release.sh"); err != nil {
 			return nil, fmt.Errorf("cp helper: %w", err)
 		}
 		helperUploaded = true
@@ -245,18 +257,18 @@ func Bootstrap(ctx context.Context, req Request) (*Result, error) {
 	// Always re-upload the .run asset: its hash isn't tracked
 	// remotely, and a partial upload from a previous failure could
 	// otherwise be silently reused.
-	if err := gh.CP(ctx, resolvedCodespace, localAsset, remoteDir+"/"+asset.Name); err != nil {
+	if err := gh.CP(ctx, resolvedCodespace, localAsset, resolvedRemoteDir+"/"+asset.Name); err != nil {
 		return nil, fmt.Errorf("cp asset: %w", err)
 	}
 
 	// 5) chmod + run the installer remotely.
 	chmod := fmt.Sprintf("chmod +x %s/install_tm_worker_release.sh %s/%s",
-		remoteDir, remoteDir, asset.Name)
+		resolvedRemoteDir, resolvedRemoteDir, asset.Name)
 	if _, err := gh.SSH(ctx, resolvedCodespace, chmod); err != nil {
 		return nil, fmt.Errorf("ssh chmod: %w", err)
 	}
 	runCmd := fmt.Sprintf("%s/install_tm_worker_release.sh -f %s/%s",
-		remoteDir, remoteDir, asset.Name)
+		resolvedRemoteDir, resolvedRemoteDir, asset.Name)
 	logBytes, err := gh.SSH(ctx, resolvedCodespace, runCmd)
 	installerLog := string(logBytes)
 	if err != nil {

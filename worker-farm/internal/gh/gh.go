@@ -448,8 +448,28 @@ func SSH(ctx context.Context, name, script string, scriptArgs ...string) ([]byte
 	return out.Bytes(), nil
 }
 
+// ResolveHome returns the absolute value of $HOME on the named
+// codespace by running a single SSH round-trip. The result is trimmed
+// of whitespace and is suitable for use as the base of remote paths
+// passed to CP (which does not expand ~ on the remote side).
+func ResolveHome(ctx context.Context, name string) (string, error) {
+	if name == "" {
+		return "", errors.New("gh.ResolveHome: codespace name is required")
+	}
+	out, err := SSH(ctx, name, `printf '%s' "$HOME"`)
+	if err != nil {
+		return "", fmt.Errorf("gh.ResolveHome: %w", err)
+	}
+	home := strings.TrimSpace(string(out))
+	if home == "" {
+		return "", fmt.Errorf("gh.ResolveHome: $HOME is empty on codespace %s", name)
+	}
+	return home, nil
+}
+
 // CP copies a single local file to the named codespace using `gh
-// codespace cp`. `dst` is a path on the remote (e.g. "~/foo.run").
+// codespace cp`. `dst` must be an absolute path on the remote —
+// gh codespace cp does NOT expand ~ on the remote side.
 func CP(ctx context.Context, name, src, dst string) error {
 	if name == "" {
 		return errors.New("gh.CP: codespace name is required")
