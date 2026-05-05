@@ -310,7 +310,7 @@ func createCodespace(ctx context.Context, repo string) error {
 	if strings.TrimSpace(repo) == "" {
 		return &MissingRepoError{}
 	}
-	cmd, err := ghCommandContext(ctx, "codespace", "create", "-R", repo)
+	cmd, err := ghCommandContext(ctx, "codespace", "create", "-R", repo, "--machine", "standardLinux32gb")
 	if err != nil {
 		return err
 	}

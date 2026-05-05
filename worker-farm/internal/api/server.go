@@ -260,7 +260,7 @@ func (s *Server) handleHostStatus(w http.ResponseWriter, r *http.Request, host i
 			var lnf *gh.LabelNotFoundError
 			if errors.As(err, &nf) || errors.As(err, &lnf) {
 				resp.Status = "codespace-not-found"
-				resp.Detail = err.Error()
+				resp.Detail = "Bootstrap will create a new codespace"
 				writeJSON(w, http.StatusOK, resp)
 				return
 			}

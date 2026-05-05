@@ -402,7 +402,10 @@ async function refreshHostStatus() {
     // (gh authed + codespace running). "ok" today only means gh+cs
     // are healthy; tm-worker may or may not be installed. Surface
     // the button so the operator can install on demand.
-    const showBootstrap = s.backend === "codespace" && s.status === "ok";
+    // Also show for "codespace-not-found": gh is authed but the
+    // codespace doesn't exist yet — bootstrap creates it.
+    const showBootstrap = s.backend === "codespace" &&
+      (s.status === "ok" || s.status === "codespace-not-found");
     els.bootstrapBtn.hidden = !showBootstrap;
     els.bootstrapTag.hidden = !showBootstrap;
     els.bootstrapBtn.dataset.hostId = id;
