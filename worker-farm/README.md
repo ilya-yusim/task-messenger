@@ -2,7 +2,7 @@
 
 `tm-worker-farm` is a controller and Web UI for running multiple
 `tm-worker` processes from one place — locally, on a GitHub
-Codespace, or on a future remote backend.
+Codespace, or on an AWS EC2 host managed through SSM.
 
 This document has two sections:
 
@@ -96,6 +96,87 @@ non-draft release, or set to a specific tag (e.g. `vtest`).
 
 SSH and other remote backends are roadmap items.
 
+### Run workers on an EC2 host
+
+EC2 backend hosts are configured in the same inventory file:
+
+- POSIX: `~/.config/tm-worker-farm/hosts.json`
+- Windows: `%APPDATA%\tm-worker-farm\hosts.json`
+
+Example host:
+
+```jsonc
+{
+  "hosts": [
+    {
+      "id": "aws-worker-1",
+      "backend": "ec2",
+      "ec2": {
+        "region": "us-east-2",
+        "launch_template_id": "lt-xxxxxxxxxxxxxxxxx",
+        "launch_template_version": "$Latest",
+        "worker_bin": "tm-worker",
+        "config": "~/.config/task-messenger/tm-worker/config-worker.json",
+        "auto_terminate": false
+      }
+    }
+  ]
+}
+```
+
+`ec2` fields:
+
+- `region` (required): AWS region for EC2 and SSM calls.
+- `launch_template_id` (required): Launch Template used when the
+  managed instance does not exist yet.
+- `launch_template_version` (optional): defaults to `$Latest`.
+- `worker_bin` (optional): worker command/path on the instance. Keep
+  `tm-worker` unless you install to a custom location.
+- `config` (optional): path to `config-worker.json` on the instance.
+- `auto_terminate` (optional): when `true`, the manager terminates the
+  instance after workers exit; when `false`, it stops the instance.
+
+EC2 prerequisites:
+
+- Launch Template includes an IAM instance profile with
+  `AmazonSSMManagedInstanceCore`.
+- Controller AWS identity can call `ec2:DescribeInstances`,
+  `ec2:RunInstances`, `ec2:StartInstances`, `ec2:StopInstances`,
+  `ec2:TerminateInstances`, `ec2:CreateTags`, `ssm:SendCommand`, and
+  `ssm:GetCommandInvocation`.
+- Controller AWS identity can call `iam:PassRole` for the instance role
+  used by the Launch Template.
+- Instance can reach SSM endpoints (internet egress or VPC endpoints).
+
+EC2 behavior:
+
+- **Bootstrap tm-worker** starts (or creates) the instance and installs
+  the selected release.
+- **Start** uses SSM to launch workers and mirror run metadata.
+- Idle instances auto-stop after 15 minutes with no active workers.
+
+### EC2 troubleshooting
+
+- **Status shows `aws-auth-error`.** Controller AWS credentials are
+  missing/invalid for the running process.
+- **`UnauthorizedOperation` on bootstrap or spawn.** IAM policy is
+  missing one of the required EC2/SSM actions.
+- **`iam:PassRole` error during first bootstrap.** Controller IAM
+  policy is missing `iam:PassRole` for the Launch Template instance
+  role ARN.
+- **Instance is running but status is `ssm-offline`.** SSM agent is not
+  online yet, role/profile is missing, or VPC egress/endpoints are not
+  configured.
+- **Spawn fails with worker command not found.** Run bootstrap first so
+  `tm-worker` is installed.
+- **Worker fails with `GLIBC_X.Y not found`.** The AMI glibc version is
+  older than the release binary requirement. Use a newer image or a
+  worker build targeting an older glibc baseline.
+
+Contributor handoff prompt:
+
+- [bootstrap-ec2-worker.md](../.github/prompts/bootstrap-ec2-worker.md)
+
 ### Codespace troubleshooting
 
 - **Bootstrap fails with "either codespace.name or codespace.label is required".**
@@ -169,7 +250,7 @@ deployment.
 | `POST` | `/quarantine/{run-id}/{NN}/{action}` | `action` ∈ `adopt`/`kill`/`ignore`; 204 on success. |
 | `GET` | `/hosts` | JSON array of inventory hosts with `supported` flag. |
 | `GET` | `/hosts/{id}/status` | Per-host reachability/auth state. |
-| `POST` | `/hosts/{id}/bootstrap` | Install `tm-worker` on a codespace host; body (optional) `{"repo":"OWNER/REPO","tag":"vX.Y.Z"}`; default tag is the latest non-draft release. |
+| `POST` | `/hosts/{id}/bootstrap` | Install `tm-worker` on a codespace or EC2 host; body (optional) `{"repo":"OWNER/REPO","tag":"vX.Y.Z"}`; default tag is the latest non-draft release. |
 
 ### Runtime architecture
 

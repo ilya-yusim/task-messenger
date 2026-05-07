@@ -398,14 +398,13 @@ async function refreshHostStatus() {
     if (!res.ok) throw new Error(`status -> ${res.status}`);
     const s = await res.json();
     els.hostStatusText.textContent = formatHostStatus(s);
-    // Bootstrap is meaningful for codespace hosts that are reachable
-    // (gh authed + codespace running). "ok" today only means gh+cs
-    // are healthy; tm-worker may or may not be installed. Surface
-    // the button so the operator can install on demand.
-    // Also show for "codespace-not-found": gh is authed but the
-    // codespace doesn't exist yet — bootstrap creates it.
-    const showBootstrap = s.backend === "codespace" &&
-      (s.status === "ok" || s.status === "codespace-not-found");
+    // Bootstrap is meaningful for codespace and ec2 hosts whenever
+    // the backend is reachable or the instance just needs tm-worker
+    // installed (or re-installed).
+    const showBootstrap =
+      (s.backend === "codespace" &&
+        (s.status === "ok" || s.status === "codespace-not-found")) ||
+      (s.backend === "ec2" && s.status !== "instance-terminated");
     els.bootstrapBtn.hidden = !showBootstrap;
     els.bootstrapTag.hidden = !showBootstrap;
     els.bootstrapBtn.dataset.hostId = id;

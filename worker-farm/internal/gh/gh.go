@@ -17,8 +17,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -492,8 +495,12 @@ func CP(ctx context.Context, name, src, dst string) error {
 // ReleaseAsset is one entry in a GitHub release's `assets` array.
 // Only the fields the controller consumes are decoded.
 type ReleaseAsset struct {
-	Name string `json:"name"`
-	Size int64  `json:"size"`
+	// APIURL is the GitHub REST endpoint for the asset.
+	APIURL string `json:"apiUrl"`
+	Name   string `json:"name"`
+	Size   int64  `json:"size"`
+	// URL is the browser download URL shown on the release page.
+	URL string `json:"url"`
 }
 
 // ReleaseInfo is the subset of `gh release view --json ...` we use.
@@ -514,6 +521,7 @@ func ReleaseView(ctx context.Context, repo, tag string) (*ReleaseInfo, error) {
 		args = append(args, tag)
 	}
 	args = append(args, "--json", "tagName,assets")
+	// Note: `gh release view` returns assets with name, size, and url fields.
 	cmd, err := ghCommandContext(ctx, args...)
 	if err != nil {
 		return nil, err
@@ -533,6 +541,105 @@ func ReleaseView(ctx context.Context, repo, tag string) (*ReleaseInfo, error) {
 
 // ReleaseDownload downloads a single asset from a release into
 // destDir. Pattern is matched by `gh release download --pattern`.
+// ReleaseAssetDownloadURL returns a remote-download URL for an asset.
+//
+// For API URLs (api.github.com/.../releases/assets/ID), it asks GitHub for a
+// short-lived pre-signed Location URL via HTTPS using GH_TOKEN.
+// For browser URLs (github.com/.../releases/download/...), it first resolves
+// back to the API asset URL when possible.
+func ReleaseAssetDownloadURL(ctx context.Context, assetURL string) (string, error) {
+	if assetURL == "" {
+		return "", errors.New("gh.ReleaseAssetDownloadURL: asset URL is required")
+	}
+	// If we were given a browser URL, resolve it back to the asset API URL
+	// (needed for private repos where browser URLs are not anonymously
+	// downloadable from the EC2 host).
+	if strings.Contains(assetURL, "/releases/download/") {
+		u, err := url.Parse(assetURL)
+		if err == nil {
+			parts := strings.Split(strings.Trim(u.Path, "/"), "/")
+			// owner/repo/releases/download/tag/asset
+			if len(parts) >= 6 && parts[2] == "releases" && parts[3] == "download" {
+				repo := parts[0] + "/" + parts[1]
+				tag := parts[4]
+				assetName := path.Base(u.Path)
+				info, viewErr := ReleaseView(ctx, repo, tag)
+				if viewErr == nil && info != nil {
+					for _, a := range info.Assets {
+						if a.Name == assetName && strings.TrimSpace(a.APIURL) != "" {
+							assetURL = a.APIURL
+							break
+						}
+					}
+				}
+			}
+		}
+		// For public repos/releases this may still be directly usable.
+		if strings.Contains(assetURL, "/releases/download/") {
+			return assetURL, nil
+		}
+	}
+	if strings.Contains(assetURL, "api.github.com/") && strings.Contains(assetURL, "/releases/assets/") {
+		signedURL, err := resolveAssetSignedURL(ctx, assetURL)
+		if err != nil {
+			return "", err
+		}
+		if strings.TrimSpace(signedURL) != "" {
+			return signedURL, nil
+		}
+	}
+	if strings.Contains(assetURL, "/releases/download/") {
+		return assetURL, nil
+	}
+	return "", fmt.Errorf("gh.ReleaseAssetDownloadURL: cannot derive download URL from %s", assetURL)
+}
+
+func resolveAssetSignedURL(ctx context.Context, assetAPIURL string) (string, error) {
+	token := strings.TrimSpace(os.Getenv("GH_TOKEN"))
+	if token == "" {
+		return "", &MissingTokenError{}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, assetAPIURL, nil)
+	if err != nil {
+		return "", fmt.Errorf("build asset API request: %w", err)
+	}
+	req.Header.Set("Accept", "application/octet-stream")
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	cli := &http.Client{
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
+	}
+	resp, err := cli.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("asset API request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	loc := strings.TrimSpace(resp.Header.Get("Location"))
+	if loc != "" {
+		return loc, nil
+	}
+	return "", fmt.Errorf("asset API request returned %s without Location", resp.Status)
+}
+
+func summarizeCommandOutput(s string, limit int) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	// Keep headers only when an HTTP-like response includes a body.
+	if i := strings.Index(s, "\r\n\r\n"); i >= 0 {
+		s = s[:i]
+	} else if i := strings.Index(s, "\n\n"); i >= 0 {
+		s = s[:i]
+	}
+	if limit > 0 && len(s) > limit {
+		return s[:limit] + " ...<truncated>"
+	}
+	return s
+}
+
 func ReleaseDownload(ctx context.Context, repo, tag, pattern, destDir string) error {
 	args := []string{"release", "download", "-R", repo}
 	if tag != "" && tag != "latest" {

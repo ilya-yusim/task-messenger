@@ -21,6 +21,7 @@ import (
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/adopt"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/api"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/codespace"
+	ec2backend "github.com/ilya-yusim/task-messenger/worker-farm/internal/ec2"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/gh"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/identity"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/inventory"
@@ -199,16 +200,32 @@ func run() error {
 		}
 	}
 
+	// EC2 manager is built whenever the inventory has at least one ec2 host.
+	var ec2mgr *ec2backend.Manager
+	for _, h := range inv.Hosts {
+		if h.Backend == inventory.BackendEC2 {
+			ec2mgr = ec2backend.New(ec2backend.Options{
+				Registry:     reg,
+				Inventory:    inv,
+				CacheDir:     cacheDir,
+				ControllerID: controllerID,
+			})
+			break
+		}
+	}
+
 	srv := api.New(api.Options{
-		WebFS:      webassets.FS(),
-		Registry:   reg,
-		Manager:    mgr,
-		Codespace:  csmgr,
-		Recent:     recentLog,
-		ConfigPath: configArg,
-		WorkerBin:  resolvedWorker,
-		CacheDir:   cacheDir,
-		Inventory:  inv,
+		WebFS:        webassets.FS(),
+		Registry:     reg,
+		Manager:      mgr,
+		Codespace:    csmgr,
+		EC2Manager:   ec2mgr,
+		Recent:       recentLog,
+		ConfigPath:   configArg,
+		WorkerBin:    resolvedWorker,
+		CacheDir:     cacheDir,
+		Inventory:    inv,
+		ControllerID: controllerID,
 	})
 
 	listenAddr := net.JoinHostPort(addr, fmt.Sprint(port))
@@ -267,6 +284,11 @@ func run() error {
 	// signal that drains HTTP also stops polling.
 	if csmgr != nil {
 		go csmgr.Run(ctx)
+	}
+
+	// EC2 liveness poll + idle auto-stop.
+	if ec2mgr != nil {
+		go ec2mgr.Run(ctx)
 	}
 
 	serveErr := make(chan error, 1)

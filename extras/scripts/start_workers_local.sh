@@ -15,6 +15,25 @@
 #   start_workers_local.sh -n 2 -- --mode async
 set -euo pipefail
 
+# Some non-login shells may not define HOME. Provide a fallback before
+# path expansion under `set -u`.
+if [[ -z "${HOME:-}" ]]; then
+    home_from_passwd="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6 || true)"
+    if [[ -n "$home_from_passwd" ]]; then
+        export HOME="$home_from_passwd"
+    else
+        export HOME="/root"
+    fi
+fi
+
+# Ensure the installer's default bin location is available in this
+# shell so `tm-worker` resolves without requiring absolute worker_bin
+# paths.
+case ":${PATH:-}:" in
+    *":$HOME/.local/bin:"*) ;;
+    *) export PATH="$HOME/.local/bin:${PATH:-}" ;;
+esac
+
 usage() {
     cat >&2 <<'EOF'
 Usage: start_workers_local.sh -n COUNT [-b WORKER_BIN] [-c CONFIG] [-- EXTRA_ARGS...]

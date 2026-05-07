@@ -14,17 +14,18 @@ The historical plans these prompts replaced live in
 | [add-builtin-skill.md](add-builtin-skill.md) | Add a new in-tree skill under [skills/builtins/](../../skills/builtins/). |
 | [add-generator.md](add-generator.md) | Add a new generator (algorithm placeholder) that drives `tm-dispatcher`. |
 | [bootstrap-codespace-worker.md](bootstrap-codespace-worker.md) | Provision a `tm-worker` on a GitHub Codespace via [worker-farm/](../../worker-farm/). |
+| [bootstrap-ec2-worker.md](bootstrap-ec2-worker.md) | Provision `tm-worker` on an AWS EC2 host through the worker-farm EC2 backend. |
 | [rendezvous-deployment-strategy.md](rendezvous-deployment-strategy.md) | Operate, deploy, or update the GCP-hosted `tm-rendezvous` service. |
 
 ## Archive
 
 [archive/](archive/) preserves the original implementation plans for
 work that has shipped (skills identity hashing, IGenerator interface,
-worker-farm controller, BLAS skills, GCP rendezvous deployment, the
-original macOS port, the network dashboard design). They are kept for
-historical context. Treat them as read-only — when a present-tense
-operation needs documentation, add or update a live prompt here
-instead of editing an archived file.
+worker-farm controller, worker-farm EC2 backend, BLAS skills, GCP
+rendezvous deployment, the original macOS port, the network dashboard
+design). They are kept for historical context. Treat them as read-only
+— when a present-tense operation needs documentation, add or update a
+live prompt here instead of editing an archived file.
 
 ## Conventions
 
