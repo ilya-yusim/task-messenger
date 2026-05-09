@@ -363,7 +363,7 @@ func (m *Manager) Stop(ctx context.Context, id string) error {
 	}
 	adoptedTag := ""
 	if entry.handle.Adopted {
-		adoptedTag = " (adopted)"
+		adoptedTag = " (adopted=true)"
 	}
 	log.Printf("stop  %s%s: pid=%d grace=%s", id, adoptedTag, entry.handle.PID, m.gracePeriod)
 	var runID string
@@ -584,7 +584,7 @@ func (m *Manager) Adopt(c adopt.Candidate) string {
 	m.running[id] = entry
 	m.mu.Unlock()
 
-	log.Printf("adopt %s: run=%s slot=%02d pid=%d log=%s", id, c.Sentinel.RunID, c.Sentinel.Slot, c.Sentinel.PID, c.Sentinel.LogPath)
+	log.Printf("adopt %s (adopted=true): run=%s slot=%02d pid=%d log=%s", id, c.Sentinel.RunID, c.Sentinel.Slot, c.Sentinel.PID, c.Sentinel.LogPath)
 	go m.superviseAdopted(id, entry)
 	return id
 }
@@ -615,14 +615,34 @@ func (m *Manager) RegisterStale(c adopt.Candidate) string {
 	if !m.reg.Add(w) {
 		return id
 	}
-	log.Printf("stale %s: run=%s slot=%02d pid=%d (process gone, recorded as exited)", id, c.Sentinel.RunID, c.Sentinel.Slot, c.Sentinel.PID)
+	log.Printf("stale %s (adopted=true): run=%s slot=%02d pid=%d (process gone, recorded as exited)", id, c.Sentinel.RunID, c.Sentinel.Slot, c.Sentinel.PID)
 	return id
 }
 
 // adoptedID derives a stable registry ID for an adopted candidate so
 // repeated adoption passes don't create duplicate rows.
 func adoptedID(c adopt.Candidate) string {
-	return fmt.Sprintf("adopted-%s-%02d", c.Sentinel.RunID, c.Sentinel.Slot)
+	if c.Sentinel != nil && c.Sentinel.PID > 0 {
+		return fmt.Sprintf("h00-p%d", c.Sentinel.PID)
+	}
+	// Fallback for malformed/partial sentinels.
+	if c.Sentinel != nil {
+		return fmt.Sprintf("h00-s%02d", c.Sentinel.Slot)
+	}
+	return "h00-s00"
+}
+
+func shortTail(s string, n int) string {
+	if n <= 0 {
+		return "x"
+	}
+	if len(s) <= n {
+		if s == "" {
+			return "x"
+		}
+		return s
+	}
+	return s[len(s)-n:]
 }
 
 // superviseAdopted polls liveness on the adopted PID until it
@@ -650,7 +670,7 @@ func (m *Manager) superviseAdopted(id string, entry *procEntry) {
 		cause = "killed-after-grace"
 	}
 	duration := now.Sub(entry.startedAt).Round(time.Millisecond)
-	log.Printf("exit  %s (adopted): pid=%d cause=%s uptime=%s", id, entry.handle.PID, cause, duration)
+	log.Printf("exit  %s (adopted=true): pid=%d cause=%s uptime=%s", id, entry.handle.PID, cause, duration)
 
 	close(entry.stopCh)
 }

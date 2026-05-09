@@ -22,6 +22,7 @@ import (
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/api"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/codespace"
 	ec2backend "github.com/ilya-yusim/task-messenger/worker-farm/internal/ec2"
+	ec2snapshotbackend "github.com/ilya-yusim/task-messenger/worker-farm/internal/ec2snapshot"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/gh"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/identity"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/inventory"
@@ -214,18 +215,32 @@ func run() error {
 		}
 	}
 
+	var ec2snapshotmgr *ec2snapshotbackend.Manager
+	for _, h := range inv.Hosts {
+		if h.Backend == inventory.BackendEC2Snapshot {
+			ec2snapshotmgr = ec2snapshotbackend.New(ec2snapshotbackend.Options{
+				Registry:     reg,
+				Inventory:    inv,
+				CacheDir:     cacheDir,
+				ControllerID: controllerID,
+			})
+			break
+		}
+	}
+
 	srv := api.New(api.Options{
-		WebFS:        webassets.FS(),
-		Registry:     reg,
-		Manager:      mgr,
-		Codespace:    csmgr,
-		EC2Manager:   ec2mgr,
-		Recent:       recentLog,
-		ConfigPath:   configArg,
-		WorkerBin:    resolvedWorker,
-		CacheDir:     cacheDir,
-		Inventory:    inv,
-		ControllerID: controllerID,
+		WebFS:              webassets.FS(),
+		Registry:           reg,
+		Manager:            mgr,
+		Codespace:          csmgr,
+		EC2Manager:         ec2mgr,
+		EC2SnapshotManager: ec2snapshotmgr,
+		Recent:             recentLog,
+		ConfigPath:         configArg,
+		WorkerBin:          resolvedWorker,
+		CacheDir:           cacheDir,
+		Inventory:          inv,
+		ControllerID:       controllerID,
 	})
 
 	listenAddr := net.JoinHostPort(addr, fmt.Sprint(port))
@@ -290,6 +305,9 @@ func run() error {
 	if ec2mgr != nil {
 		go ec2mgr.Run(ctx)
 	}
+	if ec2snapshotmgr != nil {
+		go ec2snapshotmgr.Run(ctx)
+	}
 
 	serveErr := make(chan error, 1)
 	go func() {
@@ -300,6 +318,26 @@ func run() error {
 		}
 		serveErr <- nil
 	}()
+
+	// Run remote adoption in the background so the UI is available
+	// immediately at startup. This can take several seconds per instance.
+	if ec2mgr != nil || ec2snapshotmgr != nil {
+		go func(parent context.Context) {
+			log.Print("remote adoption: background scan started")
+			adoptCtx, cancel := context.WithTimeout(parent, 2*time.Minute)
+			defer cancel()
+
+			if ec2mgr != nil {
+				n, stale := ec2mgr.AdoptOrphanedWorkers(adoptCtx)
+				log.Printf("ec2 adoption: startup summary adopted=%d stale=%d", n, stale)
+			}
+			if ec2snapshotmgr != nil {
+				n, stale := ec2snapshotmgr.AdoptOrphanedWorkers(adoptCtx)
+				log.Printf("ec2-snapshot adoption: startup summary adopted=%d stale=%d", n, stale)
+			}
+			log.Print("remote adoption: background scan completed")
+		}(ctx)
+	}
 
 	select {
 	case err := <-serveErr:

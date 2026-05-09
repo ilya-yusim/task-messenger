@@ -24,11 +24,12 @@ import (
 type BackendKind string
 
 const (
-	BackendLocal     BackendKind = "local"
-	BackendCodespace BackendKind = "codespace"
-	BackendEC2       BackendKind = "ec2"
-	BackendSSH       BackendKind = "ssh"
-	BackendGCPIAP    BackendKind = "gcp-iap"
+	BackendLocal       BackendKind = "local"
+	BackendCodespace   BackendKind = "codespace"
+	BackendEC2         BackendKind = "ec2"
+	BackendEC2Snapshot BackendKind = "ec2-snapshot"
+	BackendSSH         BackendKind = "ssh"
+	BackendGCPIAP      BackendKind = "gcp-iap"
 )
 
 var launchTemplateIDPattern = regexp.MustCompile(`^lt-[0-9a-f]+$`)
@@ -42,12 +43,13 @@ type Inventory struct {
 
 // Host is one entry in the inventory.
 type Host struct {
-	ID        string        `json:"id"`
-	Backend   BackendKind   `json:"backend"`
-	Codespace *CodespaceCfg `json:"codespace,omitempty"`
-	EC2       *EC2Cfg       `json:"ec2,omitempty"`
-	SSH       *SSHCfg       `json:"ssh,omitempty"`
-	GCPIAP    *GCPIAPCfg    `json:"gcp_iap,omitempty"`
+	ID          string          `json:"id"`
+	Backend     BackendKind     `json:"backend"`
+	Codespace   *CodespaceCfg   `json:"codespace,omitempty"`
+	EC2         *EC2Cfg         `json:"ec2,omitempty"`
+	EC2Snapshot *EC2SnapshotCfg `json:"ec2_snapshot,omitempty"`
+	SSH         *SSHCfg         `json:"ssh,omitempty"`
+	GCPIAP      *GCPIAPCfg      `json:"gcp_iap,omitempty"`
 }
 
 // CodespaceCfg is the per-host config for backend=codespace.
@@ -92,6 +94,20 @@ type EC2Cfg struct {
 	// AutoTerminate requests terminate (rather than stop) when the host
 	// idles out.
 	AutoTerminate bool `json:"auto_terminate,omitempty"`
+}
+
+// EC2SnapshotCfg is the per-host config for backend=ec2-snapshot.
+// CurrentAmiID is optional: when empty the launch template's own AMI
+// is used for the first launch. After bootstrap, the controller
+// runtime state file takes precedence.
+type EC2SnapshotCfg struct {
+	Region                string `json:"region"`
+	LaunchTemplateID      string `json:"launch_template_id"`
+	LaunchTemplateVersion string `json:"launch_template_version,omitempty"`
+	CurrentAmiID          string `json:"current_ami_id,omitempty"`
+	WorkerBin             string `json:"worker_bin,omitempty"`
+	Config                string `json:"config,omitempty"`
+	TerminateOnIdle       bool   `json:"terminate_on_idle,omitempty"`
 }
 
 // SSHCfg reserves the shape for backend=ssh; not used yet.
@@ -234,6 +250,22 @@ func (inv *Inventory) validate(path string) error {
 			if !launchTemplateIDPattern.MatchString(h.EC2.LaunchTemplateID) {
 				return &Error{Path: path, Index: i, Field: "ec2.launch_template_id", Msg: "must match ^lt-[0-9a-f]+$"}
 			}
+		case BackendEC2Snapshot:
+			if h.EC2Snapshot == nil {
+				return &Error{Path: path, Index: i, Field: "ec2_snapshot", Msg: "required for backend=ec2-snapshot"}
+			}
+			if strings.TrimSpace(h.EC2Snapshot.Region) == "" {
+				return &Error{Path: path, Index: i, Field: "ec2_snapshot.region", Msg: "must be non-empty for backend=ec2-snapshot"}
+			}
+			if strings.TrimSpace(h.EC2Snapshot.LaunchTemplateID) == "" {
+				return &Error{Path: path, Index: i, Field: "ec2_snapshot.launch_template_id", Msg: "must be non-empty for backend=ec2-snapshot"}
+			}
+			if !launchTemplateIDPattern.MatchString(h.EC2Snapshot.LaunchTemplateID) {
+				return &Error{Path: path, Index: i, Field: "ec2_snapshot.launch_template_id", Msg: "must match ^lt-[0-9a-f]+$"}
+			}
+			if id := strings.TrimSpace(h.EC2Snapshot.CurrentAmiID); id != "" && !strings.HasPrefix(id, "ami-") {
+				return &Error{Path: path, Index: i, Field: "ec2_snapshot.current_ami_id", Msg: "must start with ami-"}
+			}
 		case BackendSSH:
 			if h.SSH == nil || h.SSH.Host == "" {
 				return &Error{Path: path, Index: i, Field: "ssh", Msg: "required for backend=ssh (with non-empty host)"}
@@ -245,7 +277,7 @@ func (inv *Inventory) validate(path string) error {
 		case "":
 			return &Error{Path: path, Index: i, Field: "backend", Msg: "must be set (one of: local, codespace, ec2, ssh, gcp-iap)"}
 		default:
-			return &Error{Path: path, Index: i, Field: "backend", Msg: fmt.Sprintf("unknown backend %q (one of: local, codespace, ec2, ssh, gcp-iap)", h.Backend)}
+			return &Error{Path: path, Index: i, Field: "backend", Msg: fmt.Sprintf("unknown backend %q (one of: local, codespace, ec2, ec2-snapshot, ssh, gcp-iap)", h.Backend)}
 		}
 	}
 	return nil

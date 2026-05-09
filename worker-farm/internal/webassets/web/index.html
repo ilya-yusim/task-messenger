@@ -40,7 +40,12 @@
   </section>
 
   <section id="workers">
-    <h2>Workers <span id="worker-count" class="muted"></span></h2>
+    <div class="workers-toolbar">
+      <h2>Workers <span id="worker-count" class="muted"></span></h2>
+      <label class="muted inline-check" title="Hide workers recovered by startup adoption">
+        <input type="checkbox" id="filter-native-only"> Hide adopted
+      </label>
+    </div>
     <table>
       <thead>
         <tr>

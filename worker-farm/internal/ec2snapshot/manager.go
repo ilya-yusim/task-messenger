@@ -1,9 +1,4 @@
-// manager.go — EC2 lifecycle manager for the worker-farm remote backend.
-//
-// Spawn starts N workers on a managed EC2 instance via SSM, Stop sends
-// SIGTERM+SIGKILL, and Run polls liveness at PollPeriod. Idle instances
-// (no alive workers) are automatically stopped after IdleTimeout.
-package ec2
+package ec2snapshot
 
 import (
 	"bufio"
@@ -34,84 +29,53 @@ import (
 var spawnScript []byte
 
 const (
-	// remoteSpawnScriptPath is where start_workers_local.sh is uploaded on
-	// each managed instance. /tmp survives a controller restart but is
-	// wiped on instance reboot, so we re-upload when the hash cache misses.
-	remoteSpawnScriptPath = "/tmp/tm-farm-spawn.sh"
-
-	// Timeout for the SSM command that starts workers (cold-start can be
-	// slow on a fresh instance).
-	managerSpawnTimeout = 4 * time.Minute
-
-	// Timeout for the SSM kill command.
-	managerStopTimeout = 90 * time.Second
-
-	// Timeout for log tail.
-	managerLogTimeout = 30 * time.Second
-
+	remoteSpawnScriptPath     = "/tmp/tm-farm-spawn.sh"
+	managerSpawnTimeout       = 4 * time.Minute
+	managerStopTimeout        = 90 * time.Second
+	managerLogTimeout         = 30 * time.Second
 	defaultManagerPollPeriod  = 5 * time.Second
 	defaultManagerGracePeriod = 10 * time.Second
 	defaultIdleTimeout        = 15 * time.Minute
-
-	ec2RunDirBeginMarker = "===TM_FARM_RUN_DIR_BEGIN==="
-	ec2RunDirEndMarker   = "===TM_FARM_RUN_DIR_END==="
-	ec2ManifestBeginMark = "===TM_FARM_MANIFEST_BEGIN==="
-	ec2ManifestEndMarker = "===TM_FARM_MANIFEST_END==="
+	ec2RunDirBeginMarker      = "===TM_FARM_RUN_DIR_BEGIN==="
+	ec2RunDirEndMarker        = "===TM_FARM_RUN_DIR_END==="
+	ec2ManifestBeginMark      = "===TM_FARM_MANIFEST_BEGIN==="
+	ec2ManifestEndMarker      = "===TM_FARM_MANIFEST_END==="
 )
 
-// SpawnResult mirrors codespace.SpawnResult so the API can return a
-// single uniform JSON shape regardless of backend.
-type SpawnResult struct {
-	ID    string `json:"id"`
-	OK    bool   `json:"ok"`
-	PID   int    `json:"pid,omitempty"`
-	Error string `json:"error,omitempty"`
-}
-
-// ec2RunState is per-run bookkeeping kept in memory.
-type ec2RunState struct {
+type ec2SnapshotRunState struct {
 	runID        string
 	hostID       string
 	instanceID   string
-	ec2Cfg       inventory.EC2Cfg // needed for idle auto-stop
+	ec2Cfg       inventory.EC2SnapshotCfg
 	remoteRunDir string
 	workerIDs    []string
 }
 
-// Manager owns EC2-backed runs spawned by this controller. One
-// instance serves every ec2 host in the inventory.
 type Manager struct {
-	reg          *registry.Registry
-	inv          *inventory.Inventory
-	cacheDir     string
-	controllerID string
-	gracePeriod  time.Duration
-	pollPeriod   time.Duration
-	idleTimeout  time.Duration
-
+	reg            *registry.Registry
+	inv            *inventory.Inventory
+	cacheDir       string
+	controllerID   string
+	gracePeriod    time.Duration
+	pollPeriod     time.Duration
+	idleTimeout    time.Duration
 	mu             sync.Mutex
-	runs           map[string]*ec2RunState // runID → state
-	stopRequested  map[string]time.Time    // workerID → when stop was requested
-	uploadedScript map[string]bool         // instanceID → start script uploaded this session
-	idleSince      map[string]time.Time    // instanceID → time it became fully idle
+	runs           map[string]*ec2SnapshotRunState
+	stopRequested  map[string]time.Time
+	uploadedScript map[string]bool
+	idleSince      map[string]time.Time
 }
 
-// Options configures Manager.
 type Options struct {
 	Registry     *registry.Registry
 	Inventory    *inventory.Inventory
 	CacheDir     string
 	ControllerID string
-	// GracePeriod between SIGTERM and SIGKILL in Stop. Default 10 s.
-	GracePeriod time.Duration
-	// PollPeriod is the liveness poll cadence. Default 5 s.
-	PollPeriod time.Duration
-	// IdleTimeout is how long an instance with no live workers stays up
-	// before the manager calls StopInstance. 0 → use default (15 min).
-	IdleTimeout time.Duration
+	GracePeriod  time.Duration
+	PollPeriod   time.Duration
+	IdleTimeout  time.Duration
 }
 
-// New builds a Manager; does not start polling — call Run for that.
 func New(opts Options) *Manager {
 	gp := opts.GracePeriod
 	if gp == 0 {
@@ -133,16 +97,13 @@ func New(opts Options) *Manager {
 		gracePeriod:    gp,
 		pollPeriod:     pp,
 		idleTimeout:    it,
-		runs:           map[string]*ec2RunState{},
+		runs:           map[string]*ec2SnapshotRunState{},
 		stopRequested:  map[string]time.Time{},
 		uploadedScript: map[string]bool{},
 		idleSince:      map[string]time.Time{},
 	}
 }
 
-// Run blocks until ctx is done, polling remote worker liveness at
-// PollPeriod and stopping idle instances after IdleTimeout. Call as a
-// goroutine; cancel ctx to stop.
 func (m *Manager) Run(ctx context.Context) {
 	t := time.NewTicker(m.pollPeriod)
 	defer t.Stop()
@@ -156,8 +117,6 @@ func (m *Manager) Run(ctx context.Context) {
 	}
 }
 
-// Spawn starts `count` workers on `host` via SSM and records each in
-// the registry. Returned slice is in slot order.
 func (m *Manager) Spawn(ctx context.Context, host inventory.Host, count int, extraArgs []string) []SpawnResult {
 	if count <= 0 {
 		return nil
@@ -169,40 +128,30 @@ func (m *Manager) Spawn(ctx context.Context, host inventory.Host, count int, ext
 		}
 		return results
 	}
-
-	if host.Backend != inventory.BackendEC2 || host.EC2 == nil {
-		return failAll(fmt.Sprintf("host %q is not an ec2 backend", host.ID))
+	if host.Backend != inventory.BackendEC2Snapshot || host.EC2Snapshot == nil {
+		return failAll(fmt.Sprintf("host %q is not an ec2-snapshot backend", host.ID))
 	}
-
 	spawnCtx, cancelSpawn := context.WithTimeout(ctx, managerSpawnTimeout)
 	defer cancelSpawn()
-
-	inst, err := EnsureInstance(spawnCtx, *host.EC2, host.ID, m.controllerID)
+	inst, err := EnsureInstance(spawnCtx, *host.EC2Snapshot, host.ID, m.controllerID)
 	if err != nil {
-		return failAll(fmt.Sprintf("ensure ec2 instance: %v", err))
+		return failAll(fmt.Sprintf("ensure ec2 snapshot instance: %v", err))
 	}
-
 	cl, err := newClients(spawnCtx, inst.Region)
 	if err != nil {
 		return failAll(fmt.Sprintf("create aws clients: %v", err))
 	}
-
-	// Upload the spawn helper script once per instance per session.
 	if err := m.ensureSpawnScriptUploaded(spawnCtx, cl.ssm, inst.InstanceID); err != nil {
 		return failAll(fmt.Sprintf("upload spawn script: %v", err))
 	}
-
-	// Build the SSM command: source the script (so $run_dir is available
-	// in the same shell), then emit sentinel-fenced output.
-	workerBin := host.EC2.WorkerBin
+	workerBin := host.EC2Snapshot.WorkerBin
 	if strings.TrimSpace(workerBin) == "" {
 		workerBin = "tm-worker"
 	}
-	cfgPath := host.EC2.Config
+	cfgPath := host.EC2Snapshot.Config
 	if cfgPath == "" {
 		cfgPath = "~/.config/task-messenger/tm-worker/config-worker.json"
 	}
-
 	var extraPart strings.Builder
 	if len(extraArgs) > 0 {
 		extraPart.WriteString(" --")
@@ -211,49 +160,24 @@ func (m *Manager) Spawn(ctx context.Context, host inventory.Host, count int, ext
 			extraPart.WriteString(shQuote(a))
 		}
 	}
-
-	innerSpawnCmd := fmt.Sprintf(
-		"set -e\n"+
-			"source %s -n %d -b %s -c %s%s\n"+
-			"if [ -z \"${run_dir:-}\" ]; then echo 'spawn helper did not set run_dir' >&2; exit 1; fi\n"+
-			"echo '%s'\n"+
-			"echo \"$run_dir\"\n"+
-			"echo '%s'\n"+
-			"echo '%s'\n"+
-			"cat \"$run_dir/manifest.json\"\n"+
-			"echo '%s'\n",
-		shQuote(remoteSpawnScriptPath),
-		count,
-		shQuote(workerBin),
-		shQuote(cfgPath),
-		extraPart.String(),
-		ec2RunDirBeginMarker,
-		ec2RunDirEndMarker,
-		ec2ManifestBeginMark,
-		ec2ManifestEndMarker,
-	)
+	innerSpawnCmd := fmt.Sprintf("set -e\nsource %s -n %d -b %s -c %s%s\nif [ -z \"${run_dir:-}\" ]; then echo 'spawn helper did not set run_dir' >&2; exit 1; fi\necho '%s'\necho \"$run_dir\"\necho '%s'\necho '%s'\ncat \"$run_dir/manifest.json\"\necho '%s'\n",
+		shQuote(remoteSpawnScriptPath), count, shQuote(workerBin), shQuote(cfgPath), extraPart.String(), ec2RunDirBeginMarker, ec2RunDirEndMarker, ec2ManifestBeginMark, ec2ManifestEndMarker)
 	spawnCmd := "bash -lc " + shQuote(innerSpawnCmd)
-
-	out, err := runSSMShellT(spawnCtx, cl.ssm, inst.InstanceID, spawnCmd, managerSpawnTimeout)
+	out, err := runSSMShell(spawnCtx, cl.ssm, inst.InstanceID, spawnCmd)
 	if err != nil {
-		log.Printf("ec2 spawn host=%s instance=%s count=%d: ssm failed: %v\n--- output ---\n%s",
-			host.ID, inst.InstanceID, count, err, string(out))
+		log.Printf("ec2snapshot spawn host=%s instance=%s count=%d: ssm failed: %v\n--- output ---\n%s", host.ID, inst.InstanceID, count, err, string(out))
 		return failAll(fmt.Sprintf("ssm spawn: %v", err))
 	}
-
 	runDir, manifestRaw, perr := ec2ParseSpawnOutput([]byte(out))
 	if perr != nil {
-		log.Printf("ec2 spawn host=%s instance=%s: parse output: %v\n--- output ---\n%s",
-			host.ID, inst.InstanceID, perr, out)
+		log.Printf("ec2snapshot spawn host=%s instance=%s: parse output: %v\n--- output ---\n%s", host.ID, inst.InstanceID, perr, out)
 		return failAll(fmt.Sprintf("parse remote manifest: %v", perr))
 	}
-
 	var rm ec2RemoteManifest
 	if err := json.Unmarshal(manifestRaw, &rm); err != nil {
-		log.Printf("ec2 spawn host=%s instance=%s run_dir=%s: initial manifest decode failed: %v; attempting direct refetch", host.ID, inst.InstanceID, runDir, err)
+		log.Printf("ec2snapshot spawn host=%s instance=%s run_dir=%s: initial manifest decode failed: %v; attempting direct refetch", host.ID, inst.InstanceID, runDir, err)
 		refetchCtx, cancelRefetch := context.WithTimeout(spawnCtx, 30*time.Second)
-		refetched, ferr := runSSMShellT(refetchCtx, cl.ssm, inst.InstanceID,
-			"cat "+shQuote(filepath.Join(runDir, "manifest.json")), 30*time.Second)
+		refetched, ferr := runSSMShell(refetchCtx, cl.ssm, inst.InstanceID, "cat "+shQuote(filepath.Join(runDir, "manifest.json")))
 		cancelRefetch()
 		if ferr != nil {
 			return failAll(fmt.Sprintf("decode manifest: %v (refetch failed: %v)", err, ferr))
@@ -266,52 +190,26 @@ func (m *Manager) Spawn(ctx context.Context, host inventory.Host, count int, ext
 	if len(rm.Workers) == 0 {
 		return failAll("remote manifest reported zero workers")
 	}
-
 	m.mirrorManifest(host.ID, rm.RunID, manifestRaw)
-
-	state := &ec2RunState{
-		runID:        rm.RunID,
-		hostID:       host.ID,
-		instanceID:   inst.InstanceID,
-		ec2Cfg:       *host.EC2,
-		remoteRunDir: runDir,
-		workerIDs:    make([]string, 0, len(rm.Workers)),
-	}
+	state := &ec2SnapshotRunState{runID: rm.RunID, hostID: host.ID, instanceID: inst.InstanceID, ec2Cfg: *host.EC2Snapshot, remoteRunDir: runDir, workerIDs: make([]string, 0, len(rm.Workers))}
 	startedAt := time.Now().UTC()
 	baseArgs := append([]string{}, rm.Args...)
 	for i, rw := range rm.Workers {
 		slot := i + 1
 		id := ec2NewWorkerID()
-		w := &registry.Worker{
-			ID:        id,
-			PID:       rw.PID,
-			State:     registry.StateRunning,
-			RunID:     rm.RunID,
-			Slot:      slot,
-			StartedAt: startedAt,
-			Args:      append([]string{}, baseArgs...),
-			LogPath:   rw.Log,
-			Host:      host.ID,
-		}
+		w := &registry.Worker{ID: id, PID: rw.PID, State: registry.StateRunning, RunID: rm.RunID, Slot: slot, StartedAt: startedAt, Args: append([]string{}, baseArgs...), LogPath: rw.Log, Host: host.ID}
 		m.reg.Add(w)
 		state.workerIDs = append(state.workerIDs, id)
 		results[i] = SpawnResult{ID: id, OK: true, PID: rw.PID}
 	}
-
 	m.mu.Lock()
 	m.runs[rm.RunID] = state
-	// Cancel any idle timer: instance is now in use again.
 	delete(m.idleSince, inst.InstanceID)
 	m.mu.Unlock()
-
-	log.Printf("ec2 spawn host=%s instance=%s run=%s count=%d remote_dir=%s",
-		host.ID, inst.InstanceID, rm.RunID, len(rm.Workers), runDir)
+	log.Printf("ec2snapshot spawn host=%s instance=%s run=%s count=%d remote_dir=%s", host.ID, inst.InstanceID, rm.RunID, len(rm.Workers), runDir)
 	return results
 }
 
-// Stop sends SIGTERM to the worker's remote PID and schedules a
-// background SIGKILL after gracePeriod. Returns when the SSM command
-// exits (well before the grace timer fires on the remote).
 func (m *Manager) Stop(ctx context.Context, workerID string) error {
 	w, ok := m.reg.Get(workerID)
 	if !ok {
@@ -322,21 +220,16 @@ func (m *Manager) Stop(ctx context.Context, workerID string) error {
 	}
 	st := m.ec2RunForWorker(workerID)
 	if st == nil {
-		return fmt.Errorf("worker %s: no ec2 run state (controller restart? not supported for ec2 backend)", workerID)
+		return fmt.Errorf("worker %s: no ec2 run state (controller restart? not supported for ec2-snapshot backend)", workerID)
 	}
-
-	m.reg.Update(workerID, func(w *registry.Worker) {
-		w.State = registry.StateStopping
-	})
+	m.reg.Update(workerID, func(w *registry.Worker) { w.State = registry.StateStopping })
 	m.mu.Lock()
 	m.stopRequested[workerID] = time.Now().UTC()
 	m.mu.Unlock()
-
 	grace := int(m.gracePeriod.Seconds())
 	if grace < 1 {
 		grace = 1
 	}
-
 	stopScript := fmt.Sprintf(`
 set -u
 PID=%d
@@ -352,45 +245,37 @@ nohup bash -c '
 disown 2>/dev/null || true
 echo "stop submitted pid=$PID grace=${GRACE}s"
 `, w.PID, grace, grace)
-
 	cl, err := newClients(ctx, st.ec2Cfg.Region)
 	if err != nil {
-		return fmt.Errorf("ec2 stop: create clients: %w", err)
+		return fmt.Errorf("ec2-snapshot stop: create clients: %w", err)
 	}
-
 	stopCtx, cancel := context.WithTimeout(ctx, managerStopTimeout)
 	defer cancel()
-	if _, err := runSSMShellT(stopCtx, cl.ssm, st.instanceID, stopScript, managerStopTimeout); err != nil {
+	if _, err := runSSMShell(stopCtx, cl.ssm, st.instanceID, stopScript); err != nil {
 		return fmt.Errorf("ssm stop: %w", err)
 	}
 	return nil
 }
 
-// StopAll stops every EC2-backed worker the manager knows about.
-// Errors are logged and not propagated (matching local.Manager semantics).
 func (m *Manager) StopAll(ctx context.Context) {
 	ids := m.ec2RunningWorkerIDs()
 	if len(ids) == 0 {
 		return
 	}
-	log.Printf("ec2 stop-all: %d worker(s)", len(ids))
+	log.Printf("ec2snapshot stop-all: %d worker(s)", len(ids))
 	var wg sync.WaitGroup
 	for _, id := range ids {
 		wg.Add(1)
 		go func(id string) {
 			defer wg.Done()
 			if err := m.Stop(ctx, id); err != nil {
-				log.Printf("ec2 stop %s: %v", id, err)
+				log.Printf("ec2snapshot stop %s: %v", id, err)
 			}
 		}(id)
 	}
 	wg.Wait()
 }
 
-// Purge removes an exited EC2 worker from the registry and drops any
-// per-run bookkeeping once no live siblings remain. Refuses to purge a
-// still-running worker — caller must Stop first. The local manifest
-// mirror is left in place as an audit trail.
 func (m *Manager) Purge(id string) error {
 	w, ok := m.reg.Get(id)
 	if !ok {
@@ -415,12 +300,10 @@ func (m *Manager) Purge(id string) error {
 		}
 	}
 	m.mu.Unlock()
-	log.Printf("ec2 purge %s: run=%s slot=%02d", id, w.RunID, w.Slot)
+	log.Printf("ec2snapshot purge %s: run=%s slot=%02d", id, w.RunID, w.Slot)
 	return nil
 }
 
-// TailLog returns the last `lines` lines of the worker's remote log
-// via SSM. lines <= 0 means the entire file.
 func (m *Manager) TailLog(ctx context.Context, workerID string, lines int) ([]byte, error) {
 	w, ok := m.reg.Get(workerID)
 	if !ok {
@@ -449,34 +332,28 @@ func (m *Manager) TailLog(ctx context.Context, workerID string, lines int) ([]by
 		tailArg = fmt.Sprintf("-n %d", lines)
 	}
 	cmd := fmt.Sprintf("tail %s -- %s", tailArg, shQuote(w.LogPath))
-
 	cl, err := newClients(ctx, st.ec2Cfg.Region)
 	if err != nil {
-		return nil, fmt.Errorf("ec2 tail-log: create clients: %w", err)
+		return nil, fmt.Errorf("ec2-snapshot tail-log: create clients: %w", err)
 	}
-
 	logCtx, cancel := context.WithTimeout(ctx, managerLogTimeout)
 	defer cancel()
-	out, err := runSSMShellT(logCtx, cl.ssm, st.instanceID, cmd, managerLogTimeout)
+	out, err := runSSMShell(logCtx, cl.ssm, st.instanceID, cmd)
 	if err != nil {
 		return []byte(out), err
 	}
 	return []byte(out), nil
 }
 
-// IsEC2Worker reports whether this manager owns the given worker.
-// Used by the API to dispatch Stop/Log calls to the right backend.
-func (m *Manager) IsEC2Worker(id string) bool {
-	return m.ec2RunForWorker(id) != nil
-}
+func (m *Manager) IsEC2SnapshotWorker(id string) bool { return m.ec2RunForWorker(id) != nil }
 
 // Adopt registers a previously-discovered live worker (from a remote
-// manifest) into the registry as a running, supervised entry. For EC2,
+// manifest) into the registry as a running, supervised entry. For EC2-snapshot,
 // liveness is checked by the polling loop.
 //
 // Returns the registry ID assigned to the adopted worker. Safe to call
 // multiple times for the same worker — the registry rejects duplicates.
-func (m *Manager) Adopt(hostID string, instanceID string, ec2Cfg inventory.EC2Cfg, runID string, slot int, pid int, logPath string, args []string) string {
+func (m *Manager) Adopt(hostID string, instanceID string, ec2Cfg inventory.EC2SnapshotCfg, runID string, slot int, pid int, logPath string, args []string) string {
 	if pid <= 0 {
 		return ""
 	}
@@ -502,7 +379,7 @@ func (m *Manager) Adopt(hostID string, instanceID string, ec2Cfg inventory.EC2Cf
 	m.mu.Lock()
 	st := m.runs[runID]
 	if st == nil {
-		st = &ec2RunState{
+		st = &ec2SnapshotRunState{
 			runID:      runID,
 			hostID:     hostID,
 			instanceID: instanceID,
@@ -544,73 +421,73 @@ func (m *Manager) RegisterStale(hostID string, runID string, slot int, pid int, 
 	return id
 }
 
-// AdoptOrphanedWorkers queries each EC2 instance for orphaned workers
+// AdoptOrphanedWorkers queries each EC2-snapshot instance for orphaned workers
 // from previous runs and adopts them into the registry. Called once at
 // startup.
 func (m *Manager) AdoptOrphanedWorkers(ctx context.Context) (adopted, stale int) {
 	var hostsTotal, hostsTried int
-	log.Printf("ec2 adoption: begin scan")
+	log.Printf("ec2-snapshot adoption: begin scan")
 
-	// For each EC2 host in inventory, query its instance for latest run.
+	// For each EC2-snapshot host in inventory, query its instance for latest run.
 	for _, host := range m.inv.Hosts {
-		if host.Backend != inventory.BackendEC2 || host.EC2 == nil {
+		if host.Backend != inventory.BackendEC2Snapshot || host.EC2Snapshot == nil {
 			continue
 		}
 		hostsTotal++
 		hostsTried++
-		log.Printf("ec2 adoption: host=%s region=%s: checking managed instance", host.ID, host.EC2.Region)
+		log.Printf("ec2-snapshot adoption: host=%s region=%s: checking managed instance", host.ID, host.EC2Snapshot.Region)
 
-		cl, err := newClients(ctx, host.EC2.Region)
+		cl, err := newClients(ctx, host.EC2Snapshot.Region)
 		if err != nil {
-			log.Printf("ec2 adoption: host=%s: create clients: %v", host.ID, err)
+			log.Printf("ec2-snapshot adoption: host=%s: create clients: %v", host.ID, err)
 			continue
 		}
 
 		// Find the managed instance for this host (if it exists).
 		inst, err := findManagedInstance(ctx, cl.ec2, host.ID, m.controllerID)
 		if err != nil {
-			log.Printf("ec2 adoption: host=%s: find instance: %v", host.ID, err)
+			log.Printf("ec2-snapshot adoption: host=%s: find instance: %v", host.ID, err)
 			continue
 		}
 		if inst == nil {
 			// No instance for this host yet; nothing to adopt.
-			log.Printf("ec2 adoption: host=%s: no managed instance found", host.ID)
+			log.Printf("ec2-snapshot adoption: host=%s: no managed instance found", host.ID)
 			continue
 		}
 
 		instanceID := aws.ToString(inst.InstanceId)
-		log.Printf("ec2 adoption: host=%s instance=%s: probing latest run", host.ID, instanceID)
+		log.Printf("ec2-snapshot adoption: host=%s instance=%s: probing latest run", host.ID, instanceID)
 
 		// Query instance for latest run ID.
 		latestCmd := "cache_root=\"${XDG_CACHE_HOME:-$HOME/.cache}/tm-worker-farm/runs\"; cat \"$cache_root/latest.txt\" 2>/dev/null || true"
-		latestOut, err := runSSMShellT(ctx, cl.ssm, instanceID, latestCmd, 10*time.Second)
+		latestOut, err := runSSMShell(ctx, cl.ssm, instanceID, latestCmd)
 		if err != nil {
-			log.Printf("ec2 adoption: host=%s instance=%s: latest.txt probe failed: %v", host.ID, instanceID, err)
+			log.Printf("ec2-snapshot adoption: host=%s instance=%s: latest.txt probe failed: %v", host.ID, instanceID, err)
 			continue
 		}
 		if strings.TrimSpace(latestOut) == "" {
-			log.Printf("ec2 adoption: host=%s instance=%s: latest.txt empty or missing", host.ID, instanceID)
+			log.Printf("ec2-snapshot adoption: host=%s instance=%s: latest.txt empty or missing", host.ID, instanceID)
 			fallbackCmd := "cache_root=\"${XDG_CACHE_HOME:-$HOME/.cache}/tm-worker-farm/runs\"; if [ -d \"$cache_root\" ]; then ls -1 \"$cache_root\" 2>/dev/null | sort -r | while read -r d; do [ -f \"$cache_root/$d/manifest.json\" ] && { echo \"$d\"; break; }; done; fi"
-			fallbackOut, fbErr := runSSMShellT(ctx, cl.ssm, instanceID, fallbackCmd, 10*time.Second)
+			fallbackOut, fbErr := runSSMShell(ctx, cl.ssm, instanceID, fallbackCmd)
 			if fbErr != nil {
-				log.Printf("ec2 adoption: host=%s instance=%s: fallback run scan failed: %v", host.ID, instanceID, fbErr)
+				log.Printf("ec2-snapshot adoption: host=%s instance=%s: fallback run scan failed: %v", host.ID, instanceID, fbErr)
 				continue
 			}
 			if strings.TrimSpace(fallbackOut) == "" {
-				log.Printf("ec2 adoption: host=%s instance=%s: fallback found no run dirs with manifest", host.ID, instanceID)
-				procs, perr := discoverEC2OrphanProcesses(ctx, cl.ssm, instanceID)
+				log.Printf("ec2-snapshot adoption: host=%s instance=%s: fallback found no run dirs with manifest", host.ID, instanceID)
+				procs, perr := discoverEC2SnapshotOrphanProcesses(ctx, cl.ssm, instanceID)
 				if perr != nil {
-					log.Printf("ec2 adoption: host=%s instance=%s: process fallback failed: %v", host.ID, instanceID, perr)
+					log.Printf("ec2-snapshot adoption: host=%s instance=%s: process fallback failed: %v", host.ID, instanceID, perr)
 					continue
 				}
 				if len(procs) == 0 {
-					log.Printf("ec2 adoption: host=%s instance=%s: process fallback found no tm-worker processes", host.ID, instanceID)
+					log.Printf("ec2-snapshot adoption: host=%s instance=%s: process fallback found no tm-worker processes", host.ID, instanceID)
 					continue
 				}
-				log.Printf("ec2 adoption: host=%s instance=%s: process fallback discovered %d worker process(es)", host.ID, instanceID, len(procs))
+				log.Printf("ec2-snapshot adoption: host=%s instance=%s: process fallback discovered %d worker process(es)", host.ID, instanceID, len(procs))
 				for _, p := range procs {
 					runID := fmt.Sprintf("orphan-%s-%d", instanceID, p.PID)
-					id := m.Adopt(host.ID, instanceID, *host.EC2, runID, 1, p.PID, p.LogPath, p.Args)
+					id := m.Adopt(host.ID, instanceID, *host.EC2Snapshot, runID, 1, p.PID, p.LogPath, p.Args)
 					if id != "" {
 						adopted++
 					}
@@ -619,61 +496,61 @@ func (m *Manager) AdoptOrphanedWorkers(ctx context.Context) (adopted, stale int)
 			}
 			runID := strings.TrimSpace(fallbackOut)
 			latestOut = runID
-			log.Printf("ec2 adoption: host=%s instance=%s: fallback selected run=%s", host.ID, instanceID, runID)
+			log.Printf("ec2-snapshot adoption: host=%s instance=%s: fallback selected run=%s", host.ID, instanceID, runID)
 		}
 		runID := strings.TrimSpace(latestOut)
-		log.Printf("ec2 adoption: host=%s instance=%s: latest run=%s", host.ID, instanceID, runID)
+		log.Printf("ec2-snapshot adoption: host=%s instance=%s: latest run=%s", host.ID, instanceID, runID)
 
 		// Query manifest for that run.
 		manifestCmd := fmt.Sprintf("run_id=%s; cache_root=\"${XDG_CACHE_HOME:-$HOME/.cache}/tm-worker-farm/runs\"; cat \"$cache_root/$run_id/manifest.json\" 2>/dev/null || true", shQuote(runID))
-		manifestOut, err := runSSMShellT(ctx, cl.ssm, instanceID, manifestCmd, 10*time.Second)
+		manifestOut, err := runSSMShell(ctx, cl.ssm, instanceID, manifestCmd)
 		if err != nil {
-			log.Printf("ec2 adoption: host=%s instance=%s run=%s: manifest probe failed: %v", host.ID, instanceID, runID, err)
+			log.Printf("ec2-snapshot adoption: host=%s instance=%s run=%s: manifest probe failed: %v", host.ID, instanceID, runID, err)
 			continue
 		}
 		if strings.TrimSpace(manifestOut) == "" {
-			log.Printf("ec2 adoption: host=%s instance=%s run=%s: manifest missing/empty", host.ID, instanceID, runID)
+			log.Printf("ec2-snapshot adoption: host=%s instance=%s run=%s: manifest missing/empty", host.ID, instanceID, runID)
 			continue // No manifest; nothing to adopt.
 		}
 
 		// Parse manifest.
 		var rm ec2RemoteManifest
 		if err := json.Unmarshal([]byte(manifestOut), &rm); err != nil {
-			log.Printf("ec2 adoption: host=%s run=%s: parse manifest: %v", host.ID, runID, err)
+			log.Printf("ec2-snapshot adoption: host=%s run=%s: parse manifest: %v", host.ID, runID, err)
 			continue
 		}
-		log.Printf("ec2 adoption: host=%s instance=%s run=%s: manifest workers=%d", host.ID, instanceID, rm.RunID, len(rm.Workers))
+		log.Printf("ec2-snapshot adoption: host=%s instance=%s run=%s: manifest workers=%d", host.ID, instanceID, rm.RunID, len(rm.Workers))
 
 		// Adopt each worker (we assume they're all alive initially; polling will catch deaths).
 		for i, rw := range rm.Workers {
 			slot := i + 1
-			id := m.Adopt(host.ID, instanceID, *host.EC2, rm.RunID, slot, rw.PID, rw.Log, rm.Args)
+			id := m.Adopt(host.ID, instanceID, *host.EC2Snapshot, rm.RunID, slot, rw.PID, rw.Log, rm.Args)
 			if id != "" {
 				adopted++
 			}
 		}
 	}
 	if hostsTotal == 0 {
-		log.Printf("ec2 adoption: no ec2 hosts configured")
+		log.Printf("ec2-snapshot adoption: no ec2-snapshot hosts configured")
 	} else {
-		log.Printf("ec2 adoption: completed hosts=%d adopted=%d stale=%d", hostsTried, adopted, stale)
+		log.Printf("ec2-snapshot adoption: completed hosts=%d adopted=%d stale=%d", hostsTried, adopted, stale)
 	}
 	return adopted, stale
 }
 
-type ec2OrphanProcess struct {
+type ec2SnapshotOrphanProcess struct {
 	PID     int
 	Args    []string
 	LogPath string
 }
 
-func discoverEC2OrphanProcesses(ctx context.Context, ssmClient *ssm.Client, instanceID string) ([]ec2OrphanProcess, error) {
+func discoverEC2SnapshotOrphanProcesses(ctx context.Context, ssmClient *ssm.Client, instanceID string) ([]ec2SnapshotOrphanProcess, error) {
 	cmd := "ps -eo pid=,args= | grep -E '(^|[[:space:]/])tm-worker([[:space:]]|$)' | grep -v grep || true"
-	out, err := runSSMShellT(ctx, ssmClient, instanceID, cmd, 15*time.Second)
+	out, err := runSSMShell(ctx, ssmClient, instanceID, cmd)
 	if err != nil {
 		return nil, err
 	}
-	var procs []ec2OrphanProcess
+	var procs []ec2SnapshotOrphanProcess
 	sc := bufio.NewScanner(strings.NewReader(out))
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
@@ -688,7 +565,7 @@ func discoverEC2OrphanProcesses(ctx context.Context, ssmClient *ssm.Client, inst
 		if convErr != nil || pid <= 0 {
 			continue
 		}
-		p := ec2OrphanProcess{PID: pid, Args: append([]string{}, fields[1:]...)}
+		p := ec2SnapshotOrphanProcess{PID: pid, Args: append([]string{}, fields[1:]...)}
 		if lp, lerr := resolveRemoteWorkerLogPath(ctx, ssmClient, instanceID, pid); lerr == nil {
 			p.LogPath = lp
 		}
@@ -700,7 +577,7 @@ func discoverEC2OrphanProcesses(ctx context.Context, ssmClient *ssm.Client, inst
 
 func resolveRemoteWorkerLogPath(ctx context.Context, ssmClient *ssm.Client, instanceID string, pid int) (string, error) {
 	cmd := fmt.Sprintf("readlink -f /proc/%d/fd/1 2>/dev/null || true", pid)
-	out, err := runSSMShellT(ctx, ssmClient, instanceID, cmd, 10*time.Second)
+	out, err := runSSMShell(ctx, ssmClient, instanceID, cmd)
 	if err != nil {
 		return "", err
 	}
@@ -741,9 +618,6 @@ func shortIDTail(s string, n int) string {
 	return s[len(s)-n:]
 }
 
-// pollOnce groups every running EC2 worker by instance, runs a single
-// SSM kill-0 per instance to detect exited workers, and auto-stops
-// instances that have been idle longer than IdleTimeout.
 func (m *Manager) pollOnce(ctx context.Context) {
 	type watch struct {
 		id    string
@@ -752,10 +626,9 @@ func (m *Manager) pollOnce(ctx context.Context) {
 	}
 	type instInfo struct {
 		watches []watch
-		ec2Cfg  inventory.EC2Cfg
+		ec2Cfg  inventory.EC2SnapshotCfg
 	}
-	byInst := map[string]*instInfo{} // instanceID → info
-
+	byInst := map[string]*instInfo{}
 	for _, w := range m.reg.List() {
 		if w.State != registry.StateRunning && w.State != registry.StateStopping {
 			continue
@@ -771,18 +644,14 @@ func (m *Manager) pollOnce(ctx context.Context) {
 		}
 		ii.watches = append(ii.watches, watch{id: w.ID, pid: w.PID, state: w.State})
 	}
-
 	stoppingDeadline := m.gracePeriod + 10*time.Second
 	now := time.Now().UTC()
-
 	for instanceID, info := range byInst {
 		pids := make([]string, 0, len(info.watches))
 		for _, w := range info.watches {
 			pids = append(pids, strconv.Itoa(w.pid))
 		}
-		script := fmt.Sprintf(`for pid in %s; do kill -0 "$pid" 2>/dev/null && echo "$pid" || true; done`,
-			strings.Join(pids, " "))
-
+		script := fmt.Sprintf(`for pid in %s; do kill -0 "$pid" 2>/dev/null && echo "$pid" || true; done`, strings.Join(pids, " "))
 		cl, clErr := newClients(ctx, info.ec2Cfg.Region)
 		var out string
 		var ssmErr error
@@ -790,14 +659,11 @@ func (m *Manager) pollOnce(ctx context.Context) {
 			ssmErr = clErr
 		} else {
 			pollCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-			out, ssmErr = runSSMShellT(pollCtx, cl.ssm, instanceID, script, 30*time.Second)
+			out, ssmErr = runSSMShell(pollCtx, cl.ssm, instanceID, script)
 			cancel()
 		}
-
 		if ssmErr != nil {
-			log.Printf("ec2 poll instance=%s: %v", instanceID, ssmErr)
-			// Don't mark running workers dead on a single failed poll.
-			// Do unstick anything past the stopping deadline.
+			log.Printf("ec2snapshot poll instance=%s: %v", instanceID, ssmErr)
 			for _, w := range info.watches {
 				if w.state == registry.StateStopping && m.ec2StoppingFor(w.id, now) > stoppingDeadline {
 					m.ec2MarkExited(w.id, "ssm-unreachable-after-stop")
@@ -805,7 +671,6 @@ func (m *Manager) pollOnce(ctx context.Context) {
 			}
 			continue
 		}
-
 		alive := map[int]bool{}
 		sc := bufio.NewScanner(bytes.NewReader([]byte(out)))
 		for sc.Scan() {
@@ -831,9 +696,6 @@ func (m *Manager) pollOnce(ctx context.Context) {
 			m.ec2MarkExited(w.id, fmt.Sprintf("poll: pid %d not alive", w.pid))
 		}
 	}
-
-	// Idle auto-stop: after all workers on an instance exit, stop it
-	// after IdleTimeout to avoid unnecessary AWS charges.
 	activeInsts := make(map[string]bool, len(byInst))
 	for k := range byInst {
 		activeInsts[k] = true
@@ -841,28 +703,21 @@ func (m *Manager) pollOnce(ctx context.Context) {
 	m.handleIdleInstances(ctx, activeInsts)
 }
 
-// handleIdleInstances checks whether any instances tracked by the manager
-// have become fully idle (no running/stopping workers), updates
-// m.idleSince, and calls StopInstance on instances idle longer than
-// m.idleTimeout.
 func (m *Manager) handleIdleInstances(ctx context.Context, active map[string]bool) {
-	known := map[string]inventory.EC2Cfg{}
+	known := map[string]inventory.EC2SnapshotCfg{}
 	m.mu.Lock()
 	for _, st := range m.runs {
 		known[st.instanceID] = st.ec2Cfg
 	}
 	m.mu.Unlock()
-
 	now := time.Now().UTC()
 	for instanceID, cfg := range known {
 		if active[instanceID] {
-			// At least one alive/stopping worker: clear idle timer.
 			m.mu.Lock()
 			delete(m.idleSince, instanceID)
 			m.mu.Unlock()
 			continue
 		}
-		// No active workers on this instance.
 		m.mu.Lock()
 		t, alreadyIdle := m.idleSince[instanceID]
 		if !alreadyIdle {
@@ -872,13 +727,11 @@ func (m *Manager) handleIdleInstances(ctx context.Context, active map[string]boo
 		}
 		idleDur := now.Sub(t)
 		m.mu.Unlock()
-
 		if idleDur >= m.idleTimeout {
-			log.Printf("ec2 idle-stop: instance %s idle for %s (>= %s); stopping",
-				instanceID, idleDur.Round(time.Second), m.idleTimeout)
+			log.Printf("ec2snapshot idle-terminate: instance %s idle for %s (>= %s); terminating", instanceID, idleDur.Round(time.Second), m.idleTimeout)
 			stopCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
-			if err := StopInstance(stopCtx, cfg, instanceID); err != nil {
-				log.Printf("ec2 idle-stop: StopInstance %s: %v", instanceID, err)
+			if err := TerminateInstance(stopCtx, cfg, instanceID); err != nil {
+				log.Printf("ec2snapshot idle-terminate: TerminateInstance %s: %v", instanceID, err)
 			} else {
 				m.mu.Lock()
 				delete(m.idleSince, instanceID)
@@ -889,8 +742,6 @@ func (m *Manager) handleIdleInstances(ctx context.Context, active map[string]boo
 	}
 }
 
-// ensureSpawnScriptUploaded uploads start_workers_local.sh to
-// remoteSpawnScriptPath if it hasn't been done yet this session.
 func (m *Manager) ensureSpawnScriptUploaded(ctx context.Context, cli *ssm.Client, instanceID string) error {
 	m.mu.Lock()
 	already := m.uploadedScript[instanceID]
@@ -898,8 +749,6 @@ func (m *Manager) ensureSpawnScriptUploaded(ctx context.Context, cli *ssm.Client
 	if already {
 		return nil
 	}
-
-	// Ensure the directory exists.
 	if _, err := runSSMShell(ctx, cli, instanceID, "mkdir -p /tmp"); err != nil {
 		return fmt.Errorf("mkdir /tmp: %w", err)
 	}
@@ -915,28 +764,6 @@ func (m *Manager) ensureSpawnScriptUploaded(ctx context.Context, cli *ssm.Client
 	return nil
 }
 
-// runSSMShellT is like runSSMShell but uses an explicit timeout instead
-// of the package-wide ssmPerCommandTimeout. Use this for operations that
-// can take longer than 30 s (e.g. starting multiple workers).
-func runSSMShellT(ctx context.Context, cli *ssm.Client, instanceID, command string, timeout time.Duration) (string, error) {
-	ctxOne, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-	out, err := cli.SendCommand(ctxOne, &ssm.SendCommandInput{
-		DocumentName: aws.String("AWS-RunShellScript"),
-		InstanceIds:  []string{instanceID},
-		Parameters:   map[string][]string{"commands": {command}},
-	})
-	if err != nil {
-		return "", fmt.Errorf("ssm send command: %w", err)
-	}
-	if out.Command == nil || out.Command.CommandId == nil {
-		return "", errors.New("ssm send command: missing command id")
-	}
-	return waitCommandInvocation(ctxOne, cli, aws.ToString(out.Command.CommandId), instanceID)
-}
-
-// ec2StoppingFor returns how long the manager has been waiting for the
-// worker to exit, or 0 if no stop was ever requested.
 func (m *Manager) ec2StoppingFor(id string, now time.Time) time.Duration {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -947,7 +774,6 @@ func (m *Manager) ec2StoppingFor(id string, now time.Time) time.Duration {
 	return now.Sub(t)
 }
 
-// ec2MarkExited transitions a worker to StateExited.
 func (m *Manager) ec2MarkExited(id, reason string) {
 	now := time.Now().UTC()
 	transitioned := false
@@ -964,16 +790,14 @@ func (m *Manager) ec2MarkExited(id, reason string) {
 		if w, ok := m.reg.Get(id); ok && w.Adopted {
 			adoptedTag = " (adopted=true)"
 		}
-		log.Printf("ec2 exit %s%s: %s", id, adoptedTag, reason)
+		log.Printf("ec2snapshot exit %s%s: %s", id, adoptedTag, reason)
 		m.mu.Lock()
 		delete(m.stopRequested, id)
 		m.mu.Unlock()
 	}
 }
 
-// ec2RunForWorker returns the run state for the given worker, or nil if
-// this manager doesn't own that worker.
-func (m *Manager) ec2RunForWorker(id string) *ec2RunState {
+func (m *Manager) ec2RunForWorker(id string) *ec2SnapshotRunState {
 	w, ok := m.reg.Get(id)
 	if !ok {
 		return nil
@@ -983,8 +807,6 @@ func (m *Manager) ec2RunForWorker(id string) *ec2RunState {
 	return m.runs[w.RunID]
 }
 
-// ec2RunningWorkerIDs returns IDs of every EC2-managed worker currently
-// in Running or Stopping state.
 func (m *Manager) ec2RunningWorkerIDs() []string {
 	m.mu.Lock()
 	known := make(map[string]bool, len(m.runs))
@@ -1004,32 +826,26 @@ func (m *Manager) ec2RunningWorkerIDs() []string {
 	return out
 }
 
-// mirrorManifest writes the remote manifest verbatim under
-// <cacheDir>/runs/ec2-<host>/<run-id>/manifest.json for offline
-// inspection.
 func (m *Manager) mirrorManifest(hostID, runID string, raw []byte) {
 	if m.cacheDir == "" {
 		return
 	}
-	dir := filepath.Join(m.cacheDir, "runs", "ec2-"+hostID, runID)
+	dir := filepath.Join(m.cacheDir, "runs", "ec2-snapshot-"+hostID, runID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		log.Printf("ec2: mirror manifest mkdir: %v", err)
+		log.Printf("ec2snapshot: mirror manifest mkdir: %v", err)
 		return
 	}
 	dst := filepath.Join(dir, "manifest.json")
 	tmp := dst + ".tmp"
 	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
-		log.Printf("ec2: mirror manifest write: %v", err)
+		log.Printf("ec2snapshot: mirror manifest write: %v", err)
 		return
 	}
 	if err := os.Rename(tmp, dst); err != nil {
-		log.Printf("ec2: mirror manifest rename: %v", err)
+		log.Printf("ec2snapshot: mirror manifest rename: %v", err)
 	}
 }
 
-// ec2RemoteManifest is the subset of the on-instance manifest.json the
-// controller cares about. The bash helper writes additional fields
-// (hostname, os, …) which we mirror verbatim via mirrorManifest.
 type ec2RemoteManifest struct {
 	RunID     string                    `json:"run_id"`
 	StartedAt string                    `json:"started_at"`
@@ -1050,8 +866,6 @@ type ec2RemoteManifestWorker struct {
 	Pidfile string `json:"pidfile"`
 }
 
-// ec2ParseSpawnOutput plucks the run dir + manifest from the SSM
-// command output fenced by sentinel markers.
 func ec2ParseSpawnOutput(out []byte) (runDir string, manifest []byte, err error) {
 	rd, ok := ec2ExtractBlock(out, []byte(ec2RunDirBeginMarker), []byte(ec2RunDirEndMarker))
 	if !ok {
@@ -1065,7 +879,6 @@ func ec2ParseSpawnOutput(out []byte) (runDir string, manifest []byte, err error)
 	return rd, []byte(strings.TrimSpace(mraw)), nil
 }
 
-// ec2ExtractBlock returns the content between begin and end markers.
 func ec2ExtractBlock(buf, begin, end []byte) (string, bool) {
 	bi := bytes.Index(buf, begin)
 	if bi < 0 {
@@ -1082,7 +895,6 @@ func ec2ExtractBlock(buf, begin, end []byte) (string, bool) {
 	return string(rest[:ei]), true
 }
 
-// ec2NewWorkerID returns a fresh w-XXXXXXXXXXXX worker identifier.
 func ec2NewWorkerID() string {
 	var b [6]byte
 	if _, err := rand.Read(b[:]); err != nil {

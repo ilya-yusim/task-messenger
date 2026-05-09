@@ -17,6 +17,7 @@ import (
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/bootstrap"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/codespace"
 	ec2pkg "github.com/ilya-yusim/task-messenger/worker-farm/internal/ec2"
+	ec2snapshotpkg "github.com/ilya-yusim/task-messenger/worker-farm/internal/ec2snapshot"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/gh"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/inventory"
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/local"
@@ -27,52 +28,55 @@ import (
 
 // Server is the HTTP handler set for the controller.
 type Server struct {
-	mux          *http.ServeMux
-	webFS        fs.FS
-	noCache      bool
-	reg          *registry.Registry
-	mgr          *local.Manager
-	csmgr        *codespace.Manager
-	ec2mgr       *ec2pkg.Manager
-	rec          *recent.Log
-	cfgPath      string
-	binPath      string
-	cacheDir     string
-	inv          *inventory.Inventory
-	controllerID string
+	mux            *http.ServeMux
+	webFS          fs.FS
+	noCache        bool
+	reg            *registry.Registry
+	mgr            *local.Manager
+	csmgr          *codespace.Manager
+	ec2mgr         *ec2pkg.Manager
+	ec2snapshotmgr *ec2snapshotpkg.Manager
+	rec            *recent.Log
+	cfgPath        string
+	binPath        string
+	cacheDir       string
+	inv            *inventory.Inventory
+	controllerID   string
 }
 
 // Options configures Server.
 type Options struct {
-	WebFS        fs.FS
-	Registry     *registry.Registry
-	Manager      *local.Manager
-	Codespace    *codespace.Manager
-	EC2Manager   *ec2pkg.Manager
-	Recent       *recent.Log
-	ConfigPath   string
-	WorkerBin    string
-	CacheDir     string
-	Inventory    *inventory.Inventory
-	ControllerID string
+	WebFS              fs.FS
+	Registry           *registry.Registry
+	Manager            *local.Manager
+	Codespace          *codespace.Manager
+	EC2Manager         *ec2pkg.Manager
+	EC2SnapshotManager *ec2snapshotpkg.Manager
+	Recent             *recent.Log
+	ConfigPath         string
+	WorkerBin          string
+	CacheDir           string
+	Inventory          *inventory.Inventory
+	ControllerID       string
 }
 
 // New constructs a Server.
 func New(opts Options) *Server {
 	s := &Server{
-		mux:          http.NewServeMux(),
-		webFS:        opts.WebFS,
-		noCache:      true, // Tactical Decision #8
-		reg:          opts.Registry,
-		mgr:          opts.Manager,
-		csmgr:        opts.Codespace,
-		ec2mgr:       opts.EC2Manager,
-		rec:          opts.Recent,
-		cfgPath:      opts.ConfigPath,
-		binPath:      opts.WorkerBin,
-		cacheDir:     opts.CacheDir,
-		inv:          opts.Inventory,
-		controllerID: opts.ControllerID,
+		mux:            http.NewServeMux(),
+		webFS:          opts.WebFS,
+		noCache:        true, // Tactical Decision #8
+		reg:            opts.Registry,
+		mgr:            opts.Manager,
+		csmgr:          opts.Codespace,
+		ec2mgr:         opts.EC2Manager,
+		ec2snapshotmgr: opts.EC2SnapshotManager,
+		rec:            opts.Recent,
+		cfgPath:        opts.ConfigPath,
+		binPath:        opts.WorkerBin,
+		cacheDir:       opts.CacheDir,
+		inv:            opts.Inventory,
+		controllerID:   opts.ControllerID,
 	}
 	s.routes()
 	return s
@@ -119,6 +123,7 @@ func (s *Server) handleHosts(w http.ResponseWriter, r *http.Request) {
 		for _, h := range s.inv.Hosts {
 			supported := h.Backend == inventory.BackendLocal ||
 				h.Backend == inventory.BackendEC2 ||
+				h.Backend == inventory.BackendEC2Snapshot ||
 				(h.Backend == inventory.BackendCodespace && s.csmgr != nil)
 			out = append(out, hostView{
 				ID:        h.ID,
@@ -224,6 +229,9 @@ func (s *Server) handleHostStatus(w http.ResponseWriter, r *http.Request, host i
 	case inventory.BackendEC2:
 		s.handleHostStatusEC2(w, r, host, resp)
 		return
+	case inventory.BackendEC2Snapshot:
+		s.handleHostStatusEC2Snapshot(w, r, host, resp)
+		return
 	default:
 		// ssh / gcp-iap reserved by inventory but no transport landed
 		// yet. Surface a clean "not implemented" instead of a vague
@@ -325,6 +333,23 @@ func (s *Server) handleHostStatusEC2(w http.ResponseWriter, r *http.Request, hos
 	writeJSON(w, http.StatusOK, resp)
 }
 
+func (s *Server) handleHostStatusEC2Snapshot(w http.ResponseWriter, r *http.Request, host inventory.Host, resp hostStatusResp) {
+	if host.EC2Snapshot == nil {
+		resp.Status = "error"
+		resp.Detail = "ec2_snapshot config block missing from inventory"
+		writeJSON(w, http.StatusOK, resp)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+	st := ec2snapshotpkg.QueryStatus(ctx, *host.EC2Snapshot, host.ID, s.controllerID)
+	resp.Status = string(st.Status)
+	resp.Detail = st.Detail
+	resp.InstanceID = st.InstanceID
+	resp.Region = st.Region
+	writeJSON(w, http.StatusOK, resp)
+}
+
 // handleHostBootstrap is the POST /hosts/{id}/bootstrap implementation.
 // Body (all optional): {"repo":"OWNER/REPO","tag":"v0.4.2"}.
 func (s *Server) handleHostBootstrap(w http.ResponseWriter, r *http.Request, host inventory.Host) {
@@ -335,8 +360,11 @@ func (s *Server) handleHostBootstrap(w http.ResponseWriter, r *http.Request, hos
 	case inventory.BackendEC2:
 		s.handleHostBootstrapEC2(w, r, host)
 		return
+	case inventory.BackendEC2Snapshot:
+		s.handleHostBootstrapEC2Snapshot(w, r, host)
+		return
 	default:
-		http.Error(w, fmt.Sprintf("bootstrap is only supported for backends codespace/ec2 (host %q is %s)", host.ID, host.Backend), http.StatusBadRequest)
+		http.Error(w, fmt.Sprintf("bootstrap is only supported for backends codespace/ec2/ec2-snapshot (host %q is %s)", host.ID, host.Backend), http.StatusBadRequest)
 		return
 	}
 }
@@ -416,6 +444,38 @@ func (s *Server) handleHostBootstrapEC2(w http.ResponseWriter, r *http.Request, 
 		HostID:       host.ID,
 		ControllerID: s.controllerID,
 		EC2:          *host.EC2,
+		Repo:         body.Repo,
+		Tag:          body.Tag,
+		CacheDir:     s.cacheDir,
+	})
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	writeJSON(w, http.StatusOK, res)
+}
+
+func (s *Server) handleHostBootstrapEC2Snapshot(w http.ResponseWriter, r *http.Request, host inventory.Host) {
+	if host.EC2Snapshot == nil {
+		http.Error(w, fmt.Sprintf("host %q: ec2_snapshot config is required for bootstrap", host.ID), http.StatusBadRequest)
+		return
+	}
+	var body struct {
+		Repo string `json:"repo"`
+		Tag  string `json:"tag"`
+	}
+	if r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
+	defer cancel()
+	res, err := ec2snapshotpkg.Bootstrap(ctx, ec2snapshotpkg.BootstrapRequest{
+		HostID:       host.ID,
+		ControllerID: s.controllerID,
+		EC2:          *host.EC2Snapshot,
 		Repo:         body.Repo,
 		Tag:          body.Tag,
 		CacheDir:     s.cacheDir,
@@ -514,6 +574,13 @@ func (s *Server) handleSpawn(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+	case host.Backend == inventory.BackendEC2Snapshot:
+		var err error
+		entries, err = s.handleSpawnEC2Snapshot(r.Context(), host, req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
 	default:
 		http.Error(w, fmt.Sprintf("host %q backend=%s is not yet supported", hostID, host.Backend), http.StatusNotImplemented)
 		return
@@ -563,6 +630,18 @@ func (s *Server) handleSpawnEC2(ctx context.Context, host inventory.Host, req sp
 	return entries, nil
 }
 
+func (s *Server) handleSpawnEC2Snapshot(ctx context.Context, host inventory.Host, req spawnRequest) ([]spawnEntry, error) {
+	if s.ec2snapshotmgr == nil {
+		return nil, errors.New("ec2-snapshot backend not configured")
+	}
+	results := s.ec2snapshotmgr.Spawn(ctx, host, req.Count, req.Args)
+	entries := make([]spawnEntry, len(results))
+	for i, r := range results {
+		entries[i] = spawnEntry{ID: r.ID, OK: r.OK, PID: r.PID, Error: r.Error}
+	}
+	return entries, nil
+}
+
 // /workers/{id}            -> GET worker
 // /workers/{id}/stop       -> POST stop
 // /workers/stop-all        -> POST stop all
@@ -585,6 +664,9 @@ func (s *Server) handleWorkerByID(w http.ResponseWriter, r *http.Request) {
 		}
 		if s.ec2mgr != nil {
 			s.ec2mgr.StopAll(ctx)
+		}
+		if s.ec2snapshotmgr != nil {
+			s.ec2snapshotmgr.StopAll(ctx)
 		}
 		w.WriteHeader(http.StatusNoContent)
 		return
@@ -651,6 +733,8 @@ func (s *Server) handleWorkerStop(w http.ResponseWriter, r *http.Request, id str
 		err = s.handleWorkerStopCodespace(ctx, id)
 	} else if s.ec2mgr != nil && s.ec2mgr.IsEC2Worker(id) {
 		err = s.ec2mgr.Stop(ctx, id)
+	} else if s.ec2snapshotmgr != nil && s.ec2snapshotmgr.IsEC2SnapshotWorker(id) {
+		err = s.ec2snapshotmgr.Stop(ctx, id)
 	} else {
 		err = s.mgr.Stop(ctx, id)
 	}
@@ -682,6 +766,8 @@ func (s *Server) handleWorkerPurge(w http.ResponseWriter, r *http.Request, id st
 		err = s.csmgr.Purge(id)
 	} else if s.ec2mgr != nil && s.ec2mgr.IsEC2Worker(id) {
 		err = s.ec2mgr.Purge(id)
+	} else if s.ec2snapshotmgr != nil && s.ec2snapshotmgr.IsEC2SnapshotWorker(id) {
+		err = s.ec2snapshotmgr.Purge(id)
 	} else {
 		err = s.mgr.Purge(id)
 	}
@@ -715,6 +801,8 @@ func (s *Server) handleWorkersPurgeAll(w http.ResponseWriter, r *http.Request) {
 			err = s.csmgr.Purge(worker.ID)
 		} else if s.ec2mgr != nil && s.ec2mgr.IsEC2Worker(worker.ID) {
 			err = s.ec2mgr.Purge(worker.ID)
+		} else if s.ec2snapshotmgr != nil && s.ec2snapshotmgr.IsEC2SnapshotWorker(worker.ID) {
+			err = s.ec2snapshotmgr.Purge(worker.ID)
 		} else {
 			err = s.mgr.Purge(worker.ID)
 		}
@@ -784,6 +872,21 @@ func (s *Server) handleWorkerLog(w http.ResponseWriter, r *http.Request, id stri
 		_, _ = w.Write(data)
 		return
 	}
+	if s.ec2snapshotmgr != nil && s.ec2snapshotmgr.IsEC2SnapshotWorker(id) {
+		lines := int(tail)
+		if lines == 0 {
+			lines = 200
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+		defer cancel()
+		data, err := s.ec2snapshotmgr.TailLog(ctx, id, lines)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		_, _ = w.Write(data)
+		return
+	}
 	data, err := logbuf.Tail(worker.LogPath, tail)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -806,6 +909,10 @@ func (s *Server) handleWorkerLogStream(w http.ResponseWriter, r *http.Request, i
 	}
 	if s.ec2mgr != nil && s.ec2mgr.IsEC2Worker(id) {
 		http.Error(w, "log streaming not supported for ec2 workers; use /log?tail=N", http.StatusNotImplemented)
+		return
+	}
+	if s.ec2snapshotmgr != nil && s.ec2snapshotmgr.IsEC2SnapshotWorker(id) {
+		http.Error(w, "log streaming not supported for ec2-snapshot workers; use /log?tail=N", http.StatusNotImplemented)
 		return
 	}
 	worker, _ := s.reg.Get(id)

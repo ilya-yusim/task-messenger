@@ -20,6 +20,7 @@ const els = {
   spawnStatus: $("#spawn-status"),
   rows: $("#worker-rows"),
   workerCount: $("#worker-count"),
+  filterNativeOnly: $("#filter-native-only"),
   modal: $("#log-modal"),
   logTitle: $("#log-title"),
   logMeta: $("#log-meta"),
@@ -38,6 +39,7 @@ let activeLogWorker = null; // {id, host, state} of the worker shown in the moda
 const LOG_POLL_MS = 2000;
 const LOG_TAIL_BYTES = 65536;
 const LOG_TAIL_LINES = 500; // codespace endpoint takes a line count
+let allWorkers = [];
 
 function fmtTime(iso) {
   if (!iso) return "—";
@@ -76,10 +78,13 @@ function renderRows(workers) {
   const frag = document.createDocumentFragment();
   for (const w of workers) {
     const tr = document.createElement("tr");
+    const adoptedBadge = w.adopted
+      ? `<span class="badge badge-adopted" title="Recovered by controller adoption after restart; some metadata may be partial.">Adopted</span>`
+      : "";
     tr.innerHTML = `
-      <td class="id" title="${w.id}">${w.id}</td>
+      <td class="id" title="${w.id}">${w.id}${adoptedBadge}</td>
       <td>${w.host || "local"}</td>
-      <td><span class="${stateClass(w.state)}">${w.state}${w.adopted && w.state === 'exited' ? ' (orphan)' : ''}</span></td>
+      <td><span class="${stateClass(w.state)}">${w.state}</span></td>
       <td>${w.pid || "—"}</td>
       <td>${fmtTime(w.started_at)}</td>
       <td>${fmtUptime(w.started_at, w.stopped_at)}</td>
@@ -115,12 +120,20 @@ function renderRows(workers) {
   els.rows.replaceChildren(frag);
 }
 
+function visibleWorkers() {
+  if (!els.filterNativeOnly || !els.filterNativeOnly.checked) {
+    return allWorkers;
+  }
+  return allWorkers.filter((w) => !w.adopted);
+}
+
 async function poll() {
   try {
     const res = await fetch("/workers", { cache: "no-store" });
     if (!res.ok) throw new Error(`GET /workers -> ${res.status}`);
     const data = await res.json();
-    renderRows(Array.isArray(data) ? data : []);
+    allWorkers = Array.isArray(data) ? data : [];
+    renderRows(visibleWorkers());
   } catch (err) {
     els.rows.innerHTML = `<tr><td colspan="8" class="muted">Error loading workers: ${err.message}</td></tr>`;
   }
@@ -330,6 +343,9 @@ els.stopAllBtn.addEventListener("click", stopAll);
 els.purgeAllBtn.addEventListener("click", purgeAll);
 els.host.addEventListener("change", refreshHostStatus);
 els.bootstrapBtn.addEventListener("click", (e) => bootstrapHost(e.currentTarget.dataset.hostId, e.currentTarget));
+if (els.filterNativeOnly) {
+  els.filterNativeOnly.addEventListener("change", () => renderRows(visibleWorkers()));
+}
 
 els.logClose.addEventListener("click", () => {
   closeStream();
@@ -398,13 +414,13 @@ async function refreshHostStatus() {
     if (!res.ok) throw new Error(`status -> ${res.status}`);
     const s = await res.json();
     els.hostStatusText.textContent = formatHostStatus(s);
-    // Bootstrap is meaningful for codespace and ec2 hosts whenever
+    // Bootstrap is meaningful for codespace, ec2, and ec2-snapshot hosts whenever
     // the backend is reachable or the instance just needs tm-worker
     // installed (or re-installed).
     const showBootstrap =
       (s.backend === "codespace" &&
         (s.status === "ok" || s.status === "codespace-not-found")) ||
-      (s.backend === "ec2" && s.status !== "instance-terminated");
+      ((s.backend === "ec2" || s.backend === "ec2-snapshot") && s.status !== "instance-terminated");
     els.bootstrapBtn.hidden = !showBootstrap;
     els.bootstrapTag.hidden = !showBootstrap;
     els.bootstrapBtn.dataset.hostId = id;
@@ -425,7 +441,7 @@ async function bootstrapHost(id, btn) {
   if (!id) return;
   const tag = els.bootstrapTag.value.trim();
   const tagLabel = tag || "latest";
-  if (!confirm(`Install tm-worker on ${id} from release ${tagLabel}? This downloads the asset locally and uploads it via gh codespace cp.`)) return;
+  if (!confirm(`Install tm-worker on ${id} from release ${tagLabel}? This may create or update the backing host image depending on the backend.`)) return;
   btn.disabled = true;
   const prev = btn.textContent;
   btn.textContent = "Bootstrapping\u2026";
