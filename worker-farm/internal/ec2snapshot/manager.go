@@ -35,7 +35,7 @@ const (
 	managerLogTimeout         = 30 * time.Second
 	defaultManagerPollPeriod  = 5 * time.Second
 	defaultManagerGracePeriod = 10 * time.Second
-	defaultIdleTimeout        = 15 * time.Minute
+	defaultIdleTimeout        = 1 * time.Minute
 	ec2RunDirBeginMarker      = "===TM_FARM_RUN_DIR_BEGIN==="
 	ec2RunDirEndMarker        = "===TM_FARM_RUN_DIR_END==="
 	ec2ManifestBeginMark      = "===TM_FARM_MANIFEST_BEGIN==="
@@ -287,18 +287,8 @@ func (m *Manager) Purge(id string) error {
 	m.reg.Remove(id)
 	m.mu.Lock()
 	delete(m.stopRequested, id)
-	if w.RunID != "" {
-		stillReferenced := false
-		for _, sib := range m.reg.List() {
-			if sib.RunID == w.RunID {
-				stillReferenced = true
-				break
-			}
-		}
-		if !stillReferenced {
-			delete(m.runs, w.RunID)
-		}
-	}
+	// Keep runs in m.runs to allow idle termination to complete.
+	// Runs will be cleaned up when the instance terminates.
 	m.mu.Unlock()
 	log.Printf("ec2snapshot purge %s: run=%s slot=%02d", id, w.RunID, w.Slot)
 	return nil
@@ -735,6 +725,12 @@ func (m *Manager) handleIdleInstances(ctx context.Context, active map[string]boo
 			} else {
 				m.mu.Lock()
 				delete(m.idleSince, instanceID)
+				// Clean up runs for this terminated instance.
+				for runID, st := range m.runs {
+					if st.instanceID == instanceID {
+						delete(m.runs, runID)
+					}
+				}
 				m.mu.Unlock()
 			}
 			cancel()
