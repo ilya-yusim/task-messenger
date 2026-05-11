@@ -622,14 +622,43 @@ func (m *Manager) RegisterStale(c adopt.Candidate) string {
 // adoptedID derives a stable registry ID for an adopted candidate so
 // repeated adoption passes don't create duplicate rows.
 func adoptedID(c adopt.Candidate) string {
-	if c.Sentinel != nil && c.Sentinel.PID > 0 {
-		return fmt.Sprintf("h00-p%d", c.Sentinel.PID)
+	if c.Sentinel == nil {
+		return "h00-s00-x"
 	}
-	// Fallback for malformed/partial sentinels.
-	if c.Sentinel != nil {
-		return fmt.Sprintf("h00-s%02d", c.Sentinel.Slot)
+
+	source := adoptedIDComponent(c.Sentinel.RunID)
+	if source == "x" {
+		// Fallback for malformed/partial sentinels: keep the derived ID
+		// stable per sentinel path instead of collapsing to a shared
+		// constant or slot-only value.
+		source = adoptedIDComponent(c.Sentinel.LogPath)
 	}
-	return "h00-s00"
+	if source == "x" {
+		source = fmt.Sprintf("slot%02d", c.Sentinel.Slot)
+	}
+
+	id := fmt.Sprintf("h00-r%s-s%02d", shortTail(source, 8), c.Sentinel.Slot)
+	if c.Sentinel.PID > 0 {
+		id = fmt.Sprintf("%s-p%d", id, c.Sentinel.PID)
+	}
+	return id
+}
+
+func adoptedIDComponent(s string) string {
+	s = strings.ToLower(s)
+	var b strings.Builder
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		}
+	}
+	if b.Len() == 0 {
+		return "x"
+	}
+	return b.String()
 }
 
 func shortTail(s string, n int) string {
