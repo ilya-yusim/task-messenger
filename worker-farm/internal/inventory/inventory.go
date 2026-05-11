@@ -275,7 +275,7 @@ func (inv *Inventory) validate(path string) error {
 				return &Error{Path: path, Index: i, Field: "gcp_iap", Msg: "required for backend=gcp-iap (with project/zone/instance)"}
 			}
 		case "":
-			return &Error{Path: path, Index: i, Field: "backend", Msg: "must be set (one of: local, codespace, ec2, ssh, gcp-iap)"}
+			return &Error{Path: path, Index: i, Field: "backend", Msg: "must be set (one of: local, codespace, ec2, ec2-snapshot, ssh, gcp-iap)"}
 		default:
 			return &Error{Path: path, Index: i, Field: "backend", Msg: fmt.Sprintf("unknown backend %q (one of: local, codespace, ec2, ec2-snapshot, ssh, gcp-iap)", h.Backend)}
 		}
