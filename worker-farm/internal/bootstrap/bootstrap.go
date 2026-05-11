@@ -46,6 +46,10 @@ var installerScriptHash = func() string {
 // the install_tm_worker_codespace.ps1 fallback.
 const DefaultRepo = "ilya-yusim/task-messenger"
 
+// DefaultCodespaceRepo is used when inventory doesn't specify
+// codespace.repo and we need to create a new codespace.
+const DefaultCodespaceRepo = "ilya-yusim/codespace-quickstart"
+
 // remoteDirSuffix is the path suffix appended to the resolved $HOME
 // to form the absolute remote directory. Using an absolute path is
 // required because gh codespace cp does NOT expand ~ on the remote
@@ -170,8 +174,15 @@ func Bootstrap(ctx context.Context, req Request) (*Result, error) {
 	if repo == "" {
 		repo = DefaultRepo
 	}
+	createRepo := req.CodespaceRepo
+	if createRepo == "" {
+		// Keep codespace creation target independent from release lookup
+		// overrides. req.Repo may point to an arbitrary release source,
+		// while codespace creation needs a lightweight clone target.
+		createRepo = DefaultCodespaceRepo
+	}
 
-	ensure, err := gh.EnsureByNameOrLabel(ctx, req.CodespaceName, req.CodespaceLabel, req.CodespaceRepo)
+	ensure, err := gh.EnsureByNameOrLabel(ctx, req.CodespaceName, req.CodespaceLabel, createRepo)
 	if err != nil {
 		return nil, fmt.Errorf("ensure codespace: %w", err)
 	}
@@ -302,7 +313,7 @@ func Bootstrap(ctx context.Context, req Request) (*Result, error) {
 		HostID:         req.HostID,
 		Codespace:      resolvedCodespace,
 		CodespaceLabel: req.CodespaceLabel,
-		CodespaceRepo:  req.CodespaceRepo,
+		CodespaceRepo:  createRepo,
 		CodespaceNew:   ensure.Created,
 		Repo:           repo,
 		Tag:            info.TagName,
