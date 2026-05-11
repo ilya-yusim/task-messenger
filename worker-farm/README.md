@@ -250,7 +250,7 @@ deployment.
 | `POST` | `/quarantine/{run-id}/{NN}/{action}` | `action` ∈ `adopt`/`kill`/`ignore`; 204 on success. |
 | `GET` | `/hosts` | JSON array of inventory hosts with `supported` flag. |
 | `GET` | `/hosts/{id}/status` | Per-host reachability/auth state. |
-| `POST` | `/hosts/{id}/bootstrap` | Install `tm-worker` on a codespace or EC2 host; body (optional) `{"repo":"OWNER/REPO","tag":"vX.Y.Z"}`; default tag is the latest non-draft release. |
+| `POST` | `/hosts/{id}/bootstrap` | Install `tm-worker` on a codespace, EC2, or `ec2-snapshot` host; body (optional) `{"repo":"OWNER/REPO","tag":"vX.Y.Z"}`; default tag is the latest non-draft release. |
 
 ### Runtime architecture
 
