@@ -94,7 +94,7 @@ release into the codespace, then **Start** spawns workers there. The
 release tag input next to the button is blank for the latest
 non-draft release, or set to a specific tag (e.g. `vtest`).
 
-SSH and other remote backends are roadmap items.
+SSH and other not-yet-implemented remote backends are roadmap items.
 
 ### Run workers on an EC2 host
 
