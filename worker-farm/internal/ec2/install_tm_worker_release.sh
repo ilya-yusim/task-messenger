@@ -22,6 +22,17 @@
 #   -h, --help      Show this help.
 set -euo pipefail
 
+# SSM non-login shells may not define HOME. Provide a stable fallback
+# so path checks and final verification do not fail under `set -u`.
+if [[ -z "${HOME:-}" ]]; then
+    home_from_passwd="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f6 || true)"
+    if [[ -n "$home_from_passwd" ]]; then
+        export HOME="$home_from_passwd"
+    else
+        export HOME="/root"
+    fi
+fi
+
 DEFAULT_REPO="${TM_REPO:-ilya-yusim/task-messenger}"
 
 usage() {
@@ -45,7 +56,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Detect arch — releases publish only x86_64 today.
+# Detect arch - releases publish only x86_64 today.
 arch="$(uname -m)"
 case "$arch" in
     x86_64|amd64) arch_tag="x86_64" ;;
@@ -59,6 +70,9 @@ tmp="$(mktemp -d -t tm-worker-install.XXXXXX)"
 trap '[[ $keep -eq 0 ]] && rm -rf "$tmp"' EXIT
 
 if [[ -n "$local_file" ]]; then
+    # Older controller versions may pass a literal ${HOME} in -f.
+    # Expand it now that HOME is guaranteed to be set.
+    local_file="${local_file//\$\{HOME\}/$HOME}"
     if [[ ! -s "$local_file" ]]; then
         echo "[install] -f file not found or empty: $local_file" >&2
         exit 1
@@ -202,7 +216,7 @@ ensure_libopenblas "$bin"
 # Make sure ~/.local/bin will be on PATH for future shells (non-fatal).
 case ":$PATH:" in
     *":$HOME/.local/bin:"*) ;;
-    *) echo "[install] note: \$HOME/.local/bin is not on PATH for this shell." ;;
+    *) echo "[install] note: $HOME/.local/bin is not on PATH for this shell." ;;
 esac
 
 echo

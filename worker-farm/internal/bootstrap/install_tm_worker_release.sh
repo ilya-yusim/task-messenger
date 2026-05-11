@@ -141,14 +141,38 @@ echo "[install] running $asset_path --accept -- --yes"
 # install_linux.sh non-interactive on existing-install upgrades.
 "$asset_path" --accept -- --yes
 
+# Verify.
+bin="$HOME/.local/bin/tm-worker"
+if [[ ! -x "$bin" ]]; then
+    echo "[install] expected symlink $bin not found after install" >&2
+    exit 1
+fi
+
 # tm-worker dynamically links against libopenblas (BLAS skills are enabled in
-# release builds). Make sure the runtime lib is present. Best-effort: only
-# attempts apt-get when the .so is missing AND we have a Debian/Ubuntu box
+# release builds). Check whether the installed worker binary is actually
+# missing the dependency. Best-effort: only attempts apt-get when needed AND
+# we have a Debian/Ubuntu box
 # with sudo. Other distros / sandboxed environments will get a clear hint.
 ensure_libopenblas() {
-    if ldconfig -p 2>/dev/null | grep -q 'libopenblas\.so\.0'; then
+    local bin_path="$1"
+    local needs_openblas=0
+
+    if command -v ldd >/dev/null 2>&1; then
+        local ldd_out
+        ldd_out="$(ldd "$bin_path" 2>&1 || true)"
+        if printf '%s\n' "$ldd_out" | grep -q 'libopenblas\.so\.0 => not found'; then
+            needs_openblas=1
+        fi
+    else
+        if ! ldconfig -p 2>/dev/null | grep -q 'libopenblas\.so\.0'; then
+            needs_openblas=1
+        fi
+    fi
+
+    if [[ $needs_openblas -eq 0 ]]; then
         return 0
     fi
+
     echo "[install] libopenblas.so.0 not found; attempting to install..."
     if ! command -v apt-get >/dev/null 2>&1; then
         echo "[install] WARNING: no apt-get available. Install libopenblas0 manually for your distro." >&2
@@ -173,14 +197,7 @@ ensure_libopenblas() {
     }
     echo "[install] libopenblas0 installed."
 }
-ensure_libopenblas
-
-# Verify.
-bin="$HOME/.local/bin/tm-worker"
-if [[ ! -x "$bin" ]]; then
-    echo "[install] expected symlink $bin not found after install" >&2
-    exit 1
-fi
+ensure_libopenblas "$bin"
 
 # Make sure ~/.local/bin will be on PATH for future shells (non-fatal).
 case ":$PATH:" in
@@ -192,4 +209,12 @@ echo
 echo "[install] done."
 echo "[install] binary: $bin"
 echo "[install] version:"
-"$bin" --version 2>/dev/null || true
+version_out="$($bin --version 2>&1 || true)"
+if [[ -n "$version_out" ]]; then
+    echo "$version_out"
+fi
+if printf '%s\n' "$version_out" | grep -q 'GLIBC_[0-9][0-9.]*.*not found'; then
+    echo "[install] ERROR: incompatible glibc on host for this tm-worker release." >&2
+    echo "[install] ERROR: choose a newer base image or use a tm-worker build targeting an older glibc." >&2
+    exit 1
+fi

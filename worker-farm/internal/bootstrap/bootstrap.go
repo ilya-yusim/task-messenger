@@ -18,10 +18,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"time"
 
 	"github.com/ilya-yusim/task-messenger/worker-farm/internal/gh"
 )
@@ -43,6 +45,10 @@ var installerScriptHash = func() string {
 // DefaultRepo is used when the operator doesn't specify one. Mirrors
 // the install_tm_worker_codespace.ps1 fallback.
 const DefaultRepo = "ilya-yusim/task-messenger"
+
+// DefaultCodespaceRepo is used when inventory doesn't specify
+// codespace.repo and we need to create a new codespace.
+const DefaultCodespaceRepo = "ilya-yusim/codespace-quickstart"
 
 // remoteDirSuffix is the path suffix appended to the resolved $HOME
 // to form the absolute remote directory. Using an absolute path is
@@ -168,8 +174,15 @@ func Bootstrap(ctx context.Context, req Request) (*Result, error) {
 	if repo == "" {
 		repo = DefaultRepo
 	}
+	createRepo := req.CodespaceRepo
+	if createRepo == "" {
+		// Keep codespace creation target independent from release lookup
+		// overrides. req.Repo may point to an arbitrary release source,
+		// while codespace creation needs a lightweight clone target.
+		createRepo = DefaultCodespaceRepo
+	}
 
-	ensure, err := gh.EnsureByNameOrLabel(ctx, req.CodespaceName, req.CodespaceLabel, req.CodespaceRepo)
+	ensure, err := gh.EnsureByNameOrLabel(ctx, req.CodespaceName, req.CodespaceLabel, createRepo)
 	if err != nil {
 		return nil, fmt.Errorf("ensure codespace: %w", err)
 	}
@@ -215,13 +228,17 @@ func Bootstrap(ctx context.Context, req Request) (*Result, error) {
 		return nil, fmt.Errorf("mkdtemp: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
+	downloadStart := time.Now()
 	if err := gh.ReleaseDownload(ctx, repo, info.TagName, asset.Name, tmpDir); err != nil {
 		return nil, fmt.Errorf("download asset: %w", err)
 	}
+	downloadDur := time.Since(downloadStart)
 	localAsset := filepath.Join(tmpDir, asset.Name)
-	if _, err := os.Stat(localAsset); err != nil {
+	assetInfo, err := os.Stat(localAsset)
+	if err != nil {
 		return nil, fmt.Errorf("downloaded asset missing at %s: %w", localAsset, err)
 	}
+	log.Printf("bootstrap: downloaded asset %s (%d bytes) in %s", asset.Name, assetInfo.Size(), downloadDur.Round(time.Millisecond))
 
 	// 3) Stage the helper script next to the asset.
 	helperPath := filepath.Join(tmpDir, "install_tm_worker_release.sh")
@@ -257,9 +274,12 @@ func Bootstrap(ctx context.Context, req Request) (*Result, error) {
 	// Always re-upload the .run asset: its hash isn't tracked
 	// remotely, and a partial upload from a previous failure could
 	// otherwise be silently reused.
+	uploadStart := time.Now()
 	if err := gh.CP(ctx, resolvedCodespace, localAsset, resolvedRemoteDir+"/"+asset.Name); err != nil {
 		return nil, fmt.Errorf("cp asset: %w", err)
 	}
+	uploadDur := time.Since(uploadStart)
+	log.Printf("bootstrap: streamed asset %s to %s in %s", asset.Name, resolvedCodespace, uploadDur.Round(time.Millisecond))
 
 	// 5) chmod + run the installer remotely.
 	chmod := fmt.Sprintf("chmod +x %s/install_tm_worker_release.sh %s/%s",
@@ -293,7 +313,7 @@ func Bootstrap(ctx context.Context, req Request) (*Result, error) {
 		HostID:         req.HostID,
 		Codespace:      resolvedCodespace,
 		CodespaceLabel: req.CodespaceLabel,
-		CodespaceRepo:  req.CodespaceRepo,
+		CodespaceRepo:  createRepo,
 		CodespaceNew:   ensure.Created,
 		Repo:           repo,
 		Tag:            info.TagName,

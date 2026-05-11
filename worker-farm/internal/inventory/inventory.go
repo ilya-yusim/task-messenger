@@ -2,9 +2,9 @@
 // inventory file (`hosts.json`).
 //
 // The inventory describes every host the controller can talk to.
-// Today only the `local` and `codespace` backends are wired up; `ssh`
-// and `gcp-iap` are accepted by the parser so future backends can
-// activate them without a config-file format break.
+// Today the `local`, `codespace`, `ec2`, and `ec2-snapshot` backends
+// are wired up; `ssh` and `gcp-iap` are accepted by the parser so
+// future backends can activate them without a config-file format break.
 //
 // The schema is JSON, not YAML, to keep `worker-farm` stdlib-only.
 package inventory
@@ -15,18 +15,24 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strings"
 )
 
 // BackendKind is the discriminator string in `hosts[].backend`.
 type BackendKind string
 
 const (
-	BackendLocal     BackendKind = "local"
-	BackendCodespace BackendKind = "codespace"
-	BackendSSH       BackendKind = "ssh"
-	BackendGCPIAP    BackendKind = "gcp-iap"
+	BackendLocal       BackendKind = "local"
+	BackendCodespace   BackendKind = "codespace"
+	BackendEC2         BackendKind = "ec2"
+	BackendEC2Snapshot BackendKind = "ec2-snapshot"
+	BackendSSH         BackendKind = "ssh"
+	BackendGCPIAP      BackendKind = "gcp-iap"
 )
+
+var launchTemplateIDPattern = regexp.MustCompile(`^lt-[0-9a-f]+$`)
 
 // Inventory is the parsed contents of hosts.json. The default
 // (synthesized when no file exists) is a single-host inventory with
@@ -37,17 +43,19 @@ type Inventory struct {
 
 // Host is one entry in the inventory.
 type Host struct {
-	ID        string        `json:"id"`
-	Backend   BackendKind   `json:"backend"`
-	Codespace *CodespaceCfg `json:"codespace,omitempty"`
-	SSH       *SSHCfg       `json:"ssh,omitempty"`
-	GCPIAP    *GCPIAPCfg    `json:"gcp_iap,omitempty"`
+	ID          string          `json:"id"`
+	Backend     BackendKind     `json:"backend"`
+	Codespace   *CodespaceCfg   `json:"codespace,omitempty"`
+	EC2         *EC2Cfg         `json:"ec2,omitempty"`
+	EC2Snapshot *EC2SnapshotCfg `json:"ec2_snapshot,omitempty"`
+	SSH         *SSHCfg         `json:"ssh,omitempty"`
+	GCPIAP      *GCPIAPCfg      `json:"gcp_iap,omitempty"`
 }
 
 // CodespaceCfg is the per-host config for backend=codespace.
 type CodespaceCfg struct {
 	// Name is the codespace name as reported by `gh codespace list`.
-	// Empty string means "auto-pick first running codespace" — useful
+	// Empty string means "auto-pick first running codespace" - useful
 	// for the common single-codespace case.
 	Name string `json:"name"`
 	// Label is an operator-defined display label used to find (or create)
@@ -58,12 +66,47 @@ type CodespaceCfg struct {
 	// new codespace for this host (for example when Label is set but no
 	// matching codespace exists).
 	Repo string `json:"repo,omitempty"`
-	// WorkerBin is the path to tm-worker on the remote host. Empty ⇒
+	// WorkerBin is the path to tm-worker on the remote host. Empty =>
 	// resolve via $PATH on the remote.
 	WorkerBin string `json:"worker_bin,omitempty"`
 	// Config is the path to config-worker.json on the remote host.
-	// Empty ⇒ remote default (~/.config/task-messenger/...).
+	// Empty => remote default (~/.config/task-messenger/...).
 	Config string `json:"config,omitempty"`
+}
+
+// EC2Cfg is the per-host config for backend=ec2.
+type EC2Cfg struct {
+	// Region is the AWS region where the managed instance lives.
+	Region string `json:"region"`
+	// LaunchTemplateID selects the launch template used for first-time
+	// instance creation.
+	LaunchTemplateID string `json:"launch_template_id"`
+	// LaunchTemplateVersion defaults to "$Latest" when empty.
+	LaunchTemplateVersion string `json:"launch_template_version,omitempty"`
+	// InstanceType overrides the instance type defined in the Launch
+	// Template (e.g. "t3.micro"). Leave empty to use the template default.
+	InstanceType string `json:"instance_type,omitempty"`
+	// WorkerBin is the path to tm-worker on the instance. Empty =>
+	// resolve via $PATH on the remote host.
+	WorkerBin string `json:"worker_bin,omitempty"`
+	// Config is the path to config-worker.json on the instance.
+	Config string `json:"config,omitempty"`
+	// AutoTerminate requests terminate (rather than stop) when the host
+	// idles out.
+	AutoTerminate bool `json:"auto_terminate,omitempty"`
+}
+
+// EC2SnapshotCfg is the per-host config for backend=ec2-snapshot.
+// CurrentAmiID is optional: when empty the launch template's own AMI
+// is used for the first launch. After bootstrap, the controller
+// runtime state file takes precedence.
+type EC2SnapshotCfg struct {
+	Region                string `json:"region"`
+	LaunchTemplateID      string `json:"launch_template_id"`
+	LaunchTemplateVersion string `json:"launch_template_version,omitempty"`
+	CurrentAmiID          string `json:"current_ami_id,omitempty"`
+	WorkerBin             string `json:"worker_bin,omitempty"`
+	Config                string `json:"config,omitempty"`
 }
 
 // SSHCfg reserves the shape for backend=ssh; not used yet.
@@ -193,6 +236,35 @@ func (inv *Inventory) validate(path string) error {
 			if h.Codespace == nil {
 				return &Error{Path: path, Index: i, Field: "codespace", Msg: "required for backend=codespace"}
 			}
+		case BackendEC2:
+			if h.EC2 == nil {
+				return &Error{Path: path, Index: i, Field: "ec2", Msg: "required for backend=ec2"}
+			}
+			if strings.TrimSpace(h.EC2.Region) == "" {
+				return &Error{Path: path, Index: i, Field: "ec2.region", Msg: "must be non-empty for backend=ec2"}
+			}
+			if strings.TrimSpace(h.EC2.LaunchTemplateID) == "" {
+				return &Error{Path: path, Index: i, Field: "ec2.launch_template_id", Msg: "must be non-empty for backend=ec2"}
+			}
+			if !launchTemplateIDPattern.MatchString(h.EC2.LaunchTemplateID) {
+				return &Error{Path: path, Index: i, Field: "ec2.launch_template_id", Msg: "must match ^lt-[0-9a-f]+$"}
+			}
+		case BackendEC2Snapshot:
+			if h.EC2Snapshot == nil {
+				return &Error{Path: path, Index: i, Field: "ec2_snapshot", Msg: "required for backend=ec2-snapshot"}
+			}
+			if strings.TrimSpace(h.EC2Snapshot.Region) == "" {
+				return &Error{Path: path, Index: i, Field: "ec2_snapshot.region", Msg: "must be non-empty for backend=ec2-snapshot"}
+			}
+			if strings.TrimSpace(h.EC2Snapshot.LaunchTemplateID) == "" {
+				return &Error{Path: path, Index: i, Field: "ec2_snapshot.launch_template_id", Msg: "must be non-empty for backend=ec2-snapshot"}
+			}
+			if !launchTemplateIDPattern.MatchString(h.EC2Snapshot.LaunchTemplateID) {
+				return &Error{Path: path, Index: i, Field: "ec2_snapshot.launch_template_id", Msg: "must match ^lt-[0-9a-f]+$"}
+			}
+			if id := strings.TrimSpace(h.EC2Snapshot.CurrentAmiID); id != "" && !strings.HasPrefix(id, "ami-") {
+				return &Error{Path: path, Index: i, Field: "ec2_snapshot.current_ami_id", Msg: "must start with ami-"}
+			}
 		case BackendSSH:
 			if h.SSH == nil || h.SSH.Host == "" {
 				return &Error{Path: path, Index: i, Field: "ssh", Msg: "required for backend=ssh (with non-empty host)"}
@@ -202,9 +274,9 @@ func (inv *Inventory) validate(path string) error {
 				return &Error{Path: path, Index: i, Field: "gcp_iap", Msg: "required for backend=gcp-iap (with project/zone/instance)"}
 			}
 		case "":
-			return &Error{Path: path, Index: i, Field: "backend", Msg: "must be set (one of: local, codespace, ssh, gcp-iap)"}
+			return &Error{Path: path, Index: i, Field: "backend", Msg: "must be set (one of: local, codespace, ec2, ec2-snapshot, ssh, gcp-iap)"}
 		default:
-			return &Error{Path: path, Index: i, Field: "backend", Msg: fmt.Sprintf("unknown backend %q (one of: local, codespace, ssh, gcp-iap)", h.Backend)}
+			return &Error{Path: path, Index: i, Field: "backend", Msg: fmt.Sprintf("unknown backend %q (one of: local, codespace, ec2, ec2-snapshot, ssh, gcp-iap)", h.Backend)}
 		}
 	}
 	return nil

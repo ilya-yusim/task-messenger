@@ -22,6 +22,12 @@ func CacheDir() (string, error) {
 	return cacheDirNamed("tm-worker-farm")
 }
 
+// StateDir returns the OS-specific controller state directory used for
+// mutable runtime metadata that should not live in cache.
+func StateDir() (string, error) {
+	return stateDirNamed("tm-worker-farm")
+}
+
 // LegacyCacheDir returns the pre-Phase-2 location
 // (`tm-worker-controller`). The controller checks for its existence at
 // startup and warns the operator if it still has data. There is no
@@ -50,6 +56,28 @@ func cacheDirNamed(leaf string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(home, ".cache", leaf), nil
+}
+
+func stateDirNamed(leaf string) (string, error) {
+	if runtime.GOOS == "windows" {
+		base := os.Getenv("APPDATA")
+		if base == "" {
+			home, err := os.UserHomeDir()
+			if err != nil {
+				return "", err
+			}
+			base = filepath.Join(home, "AppData", "Roaming")
+		}
+		return filepath.Join(base, leaf), nil
+	}
+	if base := os.Getenv("XDG_STATE_HOME"); base != "" {
+		return filepath.Join(base, leaf), nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(home, ".local", "state", leaf), nil
 }
 
 // DefaultWorkerConfig returns the path that the makeself .run installer
@@ -169,4 +197,14 @@ func RecentRunsPath(cacheDir string) string {
 // trail (spawn / stop / exit access log + startup banner).
 func ControllerLogPath(cacheDir string) string {
 	return filepath.Join(cacheDir, "controller.log")
+}
+
+// EC2SnapshotStatePath returns the runtime state file used by the
+// ec2-snapshot backend to persist mutable AMI lineage per host.
+func EC2SnapshotStatePath() (string, error) {
+	dir, err := StateDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "ec2-snapshot-state.json"), nil
 }
