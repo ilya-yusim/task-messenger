@@ -2,9 +2,9 @@
 // inventory file (`hosts.json`).
 //
 // The inventory describes every host the controller can talk to.
-// Today only the `local` and `codespace` backends are wired up; `ec2`,
-// `ssh`, and `gcp-iap` are accepted by the parser so future backends can
-// activate them without a config-file format break.
+// Today the `local`, `codespace`, `ec2`, and `ec2-snapshot` backends
+// are wired up; `ssh` and `gcp-iap` are accepted by the parser so
+// future backends can activate them without a config-file format break.
 //
 // The schema is JSON, not YAML, to keep `worker-farm` stdlib-only.
 package inventory
