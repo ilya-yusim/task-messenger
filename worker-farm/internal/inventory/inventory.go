@@ -107,7 +107,6 @@ type EC2SnapshotCfg struct {
 	CurrentAmiID          string `json:"current_ami_id,omitempty"`
 	WorkerBin             string `json:"worker_bin,omitempty"`
 	Config                string `json:"config,omitempty"`
-	TerminateOnIdle       bool   `json:"terminate_on_idle,omitempty"`
 }
 
 // SSHCfg reserves the shape for backend=ssh; not used yet.
