@@ -51,7 +51,7 @@ const (
 
 	defaultManagerPollPeriod  = 5 * time.Second
 	defaultManagerGracePeriod = 10 * time.Second
-	defaultIdleTimeout        = 1 * time.Minute
+	defaultIdleTimeout        = 15 * time.Minute
 
 	ec2RunDirBeginMarker = "===TM_FARM_RUN_DIR_BEGIN==="
 	ec2RunDirEndMarker   = "===TM_FARM_RUN_DIR_END==="
